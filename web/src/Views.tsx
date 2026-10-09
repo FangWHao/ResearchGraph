@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, ApiError, query } from './api';
+import { canResolveDecision, requiresDecisionTarget } from './manualDecision';
 import { EventLocator } from './EventLocator';
 import { Badge, ClaimBody, DateText, Empty, EvidenceLink, EvidencePanel, Icon, Loading, Scope, Source } from './components';
-import { actionNames, adoption, entityVersions, evidenceNames, evidenceState, groupQueue, kindNames, label, relatedChildren, scopeKey, timeline } from './model';
+import { actionNames, adoption, entityVersions, evidenceNames, evidenceState, groupQueue, kindNames, label, relatedChildren, scopeKey, scopeText, knownScope, timeline } from './model';
 import type { Claim, ClaimsPage, GraphData, ReviewState, SearchPage, Span } from './types';
 
 type Common = { data: GraphData; onClaim: (id: number) => void; onEvidence: (span: Span) => void };
@@ -26,7 +27,7 @@ export function Questions({ data, onClaim, onEvidence, onCreateQuestion }: Commo
       <div className="card-top"><span className="eyebrow">方案</span><Badge state={claim.effective_state} /></div>
       <button className="card-title" onClick={() => onClaim(claim.claim_id)}>{label(claim)}<Icon name="arrow" size={17} /></button>
       <p className="card-content">{claim.payload.content}</p><Scope value={claim.scope} />
-      <div className="dimension-row"><span>采用 <strong>{actionNames[action] ?? (action === 'time_unknown' ? '发生时间未知' : action === 'conflict' ? '记录冲突' : '未知')}</strong></span><span>证据 {evidenceNames[evidenceState(data.claims, claim.entity_id!, claim.scope)]}</span><span>运行 未知</span></div>
+      <div className="dimension-row"><span>采用 <strong>{actionNames[action] ?? (action === 'unknown_scope' ? '范围未知' : action === 'time_unknown' ? '发生时间未知' : action === 'conflict' ? '记录冲突' : '未知')}</strong></span><span>证据 {evidenceNames[evidenceState(data.claims, claim.entity_id!, claim.scope)]}</span><span>运行 未知</span></div>
       {relation?.effective_state === 'candidate' && <button className="muted-link" onClick={() => onClaim(relation.claim_id)}>与此问题的归属关系待复核 #{relation.claim_id}</button>}
       <div className="card-evidence">{claim.evidence.slice(0, 2).map(span => <EvidenceLink key={span.span_id} span={span} onOpen={onEvidence} />)}</div>
       {attempts.length > 0 && <div className="children-list">{attempts.map(item => <button key={item.claim_id} onClick={() => onClaim(item.claim_id)}><span>{kindNames[item.payload.kind!]}</span>{label(item)}<Badge state={item.effective_state} /></button>)}</div>}
@@ -49,17 +50,25 @@ export function Questions({ data, onClaim, onEvidence, onCreateQuestion }: Commo
   </>;
 }
 
-export function TimelineView({ data, onClaim, onEvidence }: Common) {
+export function TimelineView({ data, onClaim, onEvidence, onCreateDecision, onResolve }: Common & { onCreateDecision: () => void; onResolve: (id: number) => void }) {
   const entities = entityVersions(data.claims);
-  const ids = [...new Set(data.claims.filter(item => item.claim_type === 'decision_event').map(item => item.payload.target!))];
+  const ids = [...new Set(data.claims.filter(item => item.claim_type === 'decision_event').map(item => item.payload.target).filter((id): id is string => typeof id === 'string' && id.length > 0))];
+  const pending = data.claims.filter(requiresDecisionTarget);
   const [target, setTarget] = useState('');
   const active = ids.includes(target) ? target : ids[0];
   const events = active ? timeline(data.claims, active) : [];
-  const scopes = [...new Set(events.map(item => scopeKey(item.scope)))];
+  const scopes = [...new Map(events.map(item => [scopeKey(item.scope), item.scope])).entries()];
   const [scope, setScope] = useState('all');
   const visible = events.filter(item => scope === 'all' || scopeKey(item.scope) === scope);
-  return <div className="timeline-view"><div className="filter-bar"><label>决定对象<select value={active ?? ''} onChange={event => { setTarget(event.target.value); setScope('all'); }}>{ids.map(id => <option key={id} value={id}>{entities.find(item => item.entity_id === id)?.payload.label ?? id}</option>)}</select></label><label>范围<select value={scope} onChange={event => setScope(event.target.value)}><option value="all">全部范围（分别判断采用）</option>{scopes.map(key => <option value={key} key={key}>{key}</option>)}</select></label></div>
-    {!visible.length ? <Empty title="没有决定事件">提出、采用、暂缓、拒绝和撤回都需要可查证的记录。</Empty> : <><p className="notice">审核确认与决定采用是两个维度。待复核、已驳回事件保留在时间线上；它们不决定当前采用。发生时间缺失时按入库时间展示，采用时序仍标为未知。</p><ol className="timeline-list">{visible.map(item => <li key={item.claim_id}><div className="timeline-point" /><div className="timeline-date"><DateText value={item.occurred_at} /><small>入库 <DateText value={item.recorded_at} /></small></div><article><div className="card-top"><strong>{actionNames[item.payload.action!] ?? item.payload.action}</strong><Badge state={item.effective_state} /></div><button className="muted-link" onClick={() => onClaim(item.claim_id)}>记录 #{item.claim_id} · {item.payload.reason}</button><Scope value={item.scope} /><Source claim={item} /><div className="card-evidence">{item.evidence.map(span => <EvidenceLink key={span.span_id} span={span} onOpen={onEvidence} />)}</div></article></li>)}</ol></>}
+  return <div className="timeline-view"><div className="timeline-actions"><p className="muted small">需要补记决定时，可保存你的原话与判断。</p><button className="button primary" onClick={onCreateDecision}>记录人工决定</button></div>
+    {pending.length > 0 && <section className="pending-decisions"><h3>对象复核记录 <span>{pending.length}</span></h3><p className="muted small">原记录保留未指向对象的动作和理由。确定对象的替代版在对应对象的时间线中展示。</p>{pending.map(item => <article key={item.claim_id}>
+      <div className="card-top"><strong>{actionNames[item.payload.action ?? ''] ?? item.payload.action}</strong><Badge state={item.effective_state} /></div>
+      <p>对象原话：{item.pending_decision?.selector ?? '未知'}</p><p>{item.payload.reason}</p><Scope value={item.scope} /><Source claim={item} />
+      <div className="inline-row"><button className="text-button" onClick={() => onClaim(item.claim_id)}>查看原记录 #{item.claim_id}</button>{canResolveDecision(item) && <button className="button secondary" onClick={() => onResolve(item.claim_id)}>确定对象</button>}
+        {item.pending_decision?.resolved_claim_id && <button className="text-button" onClick={() => onClaim(item.pending_decision!.resolved_claim_id!)}>对象已确定 · 查看替代版 #{item.pending_decision.resolved_claim_id}</button>}</div>
+    </article>)}</section>}
+    <div className="filter-bar"><label>决定对象<select value={active ?? ''} onChange={event => { setTarget(event.target.value); setScope('all'); }}>{ids.map(id => <option key={id} value={id}>{entities.find(item => item.entity_id === id)?.payload.label ?? id}</option>)}</select></label><label>范围<select value={scope} onChange={event => setScope(event.target.value)}><option value="all">全部范围（分别判断采用）</option>{scopes.map(([key, value]) => <option value={key} key={key}>{scopeText(value)}</option>)}</select></label></div>
+    {!visible.length ? <Empty title="没有决定事件">提出、采用、暂缓、拒绝和撤回都需要可查证的记录。</Empty> : <><p className="notice">审核确认与决定采用是两个维度。待复核、已驳回事件保留在时间线上；它们不决定当前采用。发生时间缺失时按入库时间展示，采用时序仍标为未知。</p><ol className="timeline-list">{visible.map(item => <li key={item.claim_id}><div className="timeline-point" /><div className="timeline-date"><DateText value={item.occurred_at} /><small>入库 <DateText value={item.recorded_at} /></small></div><article><div className="card-top"><strong>{actionNames[item.payload.action!] ?? item.payload.action}</strong><Badge state={item.effective_state} /></div><button className="muted-link" onClick={() => onClaim(item.claim_id)}>记录 #{item.claim_id} · {item.payload.reason}</button><Scope value={item.scope} />{!knownScope(item.scope) && <p className="notice">范围未知，不判断当前采用。</p>}<Source claim={item} /><div className="card-evidence">{item.evidence.map(span => <EvidenceLink key={span.span_id} span={span} onOpen={onEvidence} />)}</div></article></li>)}</ol></>}
   </div>;
 }
 
@@ -83,10 +92,10 @@ export function SearchView({ project, text, onEvidence, onError }: {
   </div>;
 }
 
-export function ReviewQueue({ project, epoch, actor, onWrite, onError, onEdit, onEvidence, onClaim }: {
+export function ReviewQueue({ project, epoch, actor, onWrite, onError, onEdit, onEvidence, onClaim, onResolve }: {
   project: string; epoch: number; actor: string; onWrite: (revision: number) => void;
   onError: (error: unknown) => void; onEdit: (claim: Claim, revision: number) => void; onEvidence: (span: Span) => void;
-  onClaim: (id: number) => void;
+  onClaim: (id: number) => void; onResolve: (id: number) => void;
 }) {
   const [data, setData] = useState<ClaimsPage | null>(null); const [state, setState] = useState<ReviewState | 'all'>('candidate');
   const [offset, setOffset] = useState(0); const [activeId, setActiveId] = useState<number | null>(null); const [busy, setBusy] = useState(false);
@@ -99,6 +108,7 @@ export function ReviewQueue({ project, epoch, actor, onWrite, onError, onEdit, o
   const active = data?.claims.find(item => item.claim_id === activeId);
   async function review(ids: number[], action: 'confirm' | 'dismiss') {
     if (!data || busy) return;
+    if (action === 'confirm' && data.claims.some(item => ids.includes(item.claim_id) && requiresDecisionTarget(item))) { onError(new Error('此决定尚未确定对象，请先确定对象。')); return; }
     setBusy(true);
     try { const result = await api<{ revision: number }>('/review', { claim_ids: ids, action, actor, expected_revision: data.revision }); onWrite(result.revision); }
     catch (error) { onError(error); }
@@ -106,6 +116,7 @@ export function ReviewQueue({ project, epoch, actor, onWrite, onError, onEdit, o
   }
   async function confirmGroup(group: ReturnType<typeof groupQueue>[number]) {
     if (!data || busy) return;
+    if (group.claims.some(requiresDecisionTarget)) { onError(new Error('整组包含尚未确定对象的决定，不能确认整个片段。')); return; }
     const first = group.claims[0].groups[0];
     if (!first) { onError(new Error('此组缺少会话与片段归属，不能推定全部记录')); return; }
     setBusy(true);
@@ -114,6 +125,7 @@ export function ReviewQueue({ project, epoch, actor, onWrite, onError, onEdit, o
       while (next != null) {
         const result: ClaimsPage = await api(`/claims?${query({ project, state: 'candidate', session: first.session_pk, segment: first.segment_id ?? 'unknown', limit: 200, offset: next })}`);
         if (result.revision !== data.revision) throw new ApiError(409, '图版本已变化，请刷新后确认整个片段');
+        if (result.claims.some(requiresDecisionTarget)) throw new Error('整组包含尚未确定对象的决定，不能确认整个片段。请逐条复核并确定对象。');
         ids.push(...result.claims.map(item => item.claim_id)); next = result.next_offset;
         if (ids.length > 2000) throw new Error('片段超过单次 2000 条复核上限，请分批人工复核');
       }
@@ -123,17 +135,18 @@ export function ReviewQueue({ project, epoch, actor, onWrite, onError, onEdit, o
   }
   useEffect(() => {
     function keyboard(event: KeyboardEvent) {
+      if (document.querySelector('[aria-modal="true"]')) return;
       if (event.target instanceof HTMLElement && (event.target.closest('input,textarea,select,button') || event.target.isContentEditable)) return;
       if (!active || !data || busy || event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.key.toLowerCase() === 'c') { event.preventDefault(); void review([active.claim_id], 'confirm'); }
       if (event.key.toLowerCase() === 'x') { event.preventDefault(); void review([active.claim_id], 'dismiss'); }
-      if (event.key.toLowerCase() === 'e') { event.preventDefault(); onEdit(active, data.revision); }
+      if (event.key.toLowerCase() === 'e' && !requiresDecisionTarget(active)) { event.preventDefault(); onEdit(active, data.revision); }
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); const index = data.claims.findIndex(item => item.claim_id === active.claim_id); setActiveId(data.claims[Math.max(0, Math.min(data.claims.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))].claim_id); }
     }
     window.addEventListener('keydown', keyboard); return () => window.removeEventListener('keydown', keyboard);
   });
   return <div className="review-view"><div className="filter-bar"><label>审核状态<select aria-label="审核状态" value={state} onChange={event => setState(event.target.value as ReviewState | 'all')}><option value="candidate">待复核</option><option value="confirmed">已确认</option><option value="dismissed">已驳回</option><option value="all">全部记录</option></select></label><span className="muted small">C 确认 · X 驳回 · E 修改 · ↑↓ 切换候选</span>{data && <span className="count-pill">{data.total} 条</span>}</div>
-    {!data ? <Loading /> : !data.claims.length ? <Empty title={state === 'candidate' ? '当前没有待复核记录' : '此筛选下没有记录'}>人工复核与原话规则确认会追加审核记录，保留原始候选。</Empty> : <div className="review-layout"><aside className="queue-index">{groupQueue(data.claims).map(group => <section key={group.key}><header><strong title={group.title}>{group.title}</strong><span>预计约 {Math.max(1, Math.ceil(group.claims.length / 2))} 分钟（按每条 30 秒估计）</span>{state === 'candidate' && <button className="text-button" disabled={busy} onClick={() => { void confirmGroup(group); }}>确认整个片段的待复核记录</button>}</header>{group.claims.map(item => <button className={`queue-item ${item.claim_id === activeId ? 'active' : ''}`} key={item.claim_id} onClick={() => setActiveId(item.claim_id)}><span className="mono">#{item.claim_id}</span><strong>{label(item)}</strong><Badge state={item.effective_state} /></button>)}</section>)}</aside>{active && <div className="review-comparison"><section className="review-original"><div className="section-caption">原文证据 <span>{active.evidence.length}</span></div>{active.evidence[0] ? <><EvidencePanel target={active.evidence[0]} onError={onError} compact />{active.evidence.length > 1 && <div className="card-evidence">{active.evidence.slice(1).map(span => <EvidenceLink key={span.span_id} span={span} onOpen={onEvidence} />)}</div>}</> : <Empty title="原文引用缺失">此记录不能视为已验证。</Empty>}</section><section className="review-structured"><div className="section-caption">结构化记录 <span className="mono">#{active.claim_id}</span></div><ClaimBody claim={active} onClaim={onClaim} /><div className="review-actions"><button className="button primary" disabled={busy || active.replacement_ids.length > 0} onClick={() => { void review([active.claim_id], 'confirm'); }}><Icon name="check" size={16} />确认 <kbd>C</kbd></button><button className="button secondary" disabled={busy || active.replacement_ids.length > 0} onClick={() => { void review([active.claim_id], 'dismiss'); }}>驳回 <kbd>X</kbd></button><button className="text-button" disabled={busy || active.replacement_ids.length > 0} onClick={() => onEdit(active, data.revision)}>修改 <kbd>E</kbd></button></div>{active.replacement_ids.length > 0 && <p className="notice">此记录已有修改版 #{active.replacement_ids.join('、')}，请复核新记录。</p>}</section></div>}</div>}
+    {!data ? <Loading /> : !data.claims.length ? <Empty title={state === 'candidate' ? '当前没有待复核记录' : '此筛选下没有记录'}>人工复核与原话规则确认会追加审核记录，保留原始候选。</Empty> : <div className="review-layout"><aside className="queue-index">{groupQueue(data.claims).map(group => <section key={group.key}><header><strong title={group.title}>{group.title}</strong><span>预计约 {Math.max(1, Math.ceil(group.claims.length / 2))} 分钟（按每条 30 秒估计）</span>{state === 'candidate' && <button className="text-button" disabled={busy || group.claims.some(requiresDecisionTarget)} onClick={() => { void confirmGroup(group); }}>确认整个片段的待复核记录</button>}{group.claims.some(requiresDecisionTarget) && <p className="missing-note">整组含未确定对象的决定，不能整组确认。</p>}</header>{group.claims.map(item => <button className={`queue-item ${item.claim_id === activeId ? 'active' : ''}`} key={item.claim_id} onClick={() => setActiveId(item.claim_id)}><span className="mono">#{item.claim_id}</span><strong>{label(item)}</strong><Badge state={item.effective_state} /></button>)}</section>)}</aside>{active && <div className="review-comparison"><section className="review-original"><div className="section-caption">原文证据 <span>{active.evidence.length}</span></div>{active.evidence[0] ? <><EvidencePanel target={active.evidence[0]} onError={onError} compact />{active.evidence.length > 1 && <div className="card-evidence">{active.evidence.slice(1).map(span => <EvidenceLink key={span.span_id} span={span} onOpen={onEvidence} />)}</div>}</> : <Empty title="原文引用缺失">此记录不能视为已验证。</Empty>}</section><section className="review-structured"><div className="section-caption">结构化记录 <span className="mono">#{active.claim_id}</span></div><ClaimBody claim={active} onClaim={onClaim} /><div className="review-actions">{canResolveDecision(active) && <button className="button primary" onClick={() => onResolve(active.claim_id)}>确定对象</button>}<button className="button primary" disabled={busy || active.replacement_ids.length > 0 || requiresDecisionTarget(active)} onClick={() => { void review([active.claim_id], 'confirm'); }}><Icon name="check" size={16} />确认 <kbd>C</kbd></button><button className="button secondary" disabled={busy || active.replacement_ids.length > 0} onClick={() => { void review([active.claim_id], 'dismiss'); }}>驳回 <kbd>X</kbd></button><button className="text-button" disabled={busy || active.replacement_ids.length > 0 || requiresDecisionTarget(active)} onClick={() => onEdit(active, data.revision)}>修改 <kbd>E</kbd></button></div>{active.replacement_ids.length > 0 && <p className="notice">此记录已有修改版 #{active.replacement_ids.join('、')}，请复核新记录。</p>}</section></div>}</div>}
     {data && <div className="pagination"><button className="button secondary" disabled={offset === 0 || busy} onClick={() => setOffset(Math.max(0, offset - 50))}>上一页</button><span>偏移 {offset} · 版本 {data.revision}</span><button className="button secondary" disabled={data.next_offset == null || busy} onClick={() => setOffset(data.next_offset!)}>下一页</button></div>}
   </div>;
 }

@@ -4,14 +4,12 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from rg.ingest.spans import value_span
+from rg.record.events import evidence, original, previous, windows
 from rg.record.schema import validate_question, validate_scope
 from rg.store.database import ConflictError, Store, dumps, now
 from rg.store.objects import digest
 
 MAX_TEXT_BYTES = 16000
-MAX_RECORD_BYTES = 65536
-SPAN_BYTES = 8000
 
 
 def human(value: Any) -> str:
@@ -102,12 +100,7 @@ def question(store: Store, body: dict[str, Any]) -> dict[str, Any]:
     request_id, data, expected = intent(body)
     intent_sha = digest(dumps(data).encode())
     with store.transaction() as db:
-        previous = db.execute(
-            "SELECT intent_sha256 FROM explicit_records WHERE request_id=?", (request_id,)
-        ).fetchone()
-        if previous:
-            if previous[0] != intent_sha:
-                raise ConflictError("请求编号已用于不同内容，请核对原记录")
+        if previous(store, request_id, "question", intent_sha):
             return receipt(store, request_id, True)
         if store.revision() != expected:
             raise ConflictError("图版本已变化，请刷新后再保存问题")
@@ -117,68 +110,15 @@ def question(store: Store, body: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("项目不存在")
         recorded = now()
         occurred = timestamp(data["input_occurred_at"]) or recorded
-        event_id, raw = _original(store, request_id, data, occurred, recorded)
+        event_id, raw = original(
+            store, request_id, data, "question", occurred, recorded, data["text"]
+        )
         claim_id = _question_claim(store, data, event_id, raw, occurred, recorded)
         db.execute(
             "INSERT INTO explicit_records VALUES (?,?,'question',?,?,?,?)",
             (request_id, data["project_id"], intent_sha, event_id, claim_id, recorded),
         )
         return receipt(store, request_id, False)
-
-
-def _original(
-    store: Store, request_id: str, data: dict[str, Any], occurred: str, recorded: str
-) -> tuple[int, bytes]:
-    db = store.db
-    raw = dumps(
-        data
-        | {
-            "type": "rg_question",
-            "request_id": request_id,
-            "occurred_at": occurred,
-            "recorded_at": recorded,
-        }
-    ).encode()
-    if len(raw) > MAX_RECORD_BYTES:
-        raise ValueError("完整人工记录超过 65536 字节")
-    sha = store.objects.put(raw)
-    session = db.execute(
-        "SELECT session_pk FROM sessions WHERE tool='rg' AND native_session_id=? AND agent_id=''",
-        (f"manual:{data['project_id']}",),
-    ).fetchone()
-    if session:
-        session_id = session[0]
-    else:
-        session_id = db.execute(
-            "INSERT INTO sessions(tool,native_session_id,project_id,project_basis,first_at) "
-            "VALUES ('rg',?,?,'manual',?)",
-            (f"manual:{data['project_id']}", data["project_id"], recorded),
-        ).lastrowid
-    file_id = db.execute(
-        "INSERT INTO source_files(session_pk,path,prefix_sha256,committed_offset,parser, "
-        "parser_version,status,first_seen,last_read) VALUES (?,?,?,?,'rg','1','virtual',?,?)",
-        (session_id, f"rg-record://{request_id}", sha, len(raw), recorded, recorded),
-    ).lastrowid
-    seq = db.execute(
-        "SELECT COALESCE(max(seq),0)+1 FROM raw_events WHERE session_pk=?", (session_id,)
-    ).fetchone()[0]
-    event_id = db.execute(
-        "INSERT INTO raw_events(session_pk,file_instance_id,record_index,byte_start,byte_end, "
-        "object_sha256,native_id,seq,kind,role,occurred_at,recorded_at,line_sha256, "
-        "exclude_reason) VALUES (?,?,0,0,?,?,?,?, 'explicit_question','user',?,?,?, "
-        "'explicit_recorded')",
-        (session_id, file_id, len(raw), sha, request_id, seq, occurred, recorded, sha),
-    ).lastrowid
-    if event_id is None:
-        raise RuntimeError("人工原文写入失败")
-    db.execute("INSERT INTO event_search VALUES (?,?)", (event_id, data["text"]))
-    db.execute(
-        "INSERT INTO coverage(event_id,stage,status) "
-        "VALUES (?,'pass2','excluded:explicit_recorded')",
-        (event_id,),
-    )
-    db.execute("UPDATE sessions SET last_at=? WHERE session_pk=?", (recorded, session_id))
-    return event_id, raw
 
 
 def _question_claim(
@@ -194,26 +134,7 @@ def _question_claim(
         "content": data["text"],
         "scope": data["scope"],
     }
-    position = value_span(raw, ("text",))
-    if position is None:
-        raise RuntimeError("人工问题原文位置缺失")
-    spans = []
-    start, stop, _ = position
-    while start < stop:
-        end = min(stop, start + SPAN_BYTES)
-        while end < stop and raw[end] & 0xC0 == 0x80:
-            end -= 1
-        quote = raw[start:end]
-        spans.append(
-            {
-                "event_id": event_id,
-                "byte_start": start,
-                "byte_end": end,
-                "quote": quote.decode(),
-                "quote_sha256": digest(quote),
-            }
-        )
-        start = end
+    spans = windows(raw, event_id, ["text"])
     validate_question(payload | {"evidence": spans})
     db.execute(
         "INSERT INTO entities VALUES (?,?,'question',NULL,?)",
@@ -231,13 +152,7 @@ def _question_claim(
             recorded,
         ),
     ).lastrowid
-    for span in spans:
-        span_id = db.execute(
-            "INSERT INTO evidence_spans(event_id,byte_start,byte_end,quote_sha256) "
-            "VALUES (?,?,?,?)",
-            (event_id, span["byte_start"], span["byte_end"], span["quote_sha256"]),
-        ).lastrowid
-        db.execute("INSERT INTO claim_evidence VALUES (?,?,'support')", (claim_id, span_id))
     if claim_id is None:
         raise RuntimeError("人工问题记录写入失败")
+    evidence(store, claim_id, spans)
     return claim_id

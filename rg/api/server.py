@@ -118,6 +118,10 @@ class Handler(BaseHTTPRequestHandler):
             return views.search(store, values)
         if path == "/api/graph":
             return views.graph(store, values.get("project", ""))
+        if path == "/api/decision-targets":
+            from rg.record.targets import targets
+
+            return targets(store, values)
         raise views.NotFound("接口不存在")
 
     def do_GET(self) -> None:
@@ -196,6 +200,14 @@ class Handler(BaseHTTPRequestHandler):
                     from rg.record.question import question
 
                     result = question(store, body)
+                elif path == "/api/records/decide":
+                    from rg.record.decide import decide
+
+                    result = decide(store, body)
+                elif match := re.fullmatch(r"/api/records/decisions/([1-9][0-9]*)/resolve", path):
+                    from rg.record.resolve import resolve
+
+                    result = resolve(store, int(match[1]), body)
                 elif match := re.fullmatch(r"/api/claims/([1-9][0-9]*)/edit", path):
                     result = views.edit(store, int(match[1]), body)
                 else:

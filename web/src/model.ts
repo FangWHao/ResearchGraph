@@ -23,7 +23,14 @@ export function scopeKey(scope: Record<string, string> | null): string {
   return scope ? JSON.stringify(Object.entries(scope).sort(([a], [b]) => a.localeCompare(b))) : 'unknown';
 }
 export function scopeText(scope: Record<string, string> | null): string {
-  return scope && Object.keys(scope).length ? Object.entries(scope).map(([key, value]) => `${key}=${value}`).join(' · ') : '范围未知';
+  if (!scope || !Object.keys(scope).length) return '范围未知';
+  const fields = Object.entries(scope).map(([key, value]) => `${key}=${value}`).join(' · ');
+  return knownScope(scope) ? fields : `范围未知 · ${fields}`;
+}
+export function knownScope(scope: Record<string, string> | null): boolean {
+  const unknown = new Set(['unknown', '未知', '未确定', '不详', 'unspecified', '?']);
+  return scope != null && Object.keys(scope).length > 0
+    && Object.values(scope).every(value => value.trim() !== '' && !unknown.has(value.trim().toLowerCase()));
 }
 export function label(claim: Claim): string {
   return claim.payload.label ?? claim.payload.reason ?? relationNames[claim.payload.relation ?? ''] ?? claim.claim_type;
@@ -52,6 +59,7 @@ function occurredTime(claim: Claim): number | null {
 }
 function eventOrder(claim: Claim): number { return occurredTime(claim) ?? (Date.parse(claim.recorded_at) || 0); }
 export function adoption(claims: Claim[], entityId: string, scope: Record<string, string> | null): string {
+  if (!knownScope(scope)) return 'unknown_scope';
   const events = timeline(claims, entityId).filter(item => item.effective_state === 'confirmed' && scopeKey(item.scope) === scopeKey(scope));
   if (!events.length) return 'unknown';
   if (events.some(item => occurredTime(item) == null)) return 'time_unknown';

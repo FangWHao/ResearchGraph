@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import tempfile
 from pathlib import Path
+from uuid import uuid4
 
 from rg.api.server import LocalServer
 from rg.extract.validate import persist
@@ -13,6 +14,7 @@ from rg.ingest.sources import register as register_source
 from rg.ingest.spool import enqueue
 from rg.ingest.spool import register as register_spool
 from rg.store.database import Store, dumps, now
+from rg.store.objects import digest
 from tests.golden.test_ingestion import lines, record
 
 
@@ -434,6 +436,77 @@ def seed_model_observations(store: Store, project: str) -> None:
         )
 
 
+def seed_decisions(store: Store) -> None:
+    """独立虚拟合成来源，避免把浏览器样本记成真实物理会话。"""
+    for name, labels in (
+        (
+            "验收新增决定项目",
+            ["合成待确认决定方案", "合成同名决定方案", "合成同名决定方案", "合成其他范围方案"]
+            + [f"合成分页对象 {index:03d}" for index in range(1, 206)],
+        ),
+        ("验收新增决定项目二", ["合成第二项目方案"]),
+    ):
+        project = store.project(name, [])
+        recorded = now()
+        text = "\n".join(labels)
+        raw = dumps({"type": "synthetic_browser_objects", "text": text}).encode()
+        sha = store.objects.put(raw)
+        session = store.db.execute(
+            "INSERT INTO sessions(tool,native_session_id,project_id,project_basis,first_at) "
+            "VALUES ('rg',?,?,'manual',?)",
+            (str(uuid4()), project, recorded),
+        ).lastrowid
+        file = store.db.execute(
+            "INSERT INTO source_files(session_pk,path,prefix_sha256,parser,parser_version,"
+            "status,first_seen,last_read) VALUES (?,?,?,'synthetic_fixture','1','virtual',?,?)",
+            (session, "synthetic-fixture://" + project, digest(raw[:4096]), recorded, recorded),
+        ).lastrowid
+        event = store.db.execute(
+            "INSERT INTO raw_events(session_pk,file_instance_id,byte_start,byte_end,"
+            "object_sha256,seq,kind,role,recorded_at,line_sha256) "
+            "VALUES (?,?,0,?,?,1,'synthetic_fixture','user',?,?)",
+            (session, file, len(raw), sha, recorded, sha),
+        ).lastrowid
+        assert event is not None
+        claims = []
+        for index, label in enumerate(labels):
+            start = raw.index(label.encode())
+            scope = {"data": "synthetic_decide_v1", "step": "手工决定验收"}
+            if label == "合成其他范围方案":
+                scope["data"] = "synthetic_decide_v2"
+            claims.append(
+                {
+                    "claim_type": "entity_version",
+                    "temp_id": f"new:{index}",
+                    "kind": "approach",
+                    "label": label,
+                    "content": "仅用于人工决定界面的合成候选对象。",
+                    "scope": scope,
+                    "evidence": [
+                        {
+                            "event_id": event,
+                            "byte_start": start,
+                            "byte_end": start + len(label.encode()),
+                            "quote": label,
+                        }
+                    ],
+                }
+            )
+        output = {
+            "segment_id": "synthetic-decide-" + project,
+            "claims": claims,
+            "lookup_terms": [],
+            "unresolved": [],
+        }
+        run = store.db.execute(
+            "INSERT INTO extraction_runs(job_key,stage,input_event_ids,status,output_json,"
+            "created_at) VALUES (?,'pass2',?,'validated',?,?)",
+            (project, dumps([event]), dumps(output), recorded),
+        ).lastrowid
+        assert run is not None
+        persist(store, output, project, run, set(), {event}, output["segment_id"])
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8791)
@@ -445,6 +518,7 @@ def main() -> None:
         seed(store, directory)
         store.project("验收新增人工记录项目", [Path("/synthetic/manual-question")])
         store.project("验收新增人工记录项目二", [Path("/synthetic/manual-question-two")])
+        seed_decisions(store)
         store.close()
         server = LocalServer(
             directory / "store", args.web_dir, args.port, token="synthetic-browser-token"

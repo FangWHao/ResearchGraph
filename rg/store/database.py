@@ -87,17 +87,41 @@ class Store:
         return self.db.execute("SELECT revision FROM graph_clock WHERE id = 1").fetchone()[0]
 
     def review(self, claim_id: int, action: str, actor: str, expected: int) -> int:
-        if action not in {"confirm", "dismiss"} or not actor.startswith("human:"):
+        if (
+            action not in {"confirm", "dismiss"}
+            or not isinstance(actor, str)
+            or not actor.startswith("human:")
+            or not actor[6:].strip()
+            or len(actor) > 120
+            or type(expected) is not int
+            or expected < 0
+        ):
             raise ValueError("复核必须使用人工身份及 confirm/dismiss")
         with self.transaction() as db:
             if expected != self.revision():
                 raise ConflictError("图版本已变化，请刷新后复核")
+            self.assert_reviewable(claim_id, action)
             db.execute(
                 "INSERT INTO review_actions "
                 "(claim_id, action, actor, expected_revision, recorded_at) VALUES (?, ?, ?, ?, ?)",
                 (claim_id, action, actor, expected, now()),
             )
         return self.revision()
+
+    def assert_reviewable(self, claim_id: int, action: str) -> None:
+        row = self.db.execute(
+            "SELECT claim_type,payload FROM claims WHERE claim_id=?", (claim_id,)
+        ).fetchone()
+        if row is None:
+            raise ValueError("记录不存在")
+        if self.db.execute("SELECT 1 FROM claims WHERE replaces_claim=?", (claim_id,)).fetchone():
+            raise ValueError("记录已有修改版，请复核最新记录")
+        if (
+            action in {"confirm", "edit"}
+            and row["claim_type"] == "decision_event"
+            and json.loads(row["payload"]).get("target") is None
+        ):
+            raise ValueError("对象尚未确定，请使用选择对象入口；普通确认或修改不能解析歧义")
 
     def claim_state(self, claim_id: int) -> str:
         row = self.db.execute(

@@ -9,9 +9,9 @@ from rg.ingest.common import parse
 from rg.ingest.spans import event_span
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
+from rg.store.scopes import known_scope
 
 RULE_VERSION = "explicit-user-v1"
-UNKNOWN = {"unknown", "未知", "未确定", "不详", "unspecified", "?"}
 VERBS = {
     "accepted": r"(?:采用|选用|使用|选择|保留|adopt |accept |choose |use |retain )",
     "withdrawn": r"(?:撤回|停止使用|不再使用|弃用|withdraw |stop using |abandon )",
@@ -167,7 +167,7 @@ def _proof(
     scope_filter: dict[str, str] | None,
 ) -> dict[str, Any] | None:
     scope = json.loads(claim["scope"] or "{}")
-    if not scope or any(not value or value.strip().lower() in UNKNOWN for value in scope.values()):
+    if not known_scope(scope):
         return None
     if scope_filter is not None and scope_filter != scope:
         return None

@@ -26,7 +26,7 @@ function ResearchCard({ data }: NodeProps<ResearchNode>) {
     <div className="node-top"><span>{data.group ? '手工过程组 · 仅视图' : kindNames[claim.payload.kind as Kind]}</span><Badge state={claim.effective_state} /></div>
     <strong>{data.title ?? label(claim)}</strong>
     <p>{data.group ? `${data.group.members.length} 个节点 · ${data.group.evidenceIds.length} 条原证据` : scopeText(claim.scope)}</p>
-    {!data.group && <div className="node-dimensions"><span>采用 {actionNames[decision] ?? (decision === 'time_unknown' ? '时间未知' : decision === 'conflict' ? '有冲突' : '未知')}</span><span>证据 {evidenceNames[evidenceState(data.claims, claim.entity_id!, claim.scope)]}</span><span>运行 未知</span></div>}
+    {!data.group && <div className="node-dimensions"><span>采用 {actionNames[decision] ?? (decision === 'unknown_scope' ? '范围未知' : decision === 'time_unknown' ? '时间未知' : decision === 'conflict' ? '有冲突' : '未知')}</span><span>证据 {evidenceNames[evidenceState(data.claims, claim.entity_id!, claim.scope)]}</span><span>运行 未知</span></div>}
     {join && !data.group && <div className="join-semantics">{joinNames[join.payload.semantics!] ?? '汇合语义未知'}<span>{join.effective_state === 'candidate' ? ' · 待复核' : ''}</span><p>{join.payload.inputs?.map(input => `${input.port}: ${input.ref.slice(0, 8)}`).join('；')}</p></div>}
     {joins.length > 1 && !data.group && <div className="join-semantics">汇合记录 {joins.length} 条 · 需逐条核对<p>{joins.map(item => `#${item.claim_id} ${joinNames[item.payload.semantics!] ?? '语义未知'}`).join('；')}</p><span>单击输入关系查看各条原文。</span></div>}
     <Handle type="source" position={Position.Right} />

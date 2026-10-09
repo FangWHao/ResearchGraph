@@ -63,10 +63,13 @@ def _spans(store: Store, claim_id: int) -> list[dict[str, Any]]:
 
 
 def _claim(store: Store, row: sqlite3.Row, comparisons: bool = False) -> dict[str, Any]:
+    from rg.record.resolve import pending
+
     result = dict(row)
     result["payload"] = json.loads(row["payload"])
     result["scope"] = json.loads(row["scope"]) if row["scope"] else None
     result["effective_state"] = store.claim_state(row["claim_id"])
+    result["pending_decision"] = pending(store, row["claim_id"])
     last = store.db.execute(
         "SELECT * FROM review_actions WHERE claim_id=? ORDER BY action_id DESC LIMIT 1",
         (row["claim_id"],),
@@ -385,6 +388,7 @@ def review(store: Store, body: dict[str, Any]) -> dict[str, Any]:
                 raise NotFound("批次包含不存在的记录，未写入任何复核")
             if db.execute("SELECT 1 FROM claims WHERE replaces_claim=?", (claim_id,)).fetchone():
                 raise ValueError("记录已有人工修改版，请复核最新记录")
+            store.assert_reviewable(claim_id, action)
         for claim_id in ids:
             db.execute(
                 "INSERT INTO review_actions "
@@ -408,8 +412,9 @@ def edit(store: Store, claim_id: int, body: dict[str, Any]) -> dict[str, Any]:
             raise NotFound("记录不存在")
         if db.execute("SELECT 1 FROM claims WHERE replaces_claim=?", (claim_id,)).fetchone():
             raise ValueError("记录已有修改版，请打开最新记录")
+        store.assert_reviewable(claim_id, "edit")
         original = json.loads(row["payload"])
-        from rg.record.schema import validate_question, validate_scope
+        from rg.record.schema import validate_decision, validate_question, validate_scope
 
         manual_question = (
             row["basis"] == "manual"
@@ -417,7 +422,15 @@ def edit(store: Store, claim_id: int, body: dict[str, Any]) -> dict[str, Any]:
             and row["claim_type"] == "entity_version"
             and original.get("kind") == "question"
         )
-        if manual_question:
+        manual_decision = (
+            row["basis"] == "manual"
+            and row["actor"].startswith("human:")
+            and row["claim_type"] == "decision_event"
+            and original.get("speaker") == "user"
+            and original.get("explicitness") == "explicit"
+            and original.get("referent_unique") is True
+        )
+        if manual_question or manual_decision:
             scope = validate_scope(scope)
         elif not isinstance(scope, dict):
             raise ValueError("修改需提供完整范围")
@@ -452,6 +465,8 @@ def edit(store: Store, claim_id: int, body: dict[str, Any]) -> dict[str, Any]:
             )
         if manual_question:
             validate_question(payload | {"scope": scope, "evidence": evidence_items})
+        elif manual_decision:
+            validate_decision(payload | {"scope": scope, "evidence": evidence_items})
         else:
             errors = list(
                 Draft202012Validator(CLAIM_SCHEMA).iter_errors(

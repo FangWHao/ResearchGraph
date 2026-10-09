@@ -298,3 +298,20 @@
 - 边界：本轮只写合成材料，不读完整真实会话、不调远程模型、不装钩子、不改个人客户端设置。未保存草稿仅当前页面内存；本机操作/令牌是人工入口信任边界，human 字段不是操作系统身份认证，Agent MCP 候选入口尚待实现。
 - 下一步：完成允许清单提交、现有草稿 PR 新 HEAD 远端验收与恢复包独立还原后结束本任务。后续接续 decide 对象歧义复核、note 类型答复、客户端包装、MCP、完整运行 I/O、后台大文件摘要与全图语义；正式人工参考和真实 M1/M2 门槛仍待核对，整个目标不标完成。
 - 提交前允许清单检查：git diff --cached --check 无输出、退出码 0；tracked_files=191 staged_files=27 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True。只包含公开源码、中文文档及合成测试，前端冻结源码恒等；凭据、真实会话、私有材料、截图、数据库、缓存和构建产物不纳入提交。远端检查与独立恢复将按本轮新 HEAD 核对。
+
+
+## 2026-10-10 · 人工决定与对象歧义选择
+
+- 任务：落实 §2、§5.1–5.4、§8.1、§10 的 decide、全项目对象检索及歧义复核，前端按用户明确授权由子 agent 接续。10-09 开始、10-10 收尾；开始读进度末尾、相关章节及决定，基线 a8e2529 的恢复包 SHA256 与独立还原已核对。完整 M0–M4 仍未验收。
+- 改动的文件：新增 rg/record/{events,decide,targets,resolve}.py、rg/store/scopes.py、tests/golden/test_manual_decision.py；修改版本 10 迁移、Store、question 共用原件、规则/工作集、CLI/API、迁移测试和合成浏览器种子。前端六个既有文件，新增两个弹窗、意图逻辑、hook、样式及两份测试；新增中文前后端人工决定验收，更新 README、需求落实、决定、PR 草稿与本文件。
+- 行为：四人工动作按整个项目的有效版本、完整范围解析，精确 ID 优先、完整标签相等；唯一对象直接确认决定，不确认目标候选或证据。省略范围保留 null，含未知值的范围不判断当前采用。同名或未知对象保持 null 目标 candidate，只有项目载体、没有伪造方案版本；普通、批量确认和通用修改不能绕过对象歧义。
+- 选择：仅选同项目、原完整范围内的有效对象，不改动作/理由/范围；验证原文后追加人工确认替换、复核和选择原件，保留原发生时间、原记录及双原文。完整项目先判唯一再分页，图 2000 条上限外同名仍歧义；长标签 8000 UTF8 字节预览与完整搜索分开。
+- 持久性：问题/决定/选择 UUID 跨操作保护；同意图并发和丢响应只有一份事实，旧重放不撤销后来驳回。L0、引用、记录、审核及回执原子提交，版本 9→10 失败整体回滚、原问题仍可重放。备份删除原对象后仍能恢复决定、选择及回执。模型 schema 不变，人工原话独立校验；旧模型决定连续人工修改保留原 speaker/explicitness。
+- uv sync --locked：Resolved 23 packages in 23ms，Checked 22 packages in 65ms；uv run rg --help、decide --help、decision-targets --help、resolve-decision --help 退出码 0。真实已安装 CLI 用参数数组原样接收命令替换、反引号、分号，随后选择目标，不执行输入文字。
+- uv run pytest tests/golden/test_manual_decision.py tests/test_migrations.py -q：61 passed in 28.24s；uv run pytest -q：387 passed in 128.95s；uv run pytest tests/golden -q：341 passed in 116.14s。全量与固定案例并行，不作性能基准。50 项决定固定案例和 11 项迁移检查不替代完整 M2/§15。
+- uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；wheel_files=75 source_resources=70 missing=0 mismatches=0 actual_secret_matches=0 private_or_static_files=0，新增模块与四份提示词按源码字节匹配。
+- cd web && pnpm test：5 files、33 tests passed，751ms；pnpm build：TypeScript 通过、194 modules、1.08s；pnpm test:browser：30 passed (23.8s)，保留原 19 并新增 11 项。真实 HTTP 核对创建/选择、目标不被确认、全项目分页、空范围、400/409/401、并发点击、丢回包、跨项目实际写入及迟到响应；模拟响应仅核对预览显示边界。
+- 验收修复：父审查修复旧模型决定连续人工修改误套新人工原话 schema，并补回归；前端首次小屏范围筛选横向溢出已修。定位与分页等待同步修正后最终 30 项全部通过。父 agent 实看桌面/390 小屏创建和选择四张图，核对 14 文件冻结清单全部 OK；缓存、副本和截图留忽略目录。
+- 产品方向：用户提出理想日常体验零人工干预；自动采集、提取、关联和查询应为默认，人工入口是可选补记/纠错，不强迫逐条复核。候选和未知仍保留检索，现行原话规则确认要求继续执行。本轮不读完整真实会话、不调远程模型、不装钩子、不改个人客户端设置。
+- 下一步：本轮允许清单提交后按新 HEAD 检查现有草稿 PR 两种远端 CI、刷新并独立恢复代码包，实际证明记录在 PR 与忽略目录，随后结束本任务。下个任务优先继续自动处理链路、客户端包装、MCP、未指定范围工作集及后台摘要；note 类型待答复，正式参考和真实 M1/M2 质量门槛仍待核对，整个目标不标完成。
+- 提交前允许清单检查：git diff --cached --check 无输出、退出码 0；tracked_files=206 staged_files=37 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True。仅公开源码、中文文档和合成测试，前端冻结源码恒等；凭据、真实会话、私有材料、截图、数据库、缓存及构建产物不入提交，远端按本轮新 HEAD 核对。

@@ -61,6 +61,52 @@ def test_v3_monitor_migration_is_atomic_and_does_not_fabricate_attempts(
     recovered.close()
 
 
+def test_v9_decision_migration_is_atomic_and_preserves_question_receipt(
+    tmp_path: Path, monkeypatch
+):
+    from uuid import uuid4
+
+    from rg.record.question import question
+
+    root, raw = legacy_store(tmp_path, monkeypatch, version=9)
+    # 旧版本记录服务只查询版本 9 已有的回执表。
+    with monkeypatch.context() as patch:
+        patch.setattr(migrations, "LATEST_VERSION", 9)
+        patch.setattr("rg.record.events.RECEIPTS", {"question": "explicit_records"})
+        old = Store(root)
+        project = old.project("合成旧人工项目", [])
+        data = {
+            "project_id": project,
+            "text": "原人工问题",
+            "scope": None,
+            "actor": "human:合成",
+            "request_id": str(uuid4()),
+            "expected_revision": old.revision(),
+        }
+        saved = question(old, data)
+        original = old.raw(saved["event_id"])
+        old.close()
+    with monkeypatch.context() as patch:
+        patch.setitem(migrations.MIGRATIONS, 10, (*migrations.MIGRATIONS[10], "INVALID SQL"))
+        with pytest.raises(sqlite3.OperationalError):
+            Store(root)
+    connection = sqlite3.connect(root / "rg.db")
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 9
+    assert (
+        connection.execute(
+            "SELECT count(*) FROM sqlite_master WHERE name='decision_requests'"
+        ).fetchone()[0]
+        == 0
+    )
+    assert connection.execute("SELECT count(*) FROM explicit_records").fetchone()[0] == 1
+    connection.close()
+    recovered = Store(root)
+    assert recovered.raw(1) == raw and recovered.raw(saved["event_id"]) == original
+    assert question(recovered, data)["claim_id"] == saved["claim_id"]
+    assert recovered.db.execute("SELECT count(*) FROM decision_requests").fetchone()[0] == 0
+    recovered.close()
+
+
 def test_v4_plan_migration_is_atomic_and_does_not_invent_history(tmp_path: Path, monkeypatch):
     root, raw = legacy_store(tmp_path, monkeypatch, version=4)
     with monkeypatch.context() as change:

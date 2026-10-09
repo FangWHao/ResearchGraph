@@ -13,6 +13,20 @@ QUESTION_SCHEMA["properties"]["kind"] = {"const": "question"}
 QUESTION_SCHEMA["properties"]["scope"] = {
     "anyOf": [QUESTION_SCHEMA["properties"]["scope"], {"type": "null"}]
 }
+DECISION_SCHEMA = deepcopy(CLAIM_SCHEMA["oneOf"][1])
+DECISION_SCHEMA["properties"]["scope"] = deepcopy(QUESTION_SCHEMA["properties"]["scope"])
+DECISION_SCHEMA["properties"]["speaker"] = {"const": "user"}
+DECISION_SCHEMA["properties"]["explicitness"] = {"const": "explicit"}
+DECISION_SCHEMA["properties"]["referent_unique"] = {"const": True}
+PENDING_DECISION_SCHEMA = deepcopy(DECISION_SCHEMA)
+PENDING_DECISION_SCHEMA["properties"]["target"] = {"type": "null"}
+PENDING_DECISION_SCHEMA["properties"]["referent_unique"] = {"const": False}
+
+
+def validate_decision(payload: dict[str, Any]) -> None:
+    schema = PENDING_DECISION_SCHEMA if payload.get("target") is None else DECISION_SCHEMA
+    if list(Draft202012Validator(schema).iter_errors(payload)):
+        raise ValueError("人工决定不符合记录 schema")
 
 
 def validate_question(payload: dict[str, Any]) -> None:

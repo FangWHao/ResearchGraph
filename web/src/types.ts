@@ -12,7 +12,7 @@ export interface Review {
 }
 export interface Payload {
   claim_type: string; kind?: Kind; label?: string; content?: string; temp_id?: string;
-  target?: string; source?: string; relation?: string; action?: string; reason?: string;
+  target?: string | null; source?: string; relation?: string; action?: string; reason?: string;
   state?: string; semantics?: string; selected?: string | null;
   inputs?: { port: string; ref: string }[];
   [key: string]: unknown;
@@ -26,6 +26,7 @@ export interface Claim {
   confirmation_source: 'human' | 'rule' | null;
   evidence: Span[]; groups: { segment_id: string | null; session_pk: number }[];
   review_history?: Review[];
+  pending_decision?: PendingDecision | null;
   replaces?: { claim_id: number; payload: Payload; scope: Record<string, string> | null };
   human_comparisons?: { claim_id: number; actor: string; scope: Record<string, string>; payload: Payload; differing_fields: string[] }[];
 }
@@ -47,6 +48,31 @@ export interface QuestionRequest {
 export interface QuestionResult {
   revision: number; claim_id: number; entity_id: string; event_id: number;
   request_id: string; replayed: boolean;
+}
+export type DecisionAction = 'accept' | 'defer' | 'reject' | 'withdraw';
+export interface PendingDecision {
+  request_id: string; selector: string; action: string; why: string; scope: Record<string, string> | null;
+  target_id: string | null; requires_resolution: boolean; resolved_claim_id: number | null;
+}
+export interface DecisionRequest {
+  project_id: string; selector: string; action: DecisionAction; why: string; scope: Record<string, string> | null;
+  actor: string; request_id: string; expected_revision: number;
+}
+export interface DecisionResult {
+  revision: number; request_id: string; claim_id: number; event_id: number; target_id: string | null;
+  effective_state: ReviewState; replayed: boolean; resolved_claim_id: number | null;
+}
+export interface DecisionTarget {
+  entity_id: string; kind: Kind; claim_id: number; label: string; label_truncated: boolean;
+  label_total_bytes: number; scope: Record<string, string> | null;
+}
+export interface DecisionTargetsPage {
+  revision: number; total: number; next_offset: number | null; offset: number; targets: DecisionTarget[];
+}
+export interface ResolveDecisionRequest { target_id: string; actor: string; request_id: string; expected_revision: number }
+export interface ResolveDecisionResult {
+  revision: number; request_id: string; claim_id: number; event_id: number;
+  original_claim_id: number; original_event_id: number; replayed: boolean;
 }
 export interface EventWindow {
   event_id: number; session_pk: number; seq: number; kind: string; role: string | null;

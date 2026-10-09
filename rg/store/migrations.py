@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 9
+LATEST_VERSION = 10
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -128,6 +128,36 @@ MIGRATIONS = {
         "SELECT RAISE(ABORT,'explicit record is append-only'); END",
         "CREATE TRIGGER explicit_no_delete BEFORE DELETE ON explicit_records BEGIN "
         "SELECT RAISE(ABORT,'explicit record is append-only'); END",
+    ),
+    10: (
+        "CREATE TABLE decision_requests (request_id TEXT PRIMARY KEY, "
+        "project_id TEXT NOT NULL REFERENCES projects, intent_sha256 TEXT NOT NULL, "
+        "event_id INTEGER NOT NULL UNIQUE REFERENCES raw_events, "
+        "claim_id INTEGER NOT NULL UNIQUE REFERENCES claims, selector TEXT NOT NULL, "
+        "target_id TEXT REFERENCES entities, recorded_at TEXT NOT NULL)",
+        "CREATE TABLE decision_resolutions (request_id TEXT PRIMARY KEY, "
+        "intent_sha256 TEXT NOT NULL, original_claim_id INTEGER NOT NULL UNIQUE REFERENCES claims, "
+        "event_id INTEGER NOT NULL UNIQUE REFERENCES raw_events, "
+        "claim_id INTEGER NOT NULL UNIQUE REFERENCES claims, "
+        "target_id TEXT NOT NULL REFERENCES entities, "
+        "recorded_at TEXT NOT NULL)",
+        "CREATE TRIGGER decision_input_no_update BEFORE UPDATE ON decision_requests BEGIN "
+        "SELECT RAISE(ABORT,'decision input is append-only'); END",
+        "CREATE TRIGGER decision_input_no_delete BEFORE DELETE ON decision_requests BEGIN "
+        "SELECT RAISE(ABORT,'decision input is append-only'); END",
+        "CREATE TRIGGER decision_resolution_no_update BEFORE UPDATE ON decision_resolutions BEGIN "
+        "SELECT RAISE(ABORT,'decision resolution is append-only'); END",
+        "CREATE TRIGGER decision_resolution_no_delete BEFORE DELETE ON decision_resolutions BEGIN "
+        "SELECT RAISE(ABORT,'decision resolution is append-only'); END",
+        "CREATE TRIGGER unresolved_decision_no_confirm BEFORE INSERT ON review_actions "
+        "WHEN NEW.action='confirm' AND EXISTS (SELECT 1 FROM claims c "
+        "WHERE c.claim_id=NEW.claim_id AND c.claim_type='decision_event' "
+        "AND json_extract(c.payload,'$.target') IS NULL) BEGIN "
+        "SELECT RAISE(ABORT,'decision target must be resolved'); END",
+        "CREATE TRIGGER unresolved_decision_candidate BEFORE INSERT ON claims "
+        "WHEN NEW.claim_type='decision_event' AND NEW.claim_state='confirmed' "
+        "AND json_extract(NEW.payload,'$.target') IS NULL BEGIN "
+        "SELECT RAISE(ABORT,'unresolved decision must be candidate'); END",
     ),
 }
 

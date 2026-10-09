@@ -142,10 +142,75 @@ def parser() -> argparse.ArgumentParser:
     question.add_argument("--request-id", help="重试同一意图的 UUID；默认新建")
     question.add_argument("--occurred-at", help="回填发生时间，需带明确时区")
     question.add_argument("--expected-revision", type=int, help="读取版本后提交，冲突则不写入")
+    decided = commands.add_parser("decide", help="人工记录采用、暂缓、拒绝或撤回；歧义进复核")
+    decided.add_argument("action", choices=["accept", "defer", "reject", "withdraw"])
+    decided.add_argument("selector", help="现有对象的完整名称或 ID")
+    decided.add_argument("--why", required=True)
+    decided.add_argument("--project", required=True)
+    decided.add_argument("--actor", default="human:本机用户")
+    decided.add_argument("--scope", nargs="+", action="extend", default=[], metavar="字段=值")
+    decided.add_argument("--request-id")
+    decided.add_argument("--occurred-at")
+    decided.add_argument("--expected-revision", type=int)
+    choices = commands.add_parser("decision-targets", help="按字面量搜索当前项目可选对象，支持分页")
+    choices.add_argument("--project", required=True)
+    choices.add_argument("--query", default="")
+    choices.add_argument("--scope", nargs="+", action="extend", default=[], metavar="字段=值")
+    choices.add_argument("--limit", type=int, default=200)
+    choices.add_argument("--offset", type=int, default=0)
+    resolved = commands.add_parser(
+        "resolve-decision", help="人工为待复核决定选择对象，保留原动作及范围"
+    )
+    resolved.add_argument("claim", type=int)
+    resolved.add_argument("--target", required=True)
+    resolved.add_argument("--actor", default="human:本机用户")
+    resolved.add_argument("--request-id")
+    resolved.add_argument("--expected-revision", type=int, required=True)
     return cli
 
 
 def run(args: argparse.Namespace, store: Store) -> object:
+    if args.command in {"decide", "resolve-decision"}:
+        import uuid
+
+        from rg.record.decide import decide
+        from rg.record.resolve import resolve
+
+        body = {
+            "actor": args.actor,
+            "request_id": args.request_id or str(uuid.uuid4()),
+            "expected_revision": args.expected_revision
+            if args.expected_revision is not None
+            else store.revision(),
+        }
+        if args.command == "resolve-decision":
+            return resolve(store, args.claim, body | {"target_id": args.target})
+        return decide(
+            store,
+            body
+            | {
+                "project_id": args.project,
+                "selector": args.selector,
+                "action": args.action,
+                "why": args.why,
+                "scope": parse_scope(args.scope),
+                "occurred_at": args.occurred_at,
+            },
+        )
+    if args.command == "decision-targets":
+        from rg.record.targets import targets
+        from rg.store.database import dumps
+
+        values = {
+            "project": args.project,
+            "q": args.query,
+            "limit": str(args.limit),
+            "offset": str(args.offset),
+        }
+        scope = parse_scope(args.scope)
+        if scope is not None:
+            values["scope"] = dumps(scope)
+        return targets(store, values)
     if args.command == "question":
         import uuid
 

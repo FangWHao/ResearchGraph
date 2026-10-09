@@ -9,6 +9,7 @@ from typing import Any
 from rg.extract.paths import file_paths
 from rg.slim.tokens import TokenCounter
 from rg.store.database import Store, dumps
+from rg.store.scopes import known_scope
 
 
 def working_set(
@@ -94,7 +95,7 @@ def working_set(
         )
         if rank == 4:
             continue
-        state = "proposed"
+        state = "proposed" if known_scope(row_scope) else "unknown_scope"
         # 人工或独立原话规则确认后才改变当前采用状态，候选不能悄悄成为事实。
         decisions = store.db.execute(
             "SELECT claim_id, payload, scope FROM claims WHERE entity_id = ? "
@@ -104,7 +105,9 @@ def working_set(
         ).fetchall()
         for decision in decisions:
             if (
-                json.loads(decision["scope"] or "{}") == json.loads(row["scope"] or "{}")
+                known_scope(row_scope)
+                and known_scope(json.loads(decision["scope"] or "null"))
+                and json.loads(decision["scope"] or "{}") == json.loads(row["scope"] or "{}")
                 and store.claim_state(decision["claim_id"]) == "confirmed"
             ):
                 state = json.loads(decision["payload"])["action"]

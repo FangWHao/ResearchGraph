@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import { requiresDecisionTarget } from './manualDecision';
 import { api, query } from './api';
 import { DateText } from './DateText';
 import { EvidenceRecords, VersionRecords } from './EvidenceRecords';
@@ -88,6 +89,9 @@ export function ClaimBody({ claim, onClaim }: { claim: Claim; onClaim?: (id: num
   return <div className="claim-body">
     <p className="eyebrow">{payload.kind ? kindNames[payload.kind] : claim.claim_type}</p>
     <h3>{label(claim)}</h3>
+    {requiresDecisionTarget(claim) && <section className="pending-decision-note"><strong>{claim.pending_decision?.resolved_claim_id ? '原决定的对象已在替代版中确定' : '原决定未指向明确对象'}</strong><p>对象原话：{claim.pending_decision?.selector ?? '未知'}</p>
+      {claim.pending_decision?.resolved_claim_id && onClaim ? <button className="text-button" onClick={() => onClaim(claim.pending_decision!.resolved_claim_id!)}>查看确定对象的替代版 #{claim.pending_decision.resolved_claim_id}</button>
+        : <p>请通过确定对象追加复核记录；普通确认与修改不能替代对象选择。</p>}</section>}
     {payload.content && <p className="claim-content">{payload.content}</p>}
     {payload.action && <p className="dimension">决定事件：<strong>{actionNames[payload.action] ?? payload.action}</strong>{claim.effective_state !== 'confirmed' && <span> · 此动作尚未确认</span>}</p>}
     {payload.state && <p className="dimension">证据状态记录：<strong>{evidenceNames[payload.state] ?? payload.state}</strong></p>}
