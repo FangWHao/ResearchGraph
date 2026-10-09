@@ -1,6 +1,6 @@
 # 建立后端试验版、有界提取与可续跑链接
 
-远端目前仅有许可证，无法安装或运行 ResearchGraph。本次接入经过本地验收的 Python 后端、中文执行规格与进度记录、合成样本和离线 CI，沿用 Apache-2.0。
+主分支目前仅有许可证，无法安装或运行 ResearchGraph。本次接入经过本地验收的 Python 后端、中文执行规格与进度记录、合成样本和离线 CI，沿用 Apache-2.0。
 
 后端支持流式导入 Codex/Claude 会话、保存原文对象、字面量检索与引用查看，默认以 128000 token 输入预算实测计数后提取候选。程序登记精确字节窗口；跨会话关系逐对判断，总预算 4000，持久进度支持跨页续跑、暂停恢复与显式失败重试。比如 66 对候选首次处理 50 对，重跑跳过已完成项并处理余下 16 对；校验失败不会阻塞后续页。概览直接读取 claims，并标注模型摘要和防回流标记。
 
@@ -24,9 +24,9 @@ uv build --wheel                  # 成功；42 个文件，必要入口无缺�
 
 ## 推送状态
 
-分支为 `codex/m1-backend-20261009`。此前 GitHub 连接器写入返回 `403 Resource not accessible by integration`，本机也没有可用登录。验收期间用户在另一项任务中完成本机浏览器授权；本轮重新检查 `gh api user` 返回 FangWHao，仓库权限为 ADMIN，远端只有初始 main，尚无同分支 PR。连接器权限未复测。
+已推送分支 `codex/m1-backend-20261009`，并建立[草稿 PR #1](https://github.com/FangWHao/ResearchGraph/pull/1)，目标为 main。此前连接器写入的 403 未复测；本次使用用户恢复的本机 Git/gh 认证完成维护。
 
-本机认证已可用，继续按既有维护授权推送并建立草稿 PR；实际结果与远端 CI 记录追加到 `docs/PROGRESS.md`。主分支保留给评审合并。
+首次推送与 PR 的远端 CI 均通过，验证提交为 `3966eac`；PR 验收输出 111 项测试、88 项固定案例、ruff 和 pyright 全部通过，详情见[远端运行](https://github.com/FangWHao/ResearchGraph/actions/runs/37890556219)。主分支尚未合并；后续文档提交的检查以 PR 上的当前结果为准。
 
 ```bash
 git push -u origin codex/m1-backend-20261009
