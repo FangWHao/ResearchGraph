@@ -5,6 +5,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
+from typing import BinaryIO
 
 import zstandard
 
@@ -14,13 +15,21 @@ def digest(data: bytes) -> str:
 
 
 def atomic_write(path: Path, data: bytes) -> None:
+    import io
+
+    atomic_stream(path, io.BytesIO(data))
+
+
+def atomic_stream(path: Path, stream: BinaryIO, prefix: bytes = b"") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(prefix=".tmp-", dir=path.parent)
     try:
-        with os.fdopen(fd, "wb") as stream:
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
+        with os.fdopen(fd, "wb") as output:
+            output.write(prefix)
+            while block := stream.read(1024 * 1024):
+                output.write(block)
+            output.flush()
+            os.fsync(output.fileno())
         os.replace(name, path)
         directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
         try:

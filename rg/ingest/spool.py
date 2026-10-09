@@ -8,13 +8,13 @@ import uuid
 from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 from rg.ingest.scanner import scan_file
 from rg.ingest.sources import Source, authorized
 from rg.store.database import Store, dumps, now
 from rg.store.locking import TaskBusy
-from rg.store.objects import atomic_write, digest
+from rg.store.objects import atomic_stream, atomic_write, digest
 
 MAX_BYTES = 4 * 1024 * 1024
 EVENTS = {
@@ -38,12 +38,21 @@ def enqueue(root: Path, tool: str, raw: bytes) -> Path:
     return path
 
 
+def enqueue_stream(root: Path, tool: str, stream: BinaryIO, prefix: bytes) -> Path:
+    if tool not in {"claude", "codex"}:
+        raise ValueError("spool 来源必须为 claude 或 codex")
+    path = root / "spool" / f"{time.time_ns()}-{os.getpid()}-{uuid.uuid4().hex}-{tool}.json"
+    atomic_stream(path, stream, prefix)
+    return path
+
+
 def register(store: Store) -> Counter[str]:
     counts: Counter[str] = Counter()
-    directory = store.root / "spool"
-    if not directory.exists():
-        return counts
-    for path in sorted(directory.glob("*.json")):
+    paths = [
+        *(store.root / "spool").glob("*.json"),
+        *(store.root / "snapshots" / "pending").glob("*.json"),
+    ]
+    for path in sorted(paths):
         if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_BYTES:
             counts["spool_held_files"] += 1
             continue
@@ -101,12 +110,16 @@ def _paths(store: Store, tool: str, payload: dict[str, Any]) -> list[Path]:
 
 
 def _ack(store: Store, row: dict[str, Any]) -> None:
-    path = store.root / "spool" / row["filename"]
+    for directory in [store.root / "spool", store.root / "snapshots" / "pending"]:
+        _ack_path(directory / row["filename"], row["object_sha256"])
+
+
+def _ack_path(path: Path, sha: str) -> None:
     # 原件已经在对象库及不可变回执中；不同内容或符号链接不能被当作旧提示删除。
     if path.is_file() and not path.is_symlink() and path.stat().st_size <= MAX_BYTES:
         with path.open("rb") as stream:
             raw = stream.read(MAX_BYTES + 1)
-        if len(raw) <= MAX_BYTES and digest(raw) == row["object_sha256"]:
+        if len(raw) <= MAX_BYTES and digest(raw) == sha:
             path.unlink()
 
 
@@ -149,6 +162,20 @@ def _consume_one(
     state, error = "queued", None
     try:
         payload = json.loads(store.objects.get(row["object_sha256"]))
+        if isinstance(payload, dict) and payload.get("rg_record_type") == "workspace_snapshot":
+            from rg.snapshot.records import consume_record
+
+            if row["tool"] is None:
+                raise ValueError("快照来源未知")
+            consume_record(store, payload, row["tool"], row["object_sha256"])
+            if fault:
+                fault()
+            store.db.execute(
+                "UPDATE jobs SET state='done',error=NULL,updated_at=? WHERE job_id=?",
+                (now(), row["job_id"]),
+            )
+            _ack(store, row)
+            return "done"
         if (
             not isinstance(payload, dict)
             or row["tool"] is None

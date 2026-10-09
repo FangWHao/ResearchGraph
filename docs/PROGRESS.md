@@ -239,3 +239,18 @@
 - 首次针对回归的 1 个失败是测试为两个项目使用同一唯一根目录，修正合成根目录后通过；没有放宽项目/解析器歧义检查。撤回 formatter 对无关 provider 的排版变化，并重建 wheel 比对当前源码。本轮不读取真实完整会话、不调用远程模型、不安装钩子、不改用户设置。
 - 下一步：完成允许清单提交、现有草稿 PR 的新 HEAD 检查和独立恢复包还原后结束本任务。下个会话继续实际钩子与影子快照、运行映射；未指定范围的工作集、MCP 和完整图语义仍需落实，真实参考与质量门槛仍待核对，整个 M0–M4 不标完成。
 - 提交前允许清单检查：git diff --cached --check 无输出、退出码 0；tracked_files=147 staged_files=16 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True。仅公开源码、中文文档与合成测试，凭据/数据库/队列/缓存不入库，远端以本次提交实际结果为准。
+
+## 2026-10-09 · 实际钩子与影子快照基础
+
+- 任务：§2、§6.8、§8.2、§11 的钩子、工作区快照与备份。开始读取进度末尾、相关章节和决定，上一扫描提交 8b40a68 已推送，两项 CI 成功，恢复包已验证。按 openai-docs 技能核对官方 Codex 钩子格式，保留 §14.8 开发会话禁用；完整目标仍是 M0–M4。
+- 改动的文件：新增 rg/hooks、rg/snapshot、tests/golden/test_snapshots_hooks.py；修改 CLI、spool、对象写入、backup、health、版本 7 迁移与迁移测试、pyproject；更新 README、需求落实、决定、PR 草稿与本文件，新增中文快照/钩子验收。
+- 行为：原始输入先原子保存，钩子异常静默 exit 0、不联网、不调模型、不读 transcript、不执行输入命令；明确根目录来自只读清单，init/hook-config 仅生成示例。独立裸仓库/index/暂存和目录句柄保存原始字节、执行位与链接目标，忽略规则有效，大文件/嵌套仓库明确遗漏，超时/忙/变化无有效提交。dirty 无法安全核定时显示未知，不由 Git status 重读遗漏文件。
+- 持久性：独立快照原件与不可变回执追加入库，原提示先确认也不影响快照；提交/树/blob 全部存在才固定引用。原目录删除、提交后退出、队列缺失均可恢复一次。版本 6→7 失败整体回滚，旧快照不补造元数据。backup 与写入共用影子锁、不跟随队列链接，检查备份自身引用后才写成功清单；health 统计 skipped/partial/async_race/旧元数据未知。
+- uv sync --locked：Resolved 23 packages，本项目重新安装；uv run rg --help、snapshot --help、hook-config --help 退出码均为 0。实际安装 rg-hook 子进程：installed_hook_exit=0 stdout_bytes=0 stderr_bytes=0 raw_unchanged=True sqlite_created=False。
+- uv run pytest -q：246 passed in 51.75s；uv run pytest tests/golden -q：203 passed in 37.90s。新增 23 项快照/钩子固定案例及版本 7 迁移回滚；完整 §15 尚未通过。
+- uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations。
+- cd web && pnpm test:browser：4 passed (7.8s)，现有本地 HTTP 与 Chromium 交互通过；前端源码未修改。uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl。归档核对 wheel_files=61 source_resources=56 required_missing=0 source_mismatches=0 actual_secret_matches=0 private_or_static_files=0，rg-hook 入口存在。
+- 本机公开源码最终 20 次引擎基准：p95_ms=1426 skipped=0 valid_new_snapshots=20 captured_unique_paths=157，user_index_unchanged=True forbidden_snapshot_paths=0 actual_secret_matches=0 hooks_installed=False。按超过 300 ms 的规则保存 async 模式和请求/采集时间；不是实际客户端整条调用链的验收。本机独立备份恢复 objects=64 events=0 valid_shadow_snapshots=42 integrity=ok，只有公开源码快照和缺口元数据。
+- 验收修复：第一次裸仓库初始化的 work-tree 参数冲突已修正；挂载盘暂存的 20 次超时如实记录，随后改进暂存、目录访问和元数据。坏 JSON 的异常类测试修正为 JSONDecodeError；错误参数测试已隔离 RG_DATA_DIR，并撤回本任务产生的 13 行类名日志，其他记录未删。补齐完整引用、原目录删除、备份锁与链接、大文件不重读等检查，没有放宽引用/预算校验或把失败当成成功。
+- 下一步：完成允许清单提交、现有草稿 PR 新 HEAD 的远端检查和恢复包独立还原后结束本任务。下个会话继续运行/编辑/产物映射、后台大文件摘要、未指定范围的工作集、MCP 和完整图语义；真实参考、正式钩子与质量门槛仍待落实，整个 M0–M4 不标完成。
+- 提交前允许清单检查：git diff --cached --check 无输出、退出码 0；tracked_files=158 staged_files=24 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True。仅公开源码、中文文档与合成测试，凭据/快照/数据库/队列/缓存不入库，远端结果按新提交核对。

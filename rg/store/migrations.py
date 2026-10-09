@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 6
+LATEST_VERSION = 7
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -63,6 +63,18 @@ MIGRATIONS = {
         "SELECT RAISE(ABORT,'spool receipt is append-only'); END",
         "CREATE TRIGGER spool_no_delete BEFORE DELETE ON spool_receipts BEGIN "
         "SELECT RAISE(ABORT,'spool receipt is append-only'); END",
+    ),
+    7: (
+        "ALTER TABLE workspace_snapshots ADD COLUMN snapshot_key TEXT",
+        "ALTER TABLE workspace_snapshots ADD COLUMN record_sha256 TEXT",
+        "ALTER TABLE workspace_snapshots ADD COLUMN async_race INTEGER",
+        "ALTER TABLE workspace_snapshots ADD COLUMN metadata TEXT",
+        "ALTER TABLE workspace_snapshots ADD COLUMN recorded_at TEXT",
+        "CREATE UNIQUE INDEX workspace_snapshots_key ON workspace_snapshots(snapshot_key)",
+        "CREATE TRIGGER snapshot_no_update BEFORE UPDATE ON workspace_snapshots BEGIN "
+        "SELECT RAISE(ABORT,'snapshot is append-only'); END",
+        "CREATE TRIGGER snapshot_no_delete BEFORE DELETE ON workspace_snapshots BEGIN "
+        "SELECT RAISE(ABORT,'snapshot is append-only'); END",
     ),
 }
 

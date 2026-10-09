@@ -50,6 +50,12 @@ def parser() -> argparse.ArgumentParser:
     )
     commands = cli.add_subparsers(dest="command", required=True)
     commands.add_parser("init", help="建立数据库；不修改用户工具配置")
+    hook_config = commands.add_parser("hook-config", help="生成钩子示例与根目录清单，不安装钩子")
+    hook_config.add_argument("--output", type=Path, required=True)
+    snapshot = commands.add_parser("snapshot", help="手工拍影子快照，或实测 p95 决定钩子模式")
+    snapshot.add_argument("--project", required=True)
+    snapshot.add_argument("--root", type=Path, required=True)
+    snapshot.add_argument("--benchmark", type=int, help="拍 5–100 次；p95 超过 300 ms 改为异步")
     project = commands.add_parser("project", help="登记项目与根目录")
     project_sub = project.add_subparsers(dest="project_command", required=True)
     add = project_sub.add_parser("add")
@@ -141,13 +147,33 @@ def run(args: argparse.Namespace, store: Store) -> object:
         )
         return {"server": "stopped"}
     if args.command == "init":
+        from rg.snapshot.config import examples, export_registry
+
+        export_registry(store)
+        output = store.root / "hook-examples"
+        if not output.exists():
+            examples(store, output)
         return {
             "data_dir": str(store.root),
             "schema_version": store.db.execute("PRAGMA user_version").fetchone()[0],
+            "hook_examples": str(output),
+            "hooks_installed": False,
         }
+    if args.command == "hook-config":
+        from rg.snapshot.config import examples
+
+        return examples(store, args.output)
+    if args.command == "snapshot":
+        from rg.snapshot.cli import snapshot
+
+        return snapshot(store, args.project, args.root, args.benchmark)
     if args.command == "project":
         if args.project_command == "add":
-            return {"project_id": store.project(args.name, [args.root, *args.alias])}
+            from rg.snapshot.config import export_registry
+
+            project_id = store.project(args.name, [args.root, *args.alias])
+            export_registry(store)
+            return {"project_id": project_id}
         preview = store.db.execute(
             "SELECT 1 FROM remote_previews WHERE project_id = ? AND preview_sha256 = ?",
             (args.project_id, args.ack_preview),

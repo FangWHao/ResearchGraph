@@ -170,3 +170,30 @@ def test_v5_spool_migration_rolls_back_and_does_not_fabricate_sources(tmp_path: 
     assert recovered.db.execute("SELECT count(*) FROM ingest_sources").fetchone()[0] == 0
     assert recovered.db.execute("SELECT count(*) FROM spool_receipts").fetchone()[0] == 0
     recovered.close()
+
+
+def test_v6_snapshot_migration_rolls_back_and_keeps_legacy_rows(tmp_path: Path, monkeypatch):
+    root, raw = legacy_store(tmp_path, monkeypatch, version=6)
+    connection = sqlite3.connect(root / "rg.db")
+    connection.execute(
+        "INSERT INTO workspace_snapshots(taken_at,skipped) VALUES ('2026-10-09','legacy')"
+    )
+    connection.commit()
+    connection.close()
+    with monkeypatch.context() as change:
+        change.setitem(migrations.MIGRATIONS, 7, (*migrations.MIGRATIONS[7], "INVALID SQL"))
+        with pytest.raises(sqlite3.OperationalError):
+            Store(root)
+    connection = sqlite3.connect(root / "rg.db")
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
+    assert "snapshot_key" not in {
+        value[1] for value in connection.execute("PRAGMA table_info(workspace_snapshots)")
+    }
+    connection.close()
+    recovered = Store(root)
+    assert recovered.raw(1) == raw
+    row = recovered.db.execute("SELECT * FROM workspace_snapshots").fetchone()
+    assert (
+        row["skipped"] == "legacy" and row["snapshot_key"] is None and row["record_sha256"] is None
+    )
+    recovered.close()

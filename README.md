@@ -4,7 +4,7 @@
 
 当前入口是本文件。完整规格见 [执行规格](docs/ResearchGraph_执行版_v2.md)，当前开发范围见 [需求落实情况](docs/REQUIREMENTS_STATUS.md)，接续工作先读 [开发进度](docs/PROGRESS.md) 最后 40 行与 [开发决定](docs/DECISIONS.md)。
 
-当前交付包含研究记录后端与本地界面：流式导入、持久来源轮询与 spool 消费、原文对象库、检索、前置实测 token、有界提取、精确字节定位、跨会话链接、结构化概览、独立原话规则确认、人工复核与修改，以及问题、时间线、证据、健康和研究图页面。**尚未完成整个 M0–M4，也尚未通过 Atlas 的真实效果验收。** 2026-10-09 用户授权前端子 agent 提前开发界面；真实质量门槛继续保留。
+当前交付包含研究记录后端与本地界面：流式导入、持久来源轮询与 spool 消费、只写原件的钩子、影子 Git 快照、原文对象库、检索、前置实测 token、有界提取、精确字节定位、跨会话链接、结构化概览、独立原话规则确认、人工复核与修改，以及问题、时间线、证据、健康和研究图页面。**尚未完成整个 M0–M4，也尚未通过 Atlas 的真实效果验收。** 2026-10-09 用户授权前端子 agent 提前开发界面；真实质量门槛继续保留。
 
 2026-10-09 用户确认将完整请求的输入上限改为 **128,000 token，允许调高**。这是对原规格 §7.2 的 24k 上限的明确调整，理由和边界见 [开发决定](docs/DECISIONS.md)。源规格保留原文。
 
@@ -84,7 +84,28 @@ uv run rg --data-dir /tmp/rg-demo scan --retry-failed
 
 临时文件不消费；符号链接和超过 4 MiB 的提示原件保留，单次扫描输出 `spool_held_files`，不会标成成功。原件与回执已经提交后，即使队列文件缺失，恢复或 backup 的副本仍能继续消费；完成后只清理内容匹配的队列文件。`health` 的 `ingest` 提供登记来源、已知路径、回执、未完成和失败提示数；未提交消费记录不等于进程仍在运行。
 
-本轮提供 spool 库入口与消费协议，尚未安装 `rg-hook` 或修改 Claude/Codex 设置；快照、工具运行映射与跨 worktree 自动归属仍待实现。验收见 [扫描与 spool 验收](docs/acceptance/M2扫描与spool验收_20261009.md)。
+扫描与消费验收见 [扫描与 spool 验收](docs/acceptance/M2扫描与spool验收_20261009.md)。工具运行映射与跨 worktree 自动归属仍待实现。
+
+## 影子快照与钩子示例
+
+```bash
+# 使用已经登记的项目和根目录；不会操作用户仓库的 index。
+uv run rg --data-dir /tmp/rg-demo snapshot --project PROJECT_ID --root /workspace/demo
+# 实测快照引擎 p95；超过 300 ms 或任一次失败，后续钩子改用异步快照。
+uv run rg --data-dir /tmp/rg-demo snapshot --project PROJECT_ID --root /workspace/demo --benchmark 20
+# 将独立待登记快照复制入对象库并追加入库。
+uv run rg --data-dir /tmp/rg-demo scan
+# 输出可检查的 Claude/Codex 配置；目录必须尚不存在。
+uv run rg --data-dir /tmp/rg-demo hook-config --output /tmp/rg-hook-examples
+```
+
+`uv sync` 提供 `rg-hook` 命令。`init` 在数据目录生成示例，`project add` 更新只读根目录清单；两者都不会修改个人工具设置或启用钩子。当前仍遵守 §14.8，M2 正式验收前不把钩子接入开发本项目的会话。以后启用时，Codex 需在 `/hooks` 信任定义，修改后重新信任；官方协议见 [Codex 钩子](https://learn.chatgpt.com/docs/hooks)和 [Claude Code 钩子](https://code.claude.com/docs/en/hooks)。Codex 的 SessionEnd 即使设为 async 也按客户端同步执行，入口仍只快速写入原件。
+
+钩子原始字节先原子写入 spool，任何异常都退出 0，不输出会话上下文、不联网、不调模型、不读 transcript。UserPromptSubmit 仅拍明确登记根目录的快照；未登记或归属歧义保存原件并记录错误类名。异步执行的是隔离 Python 下的本软件入口，输入里的命令和项目里的同名模块都不会执行。快照单独进入待登记队列，因此原始提示先被确认也不会丢掉晚到的快照记录。
+
+影子仓库位于数据目录的 `snapshots/项目ID.git`，使用独立 index，遵守 `.gitignore`、`.rgignore`。保留原始文件字节、可执行位及链接目标文字，链接不跟随。大于 5,000,000 字节的文件只记录路径、大小、修改时间；嵌套仓库也明确记录未捕获，后台摘要和运行映射仍待实现。超时、忙或读取期间变化没有有效 shadow_commit；遗漏、竞态和采集起止保存在追加元数据中。无法安全测定 dirty 时显示缺失，不运行过滤器或通过 status 重新读取未捕获文件。
+
+本机公开源码的 20 次手工引擎基准 p95 为 1426 ms，全部成功；模式仍为异步。157 个路径的影子对象检查未发现实际密钥或私有目录，用户 index 一致。这是引擎基准，尚未验收真实 Claude/Codex 客户端整条钩子耗时。`health.snapshots` 区分 skipped、partial、async_race 和旧元数据缺失；日志错误类名没有被当成完整失败账本。备份避开影子仓库写入，保留队列链接而不读取其目标。完整证据见 [快照与钩子验收](docs/acceptance/M2快照与钩子验收_20261009.md)。
 
 ## 远程模型
 

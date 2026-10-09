@@ -167,4 +167,16 @@ class Store:
             ).fetchone()[0],
         }
         result["extraction"] = monitor(self, project, day, daily_budget, limit, offset)
+        result["snapshots"] = dict(
+            self.db.execute(
+                "SELECT count(*) AS total, "
+                "count(CASE WHEN skipped IS NOT NULL THEN 1 END) AS skipped, "
+                "count(CASE WHEN async_race=1 THEN 1 END) AS async_race, "
+                "count(CASE WHEN json_array_length(metadata,'$.omitted_files')>0 "
+                "THEN 1 END) AS partial, "
+                "count(CASE WHEN metadata IS NULL THEN 1 END) AS metadata_unknown "
+                "FROM workspace_snapshots WHERE (? IS NULL OR project_id=?)",
+                (project, project),
+            ).fetchone()
+        )
         return result

@@ -7,6 +7,7 @@ dependencies = ["httpx>=0.28,<1", "jsonschema>=4.23,<5", "zstandard>=0.23,<1"]
 
 [project.scripts]
 rg = "rg.cli.main:main"
+rg-hook = "rg.hooks.entry:main"
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "ruff>=0.11", "pyright>=1.1.400"]
