@@ -24,9 +24,9 @@ uv build --wheel                  # 成功；42 个文件，必要入口无缺�
 
 ## 推送状态
 
-本地分支为 `codex/m1-backend-20261009`。GitHub 连接器创建 tree 和分支均返回 `403 Resource not accessible by integration`；本机 HTTPS 缺少可用登录，SSH 返回 `Permission denied (publickey)`。尚未推送、未创建 PR，GitHub CI 未执行；CI 配置只通过本地对应命令检查。
+分支为 `codex/m1-backend-20261009`。此前 GitHub 连接器写入返回 `403 Resource not accessible by integration`，本机也没有可用登录。验收期间用户在另一项任务中完成本机浏览器授权；本轮重新检查 `gh api user` 返回 FangWHao，仓库权限为 ADMIN，远端只有初始 main，尚无同分支 PR。连接器权限未复测。
 
-恢复具备仓库写入权限的 GitHub 连接或本机 Git 认证后，推送该分支并用上面的内容建立草稿 PR。
+本机认证已可用，继续按既有维护授权推送并建立草稿 PR；实际结果与远端 CI 记录追加到 `docs/PROGRESS.md`。主分支保留给评审合并。
 
 ```bash
 git push -u origin codex/m1-backend-20261009
