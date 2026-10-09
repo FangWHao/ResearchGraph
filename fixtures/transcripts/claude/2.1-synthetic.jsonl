@@ -1,0 +1,7 @@
+{"type":"user","uuid":"u1","sessionId":"synthetic-claude","cwd":"/workspace/demo","timestamp":"2026-10-01T01:00:00Z","message":{"role":"user","content":"采用方法甲，仅用于 data_v2 的 cnv 步骤。"}}
+{"type":"assistant","uuid":"a1","sessionId":"synthetic-claude","message":{"model":"synthetic-model","content":[{"type":"text","text":"先做一次测试。"},{"type":"tool_use","id":"call-1","name":"Bash","input":{"command":"python analysis.py"}}]}}
+{"type":"user","uuid":"r1","sessionId":"synthetic-claude","message":{"content":[{"type":"tool_result","tool_use_id":"call-1","content":"exit_code: 0\nresult: 42"}]}}
+{"type":"system","subtype":"compact_boundary","sessionId":"synthetic-claude","compactMetadata":{"trigger":"auto","preTokens":800000}}
+{"type":"user","uuid":"s1","sessionId":"synthetic-claude","isCompactSummary":true,"message":{"content":"旧摘要声称结果可靠。"}}
+{"type":"user","uuid":"u2","sessionId":"synthetic-claude","message":{"content":"先不用方法甲，暂缓；阴性结果保留。"}}
+{"type":"new-unknown-type","sessionId":"synthetic-claude","payload":{"preserve":true}}

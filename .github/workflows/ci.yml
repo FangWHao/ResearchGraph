@@ -1,0 +1,40 @@
+name: 后端验收
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: 取回代码
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: 安装固定版本 uv 与 Python
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: '0.12.24'
+          python-version: '3.12'
+          enable-cache: true
+      - name: 按锁文件安装依赖
+        run: uv sync --locked
+      - name: 全部离线测试
+        run: uv run --no-sync pytest -q
+      - name: 固定案例
+        run: uv run --no-sync pytest tests/golden -q
+      - name: 代码检查
+        run: uv run --no-sync ruff check rg tests scripts
+      - name: 类型检查
+        run: uv run --no-sync pyright rg
+      - name: 命令入口
+        run: uv run --no-sync rg --help

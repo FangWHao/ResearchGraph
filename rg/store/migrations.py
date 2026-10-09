@@ -1,0 +1,38 @@
+from __future__ import annotations
+
+import sqlite3
+
+LATEST_VERSION = 2
+MIGRATIONS = {
+    2: (
+        "CREATE TABLE candidate_locations ("
+        "extraction_run_id INTEGER NOT NULL REFERENCES extraction_runs, "
+        "event_id INTEGER NOT NULL REFERENCES raw_events, "
+        "byte_start INTEGER NOT NULL CHECK(byte_start >= 0), "
+        "byte_end INTEGER NOT NULL CHECK(byte_end > byte_start), "
+        "cue TEXT NOT NULL, source TEXT NOT NULL CHECK(source IN ('rule', 'model')), "
+        "PRIMARY KEY(extraction_run_id, event_id, byte_start, byte_end, cue, source))",
+        "CREATE INDEX candidate_locations_event ON candidate_locations(event_id)",
+    )
+}
+
+
+def migrate(db: sqlite3.Connection) -> None:
+    version = db.execute("PRAGMA user_version").fetchone()[0]
+    if version > LATEST_VERSION:
+        raise ValueError("数据库版本高于当前程序，不能降级打开")
+    while version < LATEST_VERSION:
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            if version >= LATEST_VERSION:
+                db.commit()
+                return
+            for statement in MIGRATIONS[version + 1]:
+                db.execute(statement)
+            db.execute(f"PRAGMA user_version = {version + 1}")
+            db.commit()
+            version += 1
+        except BaseException:
+            db.rollback()
+            raise

@@ -1,0 +1,25 @@
+.venv/
+.cache/
+.tools/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+*.egg-info/
+.env
+.env.*
+!.env.example
+*key*
+*Key*
+*KEY*
+*secret*
+*credential*
+*.db
+*.db-wal
+*.db-shm
+.researchgraph/
+private/
+dist/
+build/
+# 本地设计书归档；公开仓库使用中文执行规格。
+/*.docx
