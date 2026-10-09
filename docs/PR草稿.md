@@ -25,3 +25,9 @@ DeepSeek 合成提取测试得到 5 条候选、0 个覆盖缺口；合成链接
 本地分支为 `codex/m1-backend-20261009`。GitHub 连接器创建 tree 和分支均返回 `403 Resource not accessible by integration`；本机 HTTPS 缺少可用登录，SSH 返回 `Permission denied (publickey)`。尚未推送、未创建 PR，GitHub CI 未执行；CI 配置只通过本地对应命令检查。
 
 恢复具备仓库写入权限的 GitHub 连接或本机 Git 认证后，推送该分支并用上面的内容建立草稿 PR。
+
+```bash
+git push -u origin codex/m1-backend-20261009
+# 在其他目录恢复完整代码：
+git clone /mnt/d/ResearchGraph/.cache/researchgraph-backend-20261009.bundle ResearchGraph
+```
