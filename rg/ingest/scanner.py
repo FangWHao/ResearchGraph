@@ -9,6 +9,7 @@ from typing import Any
 
 from rg.ingest.common import Parsed, injection, parse
 from rg.store.database import Store, now
+from rg.store.locking import exclusive
 from rg.store.objects import digest
 
 PARSER_VERSION = "1"
@@ -21,7 +22,11 @@ def _session(store: Store, path: Path, tool: str, project_id: str | None) -> int
         record = json.loads(first)
     except (ValueError, UnicodeError):
         record = {}
+    if not isinstance(record, dict):
+        record = {}
     payload = record.get("payload") or {}
+    if not isinstance(payload, dict):
+        payload = {}
     native = (
         payload.get("id")
         if tool == "codex" and record.get("type") == "session_meta"
@@ -29,6 +34,9 @@ def _session(store: Store, path: Path, tool: str, project_id: str | None) -> int
     ) or path.stem
     agent = record.get("agentId") or (path.stem if "subagents" in path.parts else "")
     cwd = payload.get("cwd") if tool == "codex" else record.get("cwd")
+    native = native if isinstance(native, str) and native else path.stem
+    agent = agent if isinstance(agent, str) else ""
+    cwd = cwd if isinstance(cwd, str) else None
     with store.transaction() as db:
         db.execute(
             "INSERT OR IGNORE INTO sessions "
@@ -185,6 +193,14 @@ def scan_file(
     if tool not in {"claude", "codex"}:
         raise ValueError("来源必须为 claude 或 codex")
     path = path.resolve()
+    key = digest(str(path).encode())
+    with exclusive(store.root / "locks" / "sources" / (key + ".lock"), "该来源文件正在扫描"):
+        return _scan_file(store, path, tool, project_id, fault)
+
+
+def _scan_file(
+    store: Store, path: Path, tool: str, project_id: str | None, fault: Callable[[], None] | None
+) -> dict[str, int]:
     session = _session(store, path, tool, project_id)
     instance = _instance(store, path, tool, session)
     file_id, offset = instance["file_instance_id"], instance["committed_offset"]

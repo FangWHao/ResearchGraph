@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 5
+LATEST_VERSION = 6
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -48,6 +48,21 @@ MIGRATIONS = {
         "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
         "PRIMARY KEY(config_key,segment_id))",
         "CREATE INDEX extraction_plans_session ON extraction_plans(session_pk,config_key,state)",
+    ),
+    6: (
+        "CREATE TABLE ingest_sources ("
+        "path TEXT PRIMARY KEY, tool TEXT NOT NULL CHECK(tool IN ('claude','codex')), "
+        "project_id TEXT REFERENCES projects, "
+        "kind TEXT NOT NULL CHECK(kind IN ('file','directory')), "
+        "registered_at TEXT NOT NULL)",
+        "CREATE TABLE spool_receipts ("
+        "receipt_id TEXT PRIMARY KEY, filename TEXT NOT NULL, object_sha256 TEXT NOT NULL, "
+        "tool TEXT, job_id INTEGER NOT NULL UNIQUE REFERENCES jobs, recorded_at TEXT NOT NULL)",
+        "CREATE INDEX jobs_spool_queue ON jobs(kind,state,updated_at)",
+        "CREATE TRIGGER spool_no_update BEFORE UPDATE ON spool_receipts BEGIN "
+        "SELECT RAISE(ABORT,'spool receipt is append-only'); END",
+        "CREATE TRIGGER spool_no_delete BEFORE DELETE ON spool_receipts BEGIN "
+        "SELECT RAISE(ABORT,'spool receipt is append-only'); END",
     ),
 }
 

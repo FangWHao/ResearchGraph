@@ -79,7 +79,7 @@ def test_v4_plan_migration_is_atomic_and_does_not_invent_history(tmp_path: Path,
     recovered = Store(root)
     assert recovered.raw(1) == raw
     assert recovered.db.execute("SELECT count(*) FROM extraction_plans").fetchone()[0] == 0
-    assert recovered.db.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert recovered.db.execute("PRAGMA user_version").fetchone()[0] == migrations.LATEST_VERSION
     recovered.close()
 
 
@@ -147,3 +147,26 @@ def test_v2_upgrade_preserves_locations_and_failed_v3_rolls_back(tmp_path: Path,
     assert raw[position[0] : position[1]].decode() == "保留"
     assert value.db.execute("SELECT count(*) FROM link_progress").fetchone()[0] == 0
     value.close()
+
+
+def test_v5_spool_migration_rolls_back_and_does_not_fabricate_sources(tmp_path: Path, monkeypatch):
+    root, raw = legacy_store(tmp_path, monkeypatch, version=5)
+    with monkeypatch.context() as change:
+        change.setitem(migrations.MIGRATIONS, 6, (*migrations.MIGRATIONS[6], "INVALID SQL"))
+        with pytest.raises(sqlite3.OperationalError):
+            Store(root)
+    connection = sqlite3.connect(root / "rg.db")
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert (
+        connection.execute(
+            "SELECT count(*) FROM sqlite_master "
+            "WHERE name IN ('ingest_sources','spool_receipts','jobs_spool_queue')"
+        ).fetchone()[0]
+        == 0
+    )
+    connection.close()
+    recovered = Store(root)
+    assert recovered.raw(1) == raw
+    assert recovered.db.execute("SELECT count(*) FROM ingest_sources").fetchone()[0] == 0
+    assert recovered.db.execute("SELECT count(*) FROM spool_receipts").fetchone()[0] == 0
+    recovered.close()

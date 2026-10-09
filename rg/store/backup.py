@@ -17,7 +17,13 @@ def backup(store: Store, destination: Path) -> dict[str, int]:
     target = sqlite3.connect(destination / "rg.db")
     try:
         store.db.backup(target)
-        shas = [row[0] for row in target.execute("SELECT DISTINCT object_sha256 FROM raw_events")]
+        shas = [
+            row[0]
+            for row in target.execute(
+                "SELECT object_sha256 FROM raw_events "
+                "UNION SELECT object_sha256 FROM spool_receipts"
+            )
+        ]
         for sha in shas:
             store.objects.get(sha)
             source = store.objects.path(sha)

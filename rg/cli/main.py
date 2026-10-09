@@ -63,6 +63,15 @@ def parser() -> argparse.ArgumentParser:
     imported.add_argument("path", type=Path)
     imported.add_argument("--tool", choices=["claude", "codex"], required=True)
     imported.add_argument("--project")
+    scanned = commands.add_parser("scan", help="轮询显式来源与已导入路径，消费 spool；不调模型")
+    scanned.add_argument(
+        "--path", type=Path, action="append", default=[], help="登记持久扫描文件或目录"
+    )
+    scanned.add_argument("--tool", choices=["claude", "codex"])
+    scanned.add_argument("--project", help="登记来源的显式项目归属")
+    scanned.add_argument("--watch", action="store_true", help="持续扫描；Ctrl+C 停止")
+    scanned.add_argument("--interval", type=float, default=2, help="轮询间隔秒数，默认 2")
+    scanned.add_argument("--retry-failed", action="store_true", help="显式重试失败的 spool 提示")
     health = commands.add_parser("health", help="本地查看覆盖缺口、模型用量与提取告警")
     health.add_argument("--project", help="仅筛选提取指标和覆盖缺口，日额度仍为全库")
     health.add_argument("--day", help="模型用量日期 YYYY-MM-DD，默认当天 UTC")
@@ -153,6 +162,24 @@ def run(args: argparse.Namespace, store: Store) -> object:
         paths = sorted(args.path.rglob("*.jsonl")) if args.path.is_dir() else [args.path]
         results = [scan_file(store, path, args.tool, args.project) for path in paths]
         return {"files": len(paths), "events": sum(x.get("events", 0) for x in results)}
+    if args.command == "scan":
+        from rg.ingest.sources import register
+        from rg.ingest.watch import cycle, watch
+        from rg.store.database import dumps
+
+        if args.path and not args.tool:
+            raise ValueError("登记扫描来源必须指定 --tool")
+        if not args.path and (args.tool or args.project):
+            raise ValueError("--tool/--project 必须与 --path 一起指定")
+        for path in args.path:
+            register(store, path, args.tool, args.project)
+        if args.watch:
+            try:
+                for result in watch(store, args.interval, args.retry_failed):
+                    print(dumps(result), flush=True)
+            except KeyboardInterrupt:
+                return {"watch": "stopped"}
+        return cycle(store, args.retry_failed)
     if args.command == "health":
         mark_deleted(store)
         return store.health(args.project, args.day, args.daily_budget, args.limit, args.offset)

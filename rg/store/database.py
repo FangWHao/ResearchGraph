@@ -150,5 +150,21 @@ class Store:
         }.items():
             result[name] = self.db.execute(query).fetchone()[0]
         result["revision"] = self.revision()
+        result["ingest"] = {
+            "registered_sources": self.db.execute("SELECT count(*) FROM ingest_sources").fetchone()[
+                0
+            ],
+            "known_source_paths": self.db.execute(
+                "SELECT count(DISTINCT path) FROM source_files"
+            ).fetchone()[0],
+            "spool_receipts": self.db.execute("SELECT count(*) FROM spool_receipts").fetchone()[0],
+            "spool_unfinished": self.db.execute(
+                "SELECT count(*) FROM jobs WHERE kind='spool_hint' "
+                "AND state IN ('queued','running')"
+            ).fetchone()[0],
+            "spool_failed": self.db.execute(
+                "SELECT count(*) FROM jobs WHERE kind='spool_hint' AND state='failed'"
+            ).fetchone()[0],
+        }
         result["extraction"] = monitor(self, project, day, daily_budget, limit, offset)
         return result
