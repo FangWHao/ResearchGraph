@@ -9,13 +9,16 @@ from pathlib import Path
 from rg.api.server import LocalServer
 from rg.extract.validate import persist
 from rg.ingest.scanner import scan_file
+from rg.ingest.sources import register as register_source
+from rg.ingest.spool import enqueue
+from rg.ingest.spool import register as register_spool
 from rg.store.database import Store, dumps, now
 from tests.golden.test_ingestion import lines, record
 
 
 def seed(store: Store, directory: Path) -> None:
     project = store.project("合成研究 · 界面信号验证", [Path("/synthetic/research")])
-    store.project("合成空项目", [Path("/synthetic/empty")])
+    empty_project = store.project("合成空项目", [Path("/synthetic/empty")])
     messages = [
         "哪些局部界面信号值得继续验证？",
         "界面分层分析",
@@ -212,6 +215,91 @@ def seed(store: Store, directory: Path) -> None:
         "UPDATE coverage SET segment_id='batch-segment' WHERE event_id=? AND stage='pass2'",
         (event_id,),
     )
+    seed_health(store, project, empty_project, batch_project, source, batch_source)
+
+
+def seed_health(
+    store: Store,
+    project: str,
+    empty_project: str,
+    batch_project: str,
+    source: Path,
+    batch_source: Path,
+) -> None:
+    """合成统计边界；快照行不代表实际拍摄或引擎成功验收。"""
+    register_source(store, source, "claude", project)
+    register_source(store, batch_source, "claude", batch_project)
+    for state in ("queued", "running", "failed"):
+        path = enqueue(
+            store.root,
+            "claude",
+            dumps({"hook_event_name": "SessionStart", "session_id": f"synthetic-{state}"}).encode(),
+        )
+        register_spool(store)
+        store.db.execute(
+            "UPDATE jobs SET state=?,error=? WHERE job_id="
+            "(SELECT job_id FROM spool_receipts WHERE filename=?)",
+            (state, "合成失败边界" if state == "failed" else None, path.name),
+        )
+    omitted = [{"path": "synthetic-large.bin", "reason": "large_file"}]
+    rows = [
+        (project, "synthetic-timeout", 1, {"omitted_files": omitted}),
+        (project, None, 1, {"omitted_files": omitted}),
+        (project, None, None, None),
+        (project, None, 0, {"omitted_files": []}),
+        (empty_project, "synthetic-unavailable", 0, {"omitted_files": []}),
+    ]
+    for index, (owner, skipped, async_race, metadata) in enumerate(rows):
+        store.db.execute(
+            "INSERT INTO workspace_snapshots "
+            "(project_id,trigger,skipped,taken_at,snapshot_key,async_race,metadata,recorded_at) "
+            "VALUES (?,'synthetic_browser',?,?,?,?,?,?)",
+            (
+                owner,
+                skipped,
+                "2026-10-09T12:00:00Z",
+                f"synthetic-health-{index}",
+                async_race,
+                dumps(metadata) if metadata is not None else None,
+                now(),
+            ),
+        )
+    seed_model_observations(store, project)
+
+
+def seed_model_observations(store: Store, project: str) -> None:
+    """构造未知与零值的合成尝试账本；不执行计数或生成请求。"""
+    for stage, sent, status, tokens in (
+        ("pass1", 0, "pending", None),
+        ("pass2", 1, "invalid", 0),
+    ):
+        timestamp = now()
+        run = store.db.execute(
+            "INSERT INTO extraction_runs (job_key,stage,input_event_ids,status,created_at) "
+            "VALUES (?,?,'[]',?,?)",
+            (f"synthetic-health-{stage}", stage, status, timestamp),
+        ).lastrowid
+        store.db.execute(
+            "INSERT INTO model_attempts "
+            "(extraction_run_id,project_id,stage,provider,model,segment_id,input_budget,"
+            "output_budget,measured_input_tokens,input_tokens,output_tokens,sent,status,"
+            "failure_kind,created_at,finished_at) "
+            "VALUES (?,?,?,'synthetic_fixture','synthetic_model',?,2000,100,?,?,?,?,?,?,?,?)",
+            (
+                run,
+                project,
+                stage,
+                f"synthetic-health-{stage}",
+                tokens,
+                tokens,
+                tokens,
+                sent,
+                status,
+                "citation" if status == "invalid" else None,
+                timestamp,
+                timestamp if status == "invalid" else None,
+            ),
+        )
 
 
 def main() -> None:

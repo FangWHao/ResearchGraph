@@ -60,6 +60,13 @@ export interface HealthData {
   events: number; unknown: number; bad_lines: number; unassigned_sessions: number;
   pending: number; manual_jobs: number; revision: number; global_counts: boolean;
   compression_points: number; hook_failures: number | null; hook_failures_reason: string;
+  ingest?: {
+    registered_sources: number; known_source_paths: number; spool_receipts: number;
+    spool_unfinished: number; spool_failed: number;
+  };
+  snapshots?: {
+    total: number; skipped: number; async_race: number; partial: number; metadata_unknown: number;
+  };
   sources: {
     file_instance_id: number; path: string; tool: string; last_read: string | null;
     committed_offset: number; cursor_lag_bytes: number | null; cleanup_risk: string | null; status: string;
@@ -75,6 +82,7 @@ export interface HealthData {
       known_input_tokens: number; known_output_tokens: number; unsettled_sent_attempts: number;
     };
     stages: { stage: string; attempts: number; sent: number; mean_utilization: number | null;
+      utilization_samples?: number; validation_samples?: number;
       validation_rejections: number; citation_failures: number }[];
   };
 }

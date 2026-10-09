@@ -1,0 +1,27 @@
+.health-view .health-columns { align-items: stretch; }
+.health-view .panel { min-width: 0; }
+.health-view .panel h3 .eyebrow { margin-top: 7px; letter-spacing: .3px; }
+.health-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 20px 14px; margin: 24px 0 20px; }
+.health-metrics div { min-width: 0; }
+.health-metrics dt { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.health-metrics dd { font-size: 27px; line-height: 1.4; margin: 7px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.health-explanation { margin: 13px 0 0; color: var(--muted); font-size: 13px; line-height: 1.8; }
+.health-details { margin-top: 14px; color: var(--muted); font-size: 13px; }
+.health-details summary { cursor: pointer; width: fit-content; line-height: 1.8; }
+.health-details p { font-size: 13px; margin: 9px 0 0; }
+.health-details summary:focus-visible { outline: 2px solid #53665a; outline-offset: 3px; }
+.health-view .table-scroll { max-width: 100%; overflow-x: auto; }
+.health-view .table-scroll table { min-width: 620px; }
+.health-view .table-scroll th[scope="row"] { text-align: left; font-weight: 500; }
+.health-view .table-scroll td small { display: block; color: var(--muted); margin-top: 5px; white-space: normal; }
+.health-view .usage-details { flex-wrap: wrap; }
+.health-retry { text-align: center; }
+.health-retry .empty-state { margin-bottom: 12px; }
+@media (max-width: 760px) {
+  .health-view .quality-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+  .health-view .health-metrics { gap: 18px 10px; }
+  .health-view .health-metrics dd { font-size: 25px; }
+  .health-view .panel h3 { display: block; line-height: 1.5; }
+  .health-view .panel h3 .eyebrow { display: block; }
+  .health-view .panel h3 > span:not(.eyebrow) { display: inline; margin-left: 8px; }
+}

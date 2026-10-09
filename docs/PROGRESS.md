@@ -254,3 +254,15 @@
 - 验收修复：第一次裸仓库初始化的 work-tree 参数冲突已修正；挂载盘暂存的 20 次超时如实记录，随后改进暂存、目录访问和元数据。坏 JSON 的异常类测试修正为 JSONDecodeError；错误参数测试已隔离 RG_DATA_DIR，并撤回本任务产生的 13 行类名日志，其他记录未删。补齐完整引用、原目录删除、备份锁与链接、大文件不重读等检查，没有放宽引用/预算校验或把失败当成成功。
 - 下一步：完成允许清单提交、现有草稿 PR 新 HEAD 的远端检查和恢复包独立还原后结束本任务。下个会话继续运行/编辑/产物映射、后台大文件摘要、未指定范围的工作集、MCP 和完整图语义；真实参考、正式钩子与质量门槛仍待落实，整个 M0–M4 不标完成。
 - 提交前允许清单检查：git diff --cached --check 无输出、退出码 0；tracked_files=158 staged_files=24 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True。仅公开源码、中文文档与合成测试，凭据/快照/数据库/队列/缓存不入库，远端结果按新提交核对。
+
+## 2026-10-09 · 前端健康统计续开发
+
+- 任务：用户明确要求前端子 agent 开发，本轮落实 §2、§9、§10 中已有后端接口支持的健康展示。开始读取进度末尾、相关规格和决定，工作树干净；基线 01f60a7 的 bundle 验证可用，子 agent 另存并核对前端源码副本。上一快照提交的推送与 PR 两项远端检查均成功，完整 M0–M4 仍未验收。
+- 改动的文件：前端子 agent 修改 web/src/{Views,types}，新增 HealthView、health 逻辑与样式、两份健康测试和中文续开发验收；父任务扩展 tests/frontend_server.py 的合成健康/模型账本种子，整合 README、需求落实、决定、PR 草稿和本文件。没有修改生产后端、原始规格或依赖锁。
+- 行为：健康页分别展示全库来源/提示回执与任务、当前项目的重叠快照缺口和 UTC 模型阶段观测。字段缺失与真实零值分开；未完成账本不代表进程存活，异步标记不证明竞态错误，缺口计数不推算成功数。非 401 读错局部告警与重试，恢复后清除旧错误；401 沿既有登录逻辑处理。手机标题和统计范围分别成行，表格支持聚焦及方向键横向滚动。
+- cd web && pnpm test：Test Files 2 passed (2)，Tests 15 passed (15)，Duration 483ms；pnpm build：TypeScript 通过，181 modules transformed，built in 925ms；pnpm test:browser：8 passed (8.2s)。包含原四项完整交互与新增四项健康统计、项目切换、旧对象缺失、503 恢复、401 及手机访问验收。
+- uv run pytest -q：246 passed in 72.78s；uv run pytest tests/golden -q：203 passed in 60.71s；uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；uv run rg --help 退出码 0。全量与固定案例并行运行，耗时不作为性能基准；完整 §15 仍未通过。
+- 合成 HTTP 种子实测：registered_sources=2、known_source_paths=2、spool_receipts=3、spool_unfinished=2（queued/running 各一条）、spool_failed=1；主项目快照 4/1/2/2/1，空项目 1/1/0/0/0，批量项目全部为 0。pass1 输入占比未知、未发送；pass2 真实统计为 0%、一个引用拒绝样本。模型账本和快照行明确是合成统计边界，实际远程调用为 0，不作为拍摄引擎或研究效果证明。
+- 主 agent 核对源代码、接口口径、故障恢复与截图。桌面 1440 宽、小屏 390 宽的原始数据均已加载；发现标题被长范围说明挤断后由子 agent 最小修正，再次构建/浏览器验收并重拍，页面无横向溢出。截图和备份留在忽略目录，不读完整真实会话、不安装钩子、不改用户设置。
+- 下一步：完成本轮允许清单提交、现有草稿 PR 新 HEAD 远端检查及恢复包独立还原后结束本任务；下个任务继续运行/编辑/产物映射、未指定范围工作集和 MCP。正式人工参考及真实 M1/M2 质量门槛仍需核对，不将界面提前实现视为整个目标完成。
+- 提交前允许清单检查：git diff --cached --check 无输出、退出码 0；tracked_files=164 staged_files=14 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True。仅公开源码、中文记录与合成测试，凭据、截图、数据库、私有材料和缓存不纳入提交；远端结果按本轮新 HEAD 核对。

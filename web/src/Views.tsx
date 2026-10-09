@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, ApiError, query } from './api';
 import { Badge, ClaimBody, DateText, Empty, EvidenceLink, EvidencePanel, Icon, Loading, Scope, Source } from './components';
 import { actionNames, adoption, entityVersions, evidenceNames, evidenceState, groupQueue, kindNames, label, relatedChildren, scopeKey, timeline } from './model';
-import type { Claim, ClaimsPage, GraphData, HealthData, ReviewState, SearchPage, Span } from './types';
+import type { Claim, ClaimsPage, GraphData, ReviewState, SearchPage, Span } from './types';
 
 type Common = { data: GraphData; onClaim: (id: number) => void; onEvidence: (span: Span) => void };
 export function Questions({ data, onClaim, onEvidence }: Common) {
@@ -61,26 +61,7 @@ export function TimelineView({ data, onClaim, onEvidence }: Common) {
   </div>;
 }
 
-export function HealthView({ project, epoch, onEvidence, onError }: {
-  project: string; epoch: number; onEvidence: (target: { event_id: number }) => void; onError: (error: unknown) => void;
-}) {
-  const [data, setData] = useState<HealthData | null>(null);
-  const [offset, setOffset] = useState(0);
-  useEffect(() => setOffset(0), [project]);
-  useEffect(() => {
-    const controller = new AbortController(); setData(null);
-    api<HealthData>(`/health?${query({ project, offset })}`, undefined, controller.signal).then(result => { if (!controller.signal.aborted) setData(result); }).catch(error => { if (!controller.signal.aborted) onError(error); });
-    return () => controller.abort();
-  }, [project, offset, epoch, onError]);
-  if (!data) return <Loading />;
-  const usage = data.extraction.daily_usage;
-  return <div className="health-view"><div className="summary-grid"><div><span>原始事件 · 全库</span><strong>{data.events}</strong><small>L0 原文只追加</small></div><div><span>覆盖缺口 · 当前项目</span><strong>{data.extraction.coverage.pending_event_stages}</strong><small>按事件 × 阶段计数</small></div><div><span>未归属会话 · 全库</span><strong>{data.unassigned_sessions}</strong><small>需要明确项目归属</small></div><div><span>压缩点 · 当前项目</span><strong>{data.compression_points}</strong><small>不视作运行失败</small></div></div>
-    <div className="health-columns"><section className="panel"><h3>模型用量 <span className="eyebrow">全库 · UTC {data.extraction.day_utc}</span></h3><div className="usage-value">{usage.reserved_or_settled_tokens.toLocaleString()} <span>/ {usage.budget_tokens.toLocaleString()} token</span></div><progress max={usage.budget_tokens} value={usage.reserved_or_settled_tokens} /><div className="usage-details"><span>已知输入 {usage.known_input_tokens.toLocaleString()}</span><span>已知输出 {usage.known_output_tokens.toLocaleString()}</span><span>未结算调用 {usage.unsettled_sent_attempts}</span></div><p className="muted small">含实际用量与保守预留；未知用量不补为零。剩余额度 {usage.remaining_tokens.toLocaleString()}。</p></section><section className="panel"><h3>采集质量 <span className="eyebrow">全库</span></h3><dl className="quality-grid"><div><dt>坏行</dt><dd>{data.bad_lines}</dd></div><div><dt>未知类型</dt><dd>{data.unknown}</dd></div><div><dt>人工失败队列</dt><dd>{data.manual_jobs}</dd></div><div><dt>钩子失败</dt><dd>{data.hook_failures ?? '未知'}</dd></div></dl><p className="missing-note">{data.hook_failures_reason}。</p></section></div>
-    {data.extraction.alerts.length > 0 && <section className="alerts panel"><h3>需要留意</h3>{data.extraction.alerts.map((alert, index) => <p key={`${alert.code}-${index}`}><span className="mono">{alert.stage ?? alert.code}</span>{alert.message}{alert.count != null ? `（${alert.count}）` : ''}</p>)}</section>}
-    <section className="panel table-panel"><h3>来源与游标 <span>{data.sources.length}</span></h3>{!data.sources.length ? <p className="muted">没有已导入的来源文件。</p> : <div className="table-scroll"><table><thead><tr><th>来源</th><th>最后导入</th><th>游标滞后</th><th>会话清理风险</th></tr></thead><tbody>{data.sources.map(source => <tr key={source.file_instance_id}><td><strong>{source.tool}</strong><span className="path" title={source.path}>{source.path}</span></td><td><DateText value={source.last_read} /></td><td>{source.cursor_lag_bytes == null ? '未知' : `${source.cursor_lag_bytes.toLocaleString()} 字节`}</td><td>{source.cleanup_risk === 'source_missing' ? '来源已缺失，已复制事件仍可查看' : source.cleanup_risk === 'source_truncated' ? '来源长度缩短' : '当前无来源缺失迹象'}<small>{source.status}</small></td></tr>)}</tbody></table></div>}</section>
-    <section className="panel table-panel"><h3>覆盖缺口 <span>{data.extraction.coverage.pending_event_stages}</span></h3>{data.extraction.coverage.gaps.length ? <table><thead><tr><th>原文</th><th>会话</th><th>阶段</th><th>片段</th></tr></thead><tbody>{data.extraction.coverage.gaps.map(gap => <tr key={`${gap.event_id}-${gap.stage}`}><td><button className="text-button" onClick={() => onEvidence({ event_id: gap.event_id })}>事件 #{gap.event_id}</button></td><td>{gap.session_pk}</td><td>{gap.stage}</td><td className="mono">{gap.segment_id ?? '未知'}</td></tr>)}</tbody></table> : <p className="muted">当前页没有覆盖缺口。</p>}<div className="pagination"><button className="button secondary" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>上一页</button><span>偏移 {offset}</span><button className="button secondary" disabled={data.extraction.coverage.next_offset == null} onClick={() => setOffset(data.extraction.coverage.next_offset!)}>下一页</button></div></section>
-  </div>;
-}
+export { HealthView } from './HealthView';
 
 export function SearchView({ project, text, onEvidence, onError }: {
   project: string; text: string; onEvidence: (target: { event_id: number }) => void; onError: (error: unknown) => void;
