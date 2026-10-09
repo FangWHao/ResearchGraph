@@ -9,6 +9,7 @@ from jsonschema import Draft202012Validator
 
 from rg.extract.monitor import set_status
 from rg.extract.redact import redact
+from rg.extract.rules import confirm_explicit
 from rg.extract.schemas import PASS2_SCHEMA
 from rg.ingest.common import RG_BLOCK
 from rg.store.database import Store, dumps, now
@@ -234,5 +235,6 @@ def persist(
                     "INSERT INTO claim_evidence VALUES (?, ?, ?)",
                     (claim_id, span_id, span.get("role", "support")),
                 )
+        confirm_explicit(store, ids, project_id, allowed_ids, owned_windows, expected_scope)
         set_status(store, run_id, "ok", attempt_id=attempt_id)
     return ids

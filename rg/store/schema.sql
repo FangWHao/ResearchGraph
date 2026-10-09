@@ -128,7 +128,7 @@ CREATE TABLE claim_evidence (
   PRIMARY KEY (claim_id, span_id)
 );
 
-CREATE TABLE review_actions (                   -- 人工操作，只追加
+CREATE TABLE review_actions (                   -- 人工操作与独立规则确认，只追加
   action_id          INTEGER PRIMARY KEY,
   claim_id           INTEGER NOT NULL REFERENCES claims,
   action             TEXT NOT NULL CHECK (action IN ('confirm','dismiss','edit','rescope','merge')),

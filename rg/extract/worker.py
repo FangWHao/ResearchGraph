@@ -14,6 +14,7 @@ from rg.extract.monitor import set_status
 from rg.extract.paths import file_paths
 from rg.extract.provider import Provider
 from rg.extract.redact import model_input, redact
+from rg.extract.rules import RULE_VERSION
 from rg.extract.schemas import PASS1_SCHEMA, PASS2_SCHEMA
 from rg.extract.segmenter import Segment, segment, split
 from rg.extract.validate import InvalidClaim, persist
@@ -352,8 +353,15 @@ class Worker:
                 (session_id,),
             )
         ]
+        # 本会话自己生成的规则确认不能使完成缓存失效；人工或其他会话的确认仍参与。
         review_id = self.store.db.execute(
-            "SELECT coalesce(max(action_id), 0) FROM review_actions"
+            "SELECT coalesce(max(a.action_id),0) FROM review_actions a WHERE a.actor!=? "
+            "OR NOT EXISTS (SELECT 1 FROM claim_evidence ce JOIN evidence_spans es "
+            "USING(span_id) JOIN raw_events r USING(event_id) WHERE ce.claim_id=a.claim_id "
+            "AND r.session_pk=?) OR EXISTS (SELECT 1 FROM claim_evidence ce "
+            "JOIN evidence_spans es USING(span_id) JOIN raw_events r USING(event_id) "
+            "WHERE ce.claim_id=a.claim_id AND r.session_pk!=?)",
+            ("rule:" + RULE_VERSION, session_id, session_id),
         ).fetchone()[0]
         prompts = [
             Path(__file__).with_name("prompts").joinpath(stage + ".txt").read_text()
@@ -373,6 +381,7 @@ class Worker:
                     self.input_budget,
                     self.output_budget,
                     "overlap-v1",
+                    RULE_VERSION,
                     scope,
                 ]
             ).encode()

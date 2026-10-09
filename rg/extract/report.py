@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from rg.extract.differences import confirmed_differences
 from rg.store.database import Store
 from rg.store.objects import atomic_write
 
@@ -21,11 +22,27 @@ def report(store: Store, session_id: int, destination: Path) -> None:
         (session_id,),
     ).fetchall()
     for item in claims:
+        review = store.db.execute(
+            "SELECT actor,reason FROM review_actions WHERE claim_id=? "
+            "ORDER BY action_id DESC LIMIT 1",
+            (item["claim_id"],),
+        ).fetchone()
+        state = store.claim_state(item["claim_id"])
+        reviewer = (
+            review["actor"]
+            if review
+            else (
+                item["actor"]
+                if state == "confirmed" and item["actor"].startswith("human:")
+                else "尚未复核"
+            )
+        )
         lines.extend(
             [
-                f"## 候选 {item['claim_id']} · {item['claim_type']}",
+                f"## 记录 {item['claim_id']} · {item['claim_type']}",
                 "",
-                f"审核状态：{store.claim_state(item['claim_id'])}",
+                f"审核状态：{state}",
+                f"审核来源：{reviewer}",
                 "",
                 "```json",
                 json.dumps(json.loads(item["payload"]), ensure_ascii=False, indent=2),
@@ -35,6 +52,20 @@ def report(store: Store, session_id: int, destination: Path) -> None:
                 "",
             ]
         )
+        if review and review["actor"].startswith("rule:"):
+            lines.extend(["独立规则核对：", "", "```json", review["reason"], "```", ""])
+        for previous in confirmed_differences(store, item["claim_id"]):
+            fields = "、".join(previous["differing_fields"]) or "内容一致"
+            lines.extend(
+                [
+                    f"已有人工确认 #{previous['claim_id']}；对照字段：{fields}。新记录仍待复核。",
+                    "",
+                    "```json",
+                    json.dumps(previous["payload"], ensure_ascii=False, indent=2),
+                    "```",
+                    "",
+                ]
+            )
         spans = store.db.execute(
             "SELECT es.* FROM evidence_spans es JOIN claim_evidence ce "
             "USING(span_id) WHERE claim_id = ?",

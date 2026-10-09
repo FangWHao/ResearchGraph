@@ -102,12 +102,32 @@ def parser() -> argparse.ArgumentParser:
     review.add_argument("--action", choices=["confirm", "dismiss"])
     review.add_argument("--actor")
     review.add_argument("--expected-revision", type=int)
+    review.add_argument("--open", action="store_true", help="启动并打开本地复核界面")
+    review.add_argument("--port", type=int, default=8787)
+    review.add_argument("--web-dir", type=Path, default=Path("web/dist"))
+    served = commands.add_parser("serve", help="启动仅监听 127.0.0.1 的研究记录界面")
+    served.add_argument("--port", type=int, default=8787)
+    served.add_argument("--web-dir", type=Path, default=Path("web/dist"))
+    served.add_argument("--daily-budget", type=int, default=500000)
+    served.add_argument("--open", action="store_true", help="自动打开浏览器")
     backed = commands.add_parser("backup", help="使用 SQLite backup API 备份证据")
     backed.add_argument("destination", type=Path)
     return cli
 
 
 def run(args: argparse.Namespace, store: Store) -> object:
+    if args.command == "serve" or (args.command == "review" and args.open):
+        from rg.api.server import serve
+
+        serve(
+            store.root,
+            args.web_dir,
+            args.port,
+            getattr(args, "daily_budget", 500000),
+            args.open,
+            initial_view="review" if args.command == "review" else "questions",
+        )
+        return {"server": "stopped"}
     if args.command == "init":
         return {
             "data_dir": str(store.root),

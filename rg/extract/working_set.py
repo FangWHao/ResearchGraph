@@ -95,7 +95,7 @@ def working_set(
         if rank == 4:
             continue
         state = "proposed"
-        # 只有人工确认的决定事件改变当前采用状态，候选不能悄悄成为事实。
+        # 人工或独立原话规则确认后才改变当前采用状态，候选不能悄悄成为事实。
         decisions = store.db.execute(
             "SELECT claim_id, payload, scope FROM claims WHERE entity_id = ? "
             "AND claim_type = 'decision_event' ORDER BY "
@@ -109,9 +109,9 @@ def working_set(
             ):
                 state = json.loads(decision["payload"])["action"]
                 break
-        if row["kind"] not in {"question", "approach", "decision"}:
+        if row["kind"] not in {"question", "approach", "decision"} and rank != 0:
             continue
-        if state in {"rejected", "withdrawn", "superseded"}:
+        if state in {"rejected", "withdrawn", "superseded"} and rank != 0:
             continue
         candidates.append(
             (

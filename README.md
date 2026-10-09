@@ -4,13 +4,13 @@
 
 当前入口是本文件。完整规格见 [执行规格](docs/ResearchGraph_执行版_v2.md)，当前开发范围见 [需求落实情况](docs/REQUIREMENTS_STATUS.md)，接续工作先读 [开发进度](docs/PROGRESS.md) 最后 40 行与 [开发决定](docs/DECISIONS.md)。
 
-当前交付为后端试验版：流式导入、原文对象库、检索、证据读取、前置实测 token、有界提取、精确字节候选定位、逐对跨会话链接、结构化记录概览、人工确认与驳回、覆盖账本、调用尝试监控与本地告警、SQLite 在线备份。**尚未完成整个 M0–M4，也尚未通过 Atlas 的真实效果验收。** 依据规格，暂不开发界面。
+当前交付包含研究记录后端与本地界面：流式导入、原文对象库、检索、前置实测 token、有界提取、精确字节定位、跨会话链接、结构化概览、独立原话规则确认、人工复核与修改，以及问题、时间线、证据、健康和研究图页面。**尚未完成整个 M0–M4，也尚未通过 Atlas 的真实效果验收。** 2026-10-09 用户授权前端子 agent 提前开发界面；真实质量门槛继续保留。
 
 2026-10-09 用户确认将完整请求的输入上限改为 **128,000 token，允许调高**。这是对原规格 §7.2 的 24k 上限的明确调整，理由和边界见 [开发决定](docs/DECISIONS.md)。源规格保留原文。
 
 ## 环境与验收
 
-使用 Python 3.12。依赖固定在 `uv.lock`；先安装 uv。GitHub 的“后端验收”工作流在推送与 PR 时运行下面的离线检查，不需要 API 密钥。
+使用 Python 3.12。依赖固定在 `uv.lock`；先安装 uv。GitHub 的“开发验收”工作流在推送与 PR 时运行后端、前端和真实本地 API 的合成验收，不需要 API 密钥。
 
 ```bash
 uv sync --locked --python 3.12
@@ -21,9 +21,35 @@ uv run pyright rg
 uv run rg --help
 ```
 
-目前没有 `web/` 实现，`pnpm` 验收属于后续里程碑，不能记录为已通过。
+前端使用 Node 24.21.0、pnpm 12.10.1，依赖固定在 `web/pnpm-lock.yaml`：
+
+```bash
+cd web
+pnpm install --frozen-lockfile
+pnpm test
+pnpm build
+pnpm exec playwright install --with-deps --only-shell chromium
+pnpm test:browser
+cd ..
+```
+
+浏览器测试临时创建合成库，不读取真实会话与密钥。当前命令输出和可验收范围见 [前端与本地 API 验收](docs/acceptance/前端与本地API验收_20261009.md)。
 
 本机可用 `.tools/bin/uv`；该工具及 `.venv`、缓存、凭据和私有材料均不进入仓库。执行规格保留在 Markdown 中，本地 Word 设计书不纳入公开提交。仓库沿用 [Apache-2.0 许可证](LICENSE)。
+
+## 打开本地界面
+
+从仓库根目录完成上面的 `pnpm build`，然后启动：
+
+```bash
+uv run rg --data-dir /tmp/rg-demo serve --port 8787 --open
+# 使用同一个数据目录，也可以直接打开复核页。
+uv run rg --data-dir /tmp/rg-demo review --open --port 8787
+```
+
+服务只监听 `127.0.0.1`。终端返回带本次随机令牌的浏览器链接；页面取得令牌后清除地址中的片段，后续请求同源 API。界面读取指定数据目录，不会自动导入 Atlas。问题页、队列、时间线、健康、搜索与图均可打开记录的原文窗口；复核支持确认、驳回、按片段批量确认，以及保留旧记录的人工修改。
+
+前端构建目录默认是当前工作目录下的 `web/dist`。Python wheel 包含后端和 API，静态资源另行构建；安装 wheel 后，使用 `serve --web-dir /绝对路径/web/dist` 指定它。Vite 开发服务器用于界面开发，实际数据复核使用上面的同源本地服务。
 
 ## 本地导入与检索
 
@@ -135,6 +161,10 @@ uv run rg --data-dir /tmp/rg-demo review --claim CLAIM_ID --action confirm \
 ```
 
 人工复核追加动作，不修改原候选或原文。过期版本会拒绝写入。重新提取只能生成新候选，不能覆盖已确认内容。不同范围的决定状态分别计算。
+
+§7.7 规则另行核对完整用户原话、原始字节和同范围对象身份。限定形式的明确采用、撤回、拒绝、refuted 与 all_required 可以追加 `rule:explicit-user-v1` 确认；模型原始记录仍为 candidate，不能凭模型填写的 user/explicit/true 自行确认。理由须来自原话或可核实的动作描述，同名对象、未知范围、条件句、局部引文和自编理由均保留候选。证明记录包含事件、字节范围、摘要和规则版本，见 [独立规则确认验收](docs/acceptance/M1独立规则确认验收_20261009.md)。
+
+新模型候选若对应同一对象、类型与范围的人工确认，队列展示已有记录和字段差异；不会自动覆盖人工决定。人工修改追加 confirmed 的替换记录和审核动作，原记录与证据保留。发生时间缺失或同一时刻存在互相冲突的动作时，界面明确显示待核对，不用入库顺序推断研究决定。
 
 ## Atlas 试点
 

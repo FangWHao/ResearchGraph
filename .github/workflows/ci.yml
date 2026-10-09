@@ -1,4 +1,4 @@
-name: 后端验收
+name: 开发验收
 
 on:
   push:
@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: backend-${{ github.workflow }}-${{ github.ref }}
+  group: development-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -38,3 +38,24 @@ jobs:
         run: uv run --no-sync pyright rg
       - name: 命令入口
         run: uv run --no-sync rg --help
+      - name: 安装固定版本 Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24.21.0'
+      - name: 安装固定版本 pnpm
+        run: npm install --global pnpm@12.10.1
+      - name: 按前端锁文件安装依赖
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: 前端语义测试
+        working-directory: web
+        run: pnpm test
+      - name: 前端类型检查与构建
+        working-directory: web
+        run: pnpm build
+      - name: 安装浏览器验收环境
+        working-directory: web
+        run: pnpm exec playwright install --with-deps --only-shell chromium
+      - name: 浏览器与真实本地 API 验收
+        working-directory: web
+        run: pnpm test:browser
