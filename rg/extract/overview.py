@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from rg.extract.monitor import set_status
 from rg.extract.schemas import STRING, obj
 from rg.extract.segmenter import Segment
 from rg.extract.validate import InvalidClaim
@@ -112,9 +113,7 @@ def overview(
                 raise InvalidClaim("概览引用了未知或其他页的记录")
             if re.search(r"</?rg-context\b", dumps(output), re.I):
                 raise InvalidClaim("概览正文不能嵌套或关闭防回流标记")
-            store.db.execute(
-                "UPDATE extraction_runs SET status='ok' WHERE extraction_run_id=?", (run,)
-            )
+            set_status(store, run, "ok", attempt_id=worker.attempt_ids.get(run))
             pages.append({**output, "input_claim_ids": sorted(known), "run_id": run})
         except (ValueError, RuntimeError):
             if run is not None:

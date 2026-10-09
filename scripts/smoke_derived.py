@@ -43,7 +43,8 @@ def seed(store: Store, root: Path, project: str) -> None:
         with store.transaction() as db:
             db.execute(
                 "INSERT INTO entities (entity_id, project_id, kind, created_at) "
-                "VALUES (?, ?, 'approach', ?)", (identity, project, now())
+                "VALUES (?, ?, 'approach', ?)",
+                (identity, project, now()),
             )
             claim = db.execute(
                 "INSERT INTO claims (claim_type, entity_id, payload, scope, basis, actor, "
@@ -98,6 +99,14 @@ def main() -> None:
                 "link_cache_ok": repeated["cached"] == linked["pairs"],
                 "link_total_budget": 4000,
                 "runs": runs,
+                "attempts": [
+                    dict(row)
+                    for row in store.db.execute(
+                        "SELECT stage,status,failure_kind,sent,measured_input_tokens,input_tokens, "
+                        "output_tokens,stop_reason FROM model_attempts ORDER BY attempt_id"
+                    )
+                ],
+                "health": store.health(project, daily_budget=worker.daily_budget),
                 "all_claims_candidate": all(
                     row[0] == "candidate"
                     for row in store.db.execute("SELECT claim_state FROM claims")

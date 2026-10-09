@@ -129,7 +129,16 @@ class Store:
             )
         return [dict(row) for row in rows]
 
-    def health(self) -> dict[str, Any]:
+    def health(
+        self,
+        project: str | None = None,
+        day: str | None = None,
+        daily_budget: int = 500000,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        from rg.extract.monitor import monitor
+
         result: dict[str, Any] = {}
         for name, query in {
             "events": "SELECT count(*) FROM raw_events",
@@ -141,4 +150,5 @@ class Store:
         }.items():
             result[name] = self.db.execute(query).fetchone()[0]
         result["revision"] = self.revision()
+        result["extraction"] = monitor(self, project, day, daily_budget, limit, offset)
         return result

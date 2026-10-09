@@ -27,7 +27,7 @@ def legacy_store(tmp_path: Path, monkeypatch, version: int = 1) -> tuple[Path, b
 def test_v1_upgrade_keeps_original_events_and_is_idempotent(tmp_path: Path, monkeypatch):
     root, raw = legacy_store(tmp_path, monkeypatch)
     value = Store(root)
-    assert value.db.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert value.db.execute("PRAGMA user_version").fetchone()[0] == 4
     assert value.raw(1) == raw
     with pytest.raises(sqlite3.IntegrityError):
         value.db.execute("DELETE FROM raw_events")
@@ -36,6 +36,29 @@ def test_v1_upgrade_keeps_original_events_and_is_idempotent(tmp_path: Path, monk
     assert repeated.health()["events"] == 1
     assert repeated.db.execute("SELECT count(*) FROM candidate_locations").fetchone()[0] == 0
     repeated.close()
+
+
+def test_v3_monitor_migration_is_atomic_and_does_not_fabricate_attempts(
+    tmp_path: Path, monkeypatch
+):
+    root, raw = legacy_store(tmp_path, monkeypatch, version=3)
+    with monkeypatch.context() as change:
+        change.setitem(migrations.MIGRATIONS, 4, (*migrations.MIGRATIONS[4], "INVALID SQL"))
+        with pytest.raises(sqlite3.OperationalError):
+            Store(root)
+    connection = sqlite3.connect(root / "rg.db")
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert (
+        connection.execute(
+            "SELECT count(*) FROM sqlite_master WHERE name='model_attempts'"
+        ).fetchone()[0]
+        == 0
+    )
+    connection.close()
+    recovered = Store(root)
+    assert recovered.raw(1) == raw
+    assert recovered.db.execute("SELECT count(*) FROM model_attempts").fetchone()[0] == 0
+    recovered.close()
 
 
 def test_failed_migration_rolls_back_schema_and_version(tmp_path: Path, monkeypatch):
@@ -96,7 +119,7 @@ def test_v2_upgrade_preserves_locations_and_failed_v3_rolls_back(tmp_path: Path,
     )
     connection.close()
     value = Store(root)
-    assert value.db.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert value.db.execute("PRAGMA user_version").fetchone()[0] == 4
     assert value.raw(1) == raw
     position = value.db.execute("SELECT byte_start,byte_end FROM candidate_locations").fetchone()
     assert raw[position[0] : position[1]].decode() == "保留"

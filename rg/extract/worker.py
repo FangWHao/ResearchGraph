@@ -10,6 +10,7 @@ from jsonschema import Draft202012Validator
 
 from rg.extract.budgets import Budgets
 from rg.extract.locator import CUE_PATTERNS, positions, units, windows
+from rg.extract.monitor import set_status
 from rg.extract.paths import file_paths
 from rg.extract.provider import Provider
 from rg.extract.redact import model_input, redact
@@ -49,6 +50,7 @@ class Worker:
         self.input_budget = input_budget
         self.output_budget = output_budget
         self.daily_budget = daily_budget
+        self.attempt_ids: dict[int, int] = {}
 
     def invoke(
         self,
@@ -122,8 +124,38 @@ class Worker:
             run_id = cursor.lastrowid
             if run_id is None:
                 raise RuntimeError("无法建立提取运行")
+        with self.store.transaction() as db:
+            db.execute(
+                "UPDATE extraction_runs SET status='pending', error=NULL, output_json=NULL, "
+                "input_tokens=NULL, measured_input_tokens=NULL, output_tokens=NULL, "
+                "stop_reason=NULL WHERE extraction_run_id=?",
+                (run_id,),
+            )
+            attempt = db.execute(
+                "INSERT INTO model_attempts (extraction_run_id,project_id,stage,provider,model, "
+                "segment_id,input_budget,output_budget,status,created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,'pending',?)",
+                (
+                    run_id,
+                    project_id,
+                    stage,
+                    self.provider.provider,
+                    self.provider.model,
+                    item.segment_id,
+                    limit,
+                    output_budget,
+                    now(),
+                ),
+            ).lastrowid
+            if attempt is None:
+                raise RuntimeError("无法登记调用尝试")
+            self.attempt_ids[run_id] = attempt
         try:
             count = self.provider.count_request(request)
+            self.store.db.execute(
+                "UPDATE model_attempts SET measured_input_tokens=? WHERE attempt_id=?",
+                (count, attempt),
+            )
             self.store.db.execute(
                 "UPDATE extraction_runs SET input_tokens = ?, measured_input_tokens = ? "
                 "WHERE extraction_run_id = ?",
@@ -153,6 +185,9 @@ class Worker:
                 self._status(run_id, "over_budget", "指令/schema 或片段内容超过分配预算，未发送")
                 raise BudgetExceeded("组件预算超限")
             day = now()[:10]
+            self.store.db.execute(
+                "UPDATE model_attempts SET usage_day=? WHERE attempt_id=?", (day, attempt)
+            )
             reserve = count + output_budget
             with self.store.transaction() as db:
                 db.execute("INSERT OR IGNORE INTO daily_usage VALUES (?, 0)", (day,))
@@ -165,7 +200,18 @@ class Worker:
                     "UPDATE daily_usage SET reserved_tokens = reserved_tokens + ? WHERE day = ?",
                     (reserve, day),
                 )
+            self.store.db.execute("UPDATE model_attempts SET sent=1 WHERE attempt_id=?", (attempt,))
             result = self.provider.generate(request)
+            self.store.db.execute(
+                "UPDATE model_attempts SET input_tokens=?, output_tokens=?, stop_reason=? "
+                "WHERE attempt_id=?",
+                (
+                    result.input_tokens if result.input_tokens >= 0 else None,
+                    result.output_tokens if result.output_tokens >= 0 else None,
+                    result.stop_reason,
+                    attempt,
+                ),
+            )
             if result.input_tokens >= 0 and result.output_tokens >= 0:
                 self.store.db.execute(
                     "UPDATE daily_usage SET reserved_tokens = reserved_tokens - ? + ? "
@@ -195,16 +241,20 @@ class Worker:
                 self._status(run_id, "truncated", "JSON 不完整或无效")
                 raise InvalidClaim("无效 JSON") from None
             if list(Draft202012Validator(schema).iter_errors(output)):
-                self._status(run_id, "invalid", "输出 schema 校验失败")
+                self._status(run_id, "invalid", "输出 schema 校验失败", "schema")
                 raise InvalidClaim("输出 schema 校验失败")
             self.store.db.execute(
                 "UPDATE extraction_runs SET output_json = ?, status = ?, error = NULL "
                 "WHERE extraction_run_id = ?",
                 (dumps(output), "validated", run_id),
             )
+            set_status(self.store, run_id, "validated", attempt_id=attempt)
             return run_id, output
         except CountingUnavailable:
-            self._status(run_id, "failed", "计数不可用，未发送生成请求")
+            self._status(run_id, "failed", "计数不可用，未发送生成请求", "counting")
+            raise
+        except DailyBudgetExceeded:
+            self._status(run_id, "budget_paused", "每日预算不足，未发送", "daily_budget")
             raise
         except BudgetExceeded:
             if (
@@ -216,15 +266,13 @@ class Worker:
                 self._status(run_id, "over_budget", "每日预算不足，未发送")
             raise
         except RuntimeError:
-            self._status(run_id, "failed", "提供方调用失败")
+            self._status(run_id, "failed", "提供方调用失败", "provider")
             raise
 
-    def _status(self, run_id: int, status: str, error: str) -> None:
-        self.store.db.execute(
-            "UPDATE extraction_runs SET status = ?, error = ?, output_json = NULL "
-            "WHERE extraction_run_id = ?",
-            (status, error, run_id),
-        )
+    def _status(
+        self, run_id: int, status: str, error: str, failure_kind: str | None = None
+    ) -> None:
+        set_status(self.store, run_id, status, error, failure_kind, self.attempt_ids.get(run_id))
 
     def _check_model_limits(self) -> None:
         validator = getattr(self.provider, "validate_budget", None)
@@ -359,7 +407,7 @@ class Worker:
             try:
                 located = positions(input_units, locations["candidates"])
             except InvalidClaim:
-                self._status(pass1_run, "invalid", "pass1 原文位置校验失败")
+                self._status(pass1_run, "invalid", "pass1 原文位置校验失败", "citation")
                 raise
             with self.store.transaction() as db:
                 for location in located:
@@ -373,10 +421,7 @@ class Worker:
                             location["source"],
                         ),
                     )
-                db.execute(
-                    "UPDATE extraction_runs SET status = 'ok' WHERE extraction_run_id = ?",
-                    (pass1_run,),
-                )
+                set_status(self.store, pass1_run, "ok", attempt_id=self.attempt_ids.get(pass1_run))
             self._coverage(item, "pass1", "covered")
             if not located:
                 self._coverage(item, "pass2", "excluded:no_candidate")
@@ -417,6 +462,9 @@ class Worker:
                     [x["id"] for x in working],
                 )
                 if output["lookup_terms"] and round_index == 0:
+                    set_status(
+                        self.store, run_id, "lookup", attempt_id=self.attempt_ids.get(run_id)
+                    )
                     working = working_set(
                         self.store,
                         project_id,
@@ -444,11 +492,9 @@ class Worker:
                         ranges,
                         owned_ranges,
                         scope,
+                        attempt_id=self.attempt_ids.get(run_id),
                     )
-                    self.store.db.execute(
-                        "UPDATE extraction_runs SET status = 'ok' WHERE extraction_run_id = ?",
-                        (run_id,),
-                    )
+                    set_status(self.store, run_id, "ok", attempt_id=self.attempt_ids.get(run_id))
                     stats["claims"] += len(claim_ids)
                 self._coverage(item, "pass2", "covered")
                 return
@@ -483,7 +529,7 @@ class Worker:
                     "SELECT status FROM extraction_runs WHERE extraction_run_id = ?", (run_id,)
                 ).fetchone()[0]
                 if current == "validated":
-                    self._status(run_id, "invalid", str(error))
+                    self._status(run_id, "invalid", str(error), error.failure_kind)
             children = split(item)
             if failures < 2 and children and not isinstance(error, CountingUnavailable):
                 for child in children:

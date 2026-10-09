@@ -6,6 +6,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
+from rg.extract.monitor import set_status
 from rg.extract.redact import redact
 from rg.extract.schemas import PASS2_SCHEMA
 from rg.ingest.common import RG_BLOCK
@@ -14,7 +15,11 @@ from rg.store.objects import digest
 
 
 class InvalidClaim(ValueError):
-    pass
+    failure_kind = "validation"
+
+
+class InvalidCitation(InvalidClaim):
+    failure_kind = "citation"
 
 
 def validate(
@@ -87,44 +92,44 @@ def validate(
         for evidence in item["evidence"]:
             event_id = evidence["event_id"]
             if event_id not in event_ids:
-                raise InvalidClaim("引用事件不在本次原文窗口中")
+                raise InvalidCitation("引用事件不在本次原文窗口中")
             row = store.db.execute(
                 "SELECT r.*, s.project_id FROM raw_events r JOIN sessions s "
                 "USING(session_pk) WHERE event_id = ?",
                 (event_id,),
             ).fetchone()
             if not row or row["exclude_reason"] or row["project_id"] != project_id:
-                raise InvalidClaim("引用事件不存在、被排除或不属于本项目")
+                raise InvalidCitation("引用事件不存在、被排除或不属于本项目")
             if store.db.execute(
                 "SELECT 1 FROM dedupe_links WHERE alias_id = ?", (event_id,)
             ).fetchone():
-                raise InvalidClaim("不能引用镜像事件")
+                raise InvalidCitation("不能引用镜像事件")
             raw = store.raw(event_id)
             start, end = evidence["byte_start"], evidence["byte_end"]
             try:
                 redact(raw).original_span(start, end)
             except (ValueError, UnicodeError):
-                raise InvalidClaim("引用越界、切断 UTF-8 或落在遮盖区域") from None
+                raise InvalidCitation("引用越界、切断 UTF-8 或落在遮盖区域") from None
             if windows and not any(a <= start < end <= b for a, b in windows.get(event_id, [])):
-                raise InvalidClaim("引用范围不在发送窗口中")
+                raise InvalidCitation("引用范围不在发送窗口中")
             if owned_windows is not None and any(
                 a <= start < end <= b for a, b in owned_windows.get(event_id, [])
             ):
                 has_owned_evidence = True
             quote = raw[start:end]
             if evidence["quote"].encode() != quote:
-                raise InvalidClaim("引用原话与字节范围不一致")
+                raise InvalidCitation("引用原话与字节范围不一致")
             if "quote_sha256" in evidence and evidence["quote_sha256"] != digest(quote):
-                raise InvalidClaim("引用摘要不一致")
+                raise InvalidCitation("引用摘要不一致")
             for match in RG_BLOCK.finditer(raw.decode()):
                 a = len(raw.decode()[: match.start()].encode())
                 b = len(raw.decode()[: match.end()].encode())
                 if start < b and end > a:
-                    raise InvalidClaim("不能引用 rg 注入块")
+                    raise InvalidCitation("不能引用 rg 注入块")
             if re.search(r"\\u003[cC]rg-context", quote.decode()):
-                raise InvalidClaim("不能引用编码后的 rg 注入块")
+                raise InvalidCitation("不能引用编码后的 rg 注入块")
         if not has_owned_evidence:
-            raise InvalidClaim("候选只引用重叠上下文，不能重复写入旧决定")
+            raise InvalidCitation("候选只引用重叠上下文，不能重复写入旧决定")
 
 
 def persist(
@@ -138,18 +143,23 @@ def persist(
     windows: dict[int, list[tuple[int, int]]] | None = None,
     owned_windows: dict[int, list[tuple[int, int]]] | None = None,
     expected_scope: dict[str, str] | None = None,
+    attempt_id: int | None = None,
 ) -> list[int]:
-    validate(
-        store,
-        output,
-        project_id,
-        allowed_ids,
-        event_ids,
-        segment_id,
-        windows,
-        owned_windows,
-        expected_scope,
-    )
+    try:
+        validate(
+            store,
+            output,
+            project_id,
+            allowed_ids,
+            event_ids,
+            segment_id,
+            windows,
+            owned_windows,
+            expected_scope,
+        )
+    except InvalidClaim as error:
+        set_status(store, run_id, "invalid", str(error), error.failure_kind, attempt_id)
+        raise
     mapping = {
         x["temp_id"]: str(uuid.uuid4())
         for x in output["claims"]
@@ -208,7 +218,5 @@ def persist(
                     "INSERT INTO claim_evidence VALUES (?, ?, ?)",
                     (claim_id, span_id, span.get("role", "support")),
                 )
-        db.execute(
-            "UPDATE extraction_runs SET status = 'ok' WHERE extraction_run_id = ?", (run_id,)
-        )
+        set_status(store, run_id, "ok", attempt_id=attempt_id)
     return ids

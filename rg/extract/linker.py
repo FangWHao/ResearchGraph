@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from rg.extract.locator import _bounded_prefix
+from rg.extract.monitor import set_status
 from rg.extract.redact import redact
 from rg.extract.schemas import STRING, obj
 from rg.extract.segmenter import Segment
@@ -308,12 +309,11 @@ def _schedule(
                         item.segment_id,
                         {span["event_id"]: [(a, b)]},
                         expected_scope=pair.scope,
+                        attempt_id=worker.attempt_ids.get(run),
                     )
                 )
             else:
-                store.db.execute(
-                    "UPDATE extraction_runs SET status='ok' WHERE extraction_run_id=?", (run,)
-                )
+                set_status(store, run, "ok", attempt_id=worker.attempt_ids.get(run))
             _done(store, key, run)
         except DailyBudgetExceeded:
             store.db.execute(
@@ -336,6 +336,7 @@ def _schedule(
                     run,
                     "invalid" if isinstance(error, InvalidClaim) else "failed",
                     "链接校验或预算失败，结果未入库",
+                    error.failure_kind if isinstance(error, InvalidClaim) else None,
                 )
             with store.transaction() as db:
                 row = db.execute(

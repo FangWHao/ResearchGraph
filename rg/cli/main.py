@@ -63,7 +63,12 @@ def parser() -> argparse.ArgumentParser:
     imported.add_argument("path", type=Path)
     imported.add_argument("--tool", choices=["claude", "codex"], required=True)
     imported.add_argument("--project")
-    commands.add_parser("health", help="查看覆盖缺口、未知类型和未归属会话")
+    health = commands.add_parser("health", help="本地查看覆盖缺口、模型用量与提取告警")
+    health.add_argument("--project", help="仅筛选提取指标和覆盖缺口，日额度仍为全库")
+    health.add_argument("--day", help="模型用量日期 YYYY-MM-DD，默认当天 UTC")
+    health.add_argument("--daily-budget", type=int, default=500000, help="与 worker 使用同一日额度")
+    health.add_argument("--limit", type=int, default=50, help="覆盖缺口页长")
+    health.add_argument("--offset", type=int, default=0, help="覆盖缺口偏移")
     search = commands.add_parser("search", help="原文检索，用户文本按字面量处理")
     search.add_argument("text")
     search.add_argument("--limit", type=int, default=20)
@@ -127,7 +132,7 @@ def run(args: argparse.Namespace, store: Store) -> object:
         return {"files": len(paths), "events": sum(x.get("events", 0) for x in results)}
     if args.command == "health":
         mark_deleted(store)
-        return store.health()
+        return store.health(args.project, args.day, args.daily_budget, args.limit, args.offset)
     if args.command == "search":
         return store.search(args.text, args.limit)
     if args.command == "evidence":
