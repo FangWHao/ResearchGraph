@@ -12,14 +12,14 @@ from rg.extract.budgets import Budgets
 from rg.extract.locator import CUE_PATTERNS, positions, units, windows
 from rg.extract.paths import file_paths
 from rg.extract.provider import Provider
-from rg.extract.redact import redact
+from rg.extract.redact import model_input, redact
 from rg.extract.schemas import PASS1_SCHEMA, PASS2_SCHEMA
 from rg.extract.segmenter import Segment, segment, split
 from rg.extract.validate import InvalidClaim, persist
 from rg.extract.working_set import working_set
 from rg.ingest.common import parse
 from rg.slim.slimmer import slim_session
-from rg.slim.tokens import BudgetExceeded, CountingUnavailable
+from rg.slim.tokens import BudgetExceeded, CountingUnavailable, DailyBudgetExceeded
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
 
@@ -72,7 +72,7 @@ class Worker:
         _permission(self.store, project_id, self.provider)
         self._check_model_limits()
         prompt = Path(__file__).with_name("prompts").joinpath(stage + ".txt").read_text()
-        content = redact(content.encode()).data.decode()
+        content = model_input(content, stage)
         request = self.provider.request(prompt, content, schema, output_budget)
         prompt_version = digest(prompt.encode())
         schema_version = 2 if stage == "pass1" else 1
@@ -82,6 +82,7 @@ class Worker:
                     stage,
                     request,
                     self.provider.provider,
+                    self.provider.model,
                     item.segment_id,
                     working_ids,
                     prompt_version,
@@ -159,7 +160,7 @@ class Worker:
                     "SELECT reserved_tokens FROM daily_usage WHERE day = ?", (day,)
                 ).fetchone()[0]
                 if used + reserve > self.daily_budget:
-                    raise BudgetExceeded("每日 token 上限已达到，暂停队列")
+                    raise DailyBudgetExceeded("每日 token 上限已达到，暂停队列")
                 db.execute(
                     "UPDATE daily_usage SET reserved_tokens = reserved_tokens + ? WHERE day = ?",
                     (reserve, day),
@@ -197,7 +198,7 @@ class Worker:
                 self._status(run_id, "invalid", "输出 schema 校验失败")
                 raise InvalidClaim("输出 schema 校验失败")
             self.store.db.execute(
-                "UPDATE extraction_runs SET output_json = ?, status = ? "
+                "UPDATE extraction_runs SET output_json = ?, status = ?, error = NULL "
                 "WHERE extraction_run_id = ?",
                 (dumps(output), "validated", run_id),
             )
@@ -303,12 +304,27 @@ class Worker:
         stats = {"segments": len(items), "claims": 0, "manual": 0}
         for item in items:
             self._process_item(item, project_id, stats, 0, scope)
+            if stats.get("paused"):
+                break
         pending = self.store.db.execute(
             "SELECT count(*) FROM coverage c JOIN raw_events r USING(event_id) "
             "WHERE r.session_pk = ? AND c.status = 'pending'",
             (session_id,),
         ).fetchone()[0]
         if stats["manual"] == 0 and pending == 0:
+            for queued in self.store.db.execute(
+                "SELECT job_id,payload FROM jobs WHERE kind='budget_pause' AND state='queued'"
+            ).fetchall():
+                context = json.loads(queued["payload"])
+                if (
+                    context.get("session_pk") == session_id
+                    and context.get("provider") == self.provider.provider
+                    and context.get("model") == self.provider.model
+                ):
+                    self.store.db.execute(
+                        "UPDATE jobs SET state='done', error=NULL, updated_at=? WHERE job_id=?",
+                        (now(), queued["job_id"]),
+                    )
             self.store.db.execute(
                 "INSERT OR IGNORE INTO session_results VALUES (?, ?, ?, ?)",
                 (cache_key, session_id, len(items), now()),
@@ -436,6 +452,31 @@ class Worker:
                     stats["claims"] += len(claim_ids)
                 self._coverage(item, "pass2", "covered")
                 return
+        except DailyBudgetExceeded:
+            session = self.store.db.execute(
+                "SELECT session_pk FROM raw_events WHERE event_id=?", (item.ids[0],)
+            ).fetchone()[0]
+            context = dumps(
+                {
+                    "session_pk": session,
+                    "project_id": project_id,
+                    "provider": self.provider.provider,
+                    "model": self.provider.model,
+                    "segment_id": item.segment_id,
+                    "event_ids": item.ids,
+                }
+            )
+            if not self.store.db.execute(
+                "SELECT 1 FROM jobs WHERE kind='budget_pause' AND payload=? AND state='queued'",
+                (context,),
+            ).fetchone():
+                self.store.db.execute(
+                    "INSERT INTO jobs (kind,payload,state,attempts,error,updated_at) "
+                    "VALUES ('budget_pause', ?, 'queued', 0, 'daily_budget', ?)",
+                    (context, now()),
+                )
+            stats["paused"] = 1
+            return
         except (InvalidClaim, BudgetExceeded, RuntimeError) as error:
             if run_id and isinstance(error, InvalidClaim):
                 current = self.store.db.execute(
@@ -454,6 +495,8 @@ class Worker:
                 )
                 for child in children:
                     self._process_item(child, project_id, stats, failures + 1, scope)
+                    if stats.get("paused"):
+                        break
                 return
             self.store.db.execute(
                 "INSERT INTO jobs (kind, payload, state, attempts, error, updated_at) "

@@ -89,6 +89,8 @@ class DerivedProvider(FakeProvider):
                 output.update(source=None, target=None)
             if self.broken == "endpoint":
                 output["source"] = "未提供的对象"
+            if self.broken == "none_endpoints":
+                output.update(source=content["cards"][0]["id"], target=content["cards"][1]["id"])
         else:
             output = {
                 "text": "候选记录，需要人工复核。",
@@ -146,13 +148,24 @@ def test_same_file_version_preserves_path_algorithm_and_project(store: Store, tm
         "UPDATE artifact_versions SET algo='sha256',path='/work/other.csv' WHERE version_id='1'"
     )
     assert pairs(store, project) == []
+    store.db.execute(
+        "UPDATE artifact_versions SET algo='unknown',path='/work/result.csv' WHERE version_id='1'"
+    )
+    assert pairs(store, project) == []
 
 
 def test_link_sends_one_original_side_and_keeps_new_claim_candidate(store: Store, tmp_path: Path):
     project, first, second = two_objects(store, tmp_path)
     provider = DerivedProvider()
     worker = Worker(store, provider)
-    assert link(worker, project) == {"pairs": 1, "claims": 1, "cached": 0, "manual": 0}
+    linked = link(worker, project)
+    assert {k: linked[k] for k in ("pairs", "claims", "cached", "manual")} == {
+        "pairs": 1,
+        "claims": 1,
+        "cached": 0,
+        "manual": 0,
+    }
+    assert linked["processed"] == 1 and linked["has_more"] == 0
     content = provider.inputs[0]
     assert len(content["cards"]) == 2 and "source_window" in content
     assert "会话甲的独立原文" not in dumps(content)

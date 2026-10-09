@@ -11,10 +11,10 @@ from rg.store.database import Store
 from tests.golden.test_ingestion import lines, record
 
 
-def legacy_store(tmp_path: Path, monkeypatch) -> tuple[Path, bytes]:
+def legacy_store(tmp_path: Path, monkeypatch, version: int = 1) -> tuple[Path, bytes]:
     root = tmp_path / "legacy"
     with monkeypatch.context() as change:
-        change.setattr(migrations, "LATEST_VERSION", 1)
+        change.setattr(migrations, "LATEST_VERSION", version)
         value = Store(root)
         path = tmp_path / "event.jsonl"
         lines(path, [record("保留原始事件")])
@@ -27,7 +27,7 @@ def legacy_store(tmp_path: Path, monkeypatch) -> tuple[Path, bytes]:
 def test_v1_upgrade_keeps_original_events_and_is_idempotent(tmp_path: Path, monkeypatch):
     root, raw = legacy_store(tmp_path, monkeypatch)
     value = Store(root)
-    assert value.db.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert value.db.execute("PRAGMA user_version").fetchone()[0] == 3
     assert value.raw(1) == raw
     with pytest.raises(sqlite3.IntegrityError):
         value.db.execute("DELETE FROM raw_events")
@@ -66,3 +66,39 @@ def test_newer_database_is_not_silently_downgraded(tmp_path: Path):
     connection.close()
     with pytest.raises(ValueError, match="不能降级"):
         Store(root)
+
+
+def test_v2_upgrade_preserves_locations_and_failed_v3_rolls_back(tmp_path: Path, monkeypatch):
+    root, raw = legacy_store(tmp_path, monkeypatch, version=2)
+    connection = sqlite3.connect(root / "rg.db")
+    run = connection.execute(
+        "INSERT INTO extraction_runs (job_key,stage,input_event_ids,status,created_at) "
+        "VALUES ('legacy-position','pass1','[1]','ok','2026-10-09')"
+    ).lastrowid
+    start = raw.index("保留".encode())
+    connection.execute(
+        "INSERT INTO candidate_locations VALUES (?,1,?,?,'decision','rule')",
+        (run, start, start + len("保留".encode())),
+    )
+    connection.commit()
+    connection.close()
+    with monkeypatch.context() as change:
+        change.setitem(migrations.MIGRATIONS, 3, (*migrations.MIGRATIONS[3], "INVALID SQL"))
+        with pytest.raises(sqlite3.OperationalError):
+            Store(root)
+    connection = sqlite3.connect(root / "rg.db")
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert (
+        connection.execute(
+            "SELECT count(*) FROM sqlite_master WHERE name='link_progress'"
+        ).fetchone()[0]
+        == 0
+    )
+    connection.close()
+    value = Store(root)
+    assert value.db.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert value.raw(1) == raw
+    position = value.db.execute("SELECT byte_start,byte_end FROM candidate_locations").fetchone()
+    assert raw[position[0] : position[1]].decode() == "保留"
+    assert value.db.execute("SELECT count(*) FROM link_progress").fetchone()[0] == 0
+    value.close()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 2
+LATEST_VERSION = 3
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -13,7 +13,18 @@ MIGRATIONS = {
         "cue TEXT NOT NULL, source TEXT NOT NULL CHECK(source IN ('rule', 'model')), "
         "PRIMARY KEY(extraction_run_id, event_id, byte_start, byte_end, cue, source))",
         "CREATE INDEX candidate_locations_event ON candidate_locations(event_id)",
-    )
+    ),
+    3: (
+        "CREATE TABLE link_progress ("
+        "job_key TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects, "
+        "pair_id TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, "
+        "source_cards TEXT NOT NULL, "
+        "state TEXT NOT NULL CHECK(state IN ('pending','done','failed')), "
+        "attempts INTEGER NOT NULL DEFAULT 0, "
+        "extraction_run_id INTEGER REFERENCES extraction_runs, "
+        "review_job_id INTEGER REFERENCES jobs, error TEXT, updated_at TEXT NOT NULL)",
+        "CREATE INDEX link_progress_project ON link_progress(project_id, state)",
+    ),
 }
 
 

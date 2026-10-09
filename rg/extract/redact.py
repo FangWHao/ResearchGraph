@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -62,3 +63,41 @@ def redact(raw: bytes, custom: tuple[str, ...] = ()) -> Redacted:
         data[start:end] = b"*" * (end - start)
     # 等长 UTF-8 字节遮盖使正反映射保持恒等；不允许引用被遮盖区域。
     return Redacted(bytes(data), raw, tuple(sorted(set(ranges))))
+
+
+def model_input(content: str, stage: str) -> str:
+    """按程序输入层次保留生成的标识符；原文和自由文本不享有此例外。"""
+    from rg.store.database import dumps
+
+    identities = {
+        "link": {("pair_id",), ("cards", "*", "id")},
+        "pass2": {("segment_id",), ("working_set", "*", "id")},
+        "overview": {
+            ("records", "*", "payload", field)
+            for field in ("entity_id", "source", "target", "selected")
+        }
+        | {("records", "*", "payload", "inputs", "*", "ref")},
+    }.get(stage, set())
+
+    def walk(value: Any, path: tuple[str, ...]) -> Any:
+        if isinstance(value, str):
+            if path in identities:
+                return value
+            # pass2 的 slim 是程序生成的 JSON 字符串，按 pass1 层次处理其中的正文。
+            if stage == "pass2" and path == ("slim",):
+                return model_input(value, "pass1")
+            return redact(value.encode()).data.decode()
+        if isinstance(value, list):
+            return [walk(item, (*path, "*")) for item in value]
+        if isinstance(value, dict):
+            return {
+                redact(key.encode()).data.decode(): walk(item, (*path, key))
+                for key, item in value.items()
+            }
+        return value
+
+    try:
+        parsed = json.loads(content)
+    except ValueError:
+        return redact(content.encode()).data.decode()
+    return dumps(walk(parsed, ()))

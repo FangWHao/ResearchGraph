@@ -79,8 +79,13 @@ def parser() -> argparse.ArgumentParser:
     model_arguments(extract)
     linked = commands.add_parser("link", help="逐对提出跨会话关系，保持候选")
     linked.add_argument("--project", required=True)
-    linked.add_argument("--limit", type=int, default=50)
+    linked.add_argument(
+        "--limit", type=int, default=50, help="本次新任务/重试上限，已完成缓存不占用"
+    )
     linked.add_argument("--estimate", action="store_true", help="本地列候选对，不联网")
+    linked.add_argument(
+        "--retry-failed", action="store_true", help="本次重试已进入人工队列的失败对"
+    )
     model_arguments(linked)
     summarized = commands.add_parser("overview", help="从 claims 生成带标记的模型摘要")
     summarized.add_argument("--project", required=True)
@@ -192,7 +197,7 @@ def run(args: argparse.Namespace, store: Store) -> object:
             if args.command == "link":
                 from rg.extract.linker import link
 
-                return link(worker, args.project, args.limit, scope)
+                return link(worker, args.project, args.limit, scope, args.retry_failed)
             if args.command == "overview":
                 from rg.extract.overview import overview
 

@@ -18,3 +18,7 @@ class CountingUnavailable(RuntimeError):
 
 class BudgetExceeded(ValueError):
     pass
+
+
+class DailyBudgetExceeded(BudgetExceeded):
+    pass
