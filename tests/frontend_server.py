@@ -443,6 +443,8 @@ def main() -> None:
         directory = Path(temp)
         store = Store(directory / "store")
         seed(store, directory)
+        store.project("验收新增人工记录项目", [Path("/synthetic/manual-question")])
+        store.project("验收新增人工记录项目二", [Path("/synthetic/manual-question-two")])
         store.close()
         server = LocalServer(
             directory / "store", args.web_dir, args.port, token="synthetic-browser-token"

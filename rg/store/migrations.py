@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 8
+LATEST_VERSION = 9
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -117,6 +117,17 @@ MIGRATIONS = {
         "state TEXT NOT NULL CHECK(state IN ('queued','waiting','done','failed')), "
         "error TEXT, updated_at TEXT NOT NULL)",
         "CREATE INDEX l1_derivations_queue ON l1_derivations(state,updated_at,event_id)",
+    ),
+    9: (
+        "CREATE TABLE explicit_records (request_id TEXT PRIMARY KEY, "
+        "project_id TEXT NOT NULL REFERENCES projects, "
+        "kind TEXT NOT NULL CHECK(kind='question'), intent_sha256 TEXT NOT NULL, "
+        "event_id INTEGER NOT NULL UNIQUE REFERENCES raw_events, "
+        "claim_id INTEGER NOT NULL UNIQUE REFERENCES claims, recorded_at TEXT NOT NULL)",
+        "CREATE TRIGGER explicit_no_update BEFORE UPDATE ON explicit_records BEGIN "
+        "SELECT RAISE(ABORT,'explicit record is append-only'); END",
+        "CREATE TRIGGER explicit_no_delete BEFORE DELETE ON explicit_records BEGIN "
+        "SELECT RAISE(ABORT,'explicit record is append-only'); END",
     ),
 }
 

@@ -224,3 +224,24 @@ def test_v7_l1_migration_rolls_back_and_does_not_invent_runtime_history(
     assert value.db.execute("SELECT count(*) FROM run_observations").fetchone()[0] == 0
     assert value.db.execute("SELECT count(*) FROM artifact_versions").fetchone()[0] == 0
     value.close()
+
+
+def test_v8_explicit_record_migration_is_atomic_and_keeps_old_history(tmp_path: Path, monkeypatch):
+    root, raw = legacy_store(tmp_path, monkeypatch, version=8)
+    with monkeypatch.context() as change:
+        change.setitem(migrations.MIGRATIONS, 9, (*migrations.MIGRATIONS[9], "INVALID SQL"))
+        with pytest.raises(sqlite3.OperationalError):
+            Store(root)
+    connection = sqlite3.connect(root / "rg.db")
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 8
+    assert (
+        connection.execute(
+            "SELECT count(*) FROM sqlite_master WHERE name='explicit_records'"
+        ).fetchone()[0]
+        == 0
+    )
+    connection.close()
+    recovered = Store(root)
+    assert recovered.raw(1) == raw
+    assert recovered.db.execute("SELECT count(*) FROM explicit_records").fetchone()[0] == 0
+    recovered.close()

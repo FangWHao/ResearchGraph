@@ -317,7 +317,8 @@ def health(store: Store, values: dict[str, str], daily_budget: int) -> dict[str,
     rows = store.db.execute(
         "SELECT f.*,s.tool,s.native_session_id,s.project_id FROM source_files f "
         "LEFT JOIN sessions s USING(session_pk) "
-        "WHERE (? IS NULL OR s.project_id=?) ORDER BY f.file_instance_id",
+        "WHERE f.parser IN ('claude','codex') AND (? IS NULL OR s.project_id=?) "
+        "ORDER BY f.file_instance_id",
         (project, project),
     ).fetchall()
     sources = []
@@ -397,8 +398,8 @@ def review(store: Store, body: dict[str, Any]) -> dict[str, Any]:
 def edit(store: Store, claim_id: int, body: dict[str, Any]) -> dict[str, Any]:
     actor, expected = _human(body.get("actor")), _expected(body.get("expected_revision"))
     payload, scope = body.get("payload"), body.get("scope")
-    if not isinstance(payload, dict) or not isinstance(scope, dict):
-        raise ValueError("修改需提供结构化 payload 与完整范围")
+    if not isinstance(payload, dict) or "scope" not in body:
+        raise ValueError("修改需提供结构化 payload 与范围")
     with store.transaction() as db:
         if store.revision() != expected:
             raise ConflictError("图版本已变化，请刷新后修改")
@@ -408,6 +409,18 @@ def edit(store: Store, claim_id: int, body: dict[str, Any]) -> dict[str, Any]:
         if db.execute("SELECT 1 FROM claims WHERE replaces_claim=?", (claim_id,)).fetchone():
             raise ValueError("记录已有修改版，请打开最新记录")
         original = json.loads(row["payload"])
+        from rg.record.schema import validate_question, validate_scope
+
+        manual_question = (
+            row["basis"] == "manual"
+            and row["actor"].startswith("human:")
+            and row["claim_type"] == "entity_version"
+            and original.get("kind") == "question"
+        )
+        if manual_question:
+            scope = validate_scope(scope)
+        elif not isinstance(scope, dict):
+            raise ValueError("修改需提供完整范围")
         payload = dict(payload)
         if "evidence" in payload:
             raise ValueError("修改不能自行替换原文引用")
@@ -437,13 +450,16 @@ def edit(store: Store, claim_id: int, body: dict[str, Any]) -> dict[str, Any]:
                 {key: span[key] for key in ("event_id", "byte_start", "byte_end", "quote_sha256")}
                 | {"quote": quote.decode("utf-8")}
             )
-        errors = list(
-            Draft202012Validator(CLAIM_SCHEMA).iter_errors(
-                payload | {"scope": scope, "evidence": evidence_items}
+        if manual_question:
+            validate_question(payload | {"scope": scope, "evidence": evidence_items})
+        else:
+            errors = list(
+                Draft202012Validator(CLAIM_SCHEMA).iter_errors(
+                    payload | {"scope": scope, "evidence": evidence_items}
+                )
             )
-        )
-        if errors:
-            raise ValueError("修改不符合 claim schema，需保留有效结构和证据")
+            if errors:
+                raise ValueError("修改不符合 claim schema，需保留有效结构和证据")
         cursor = db.execute(
             "INSERT INTO claims (claim_type,entity_id,payload,scope,basis,actor,claim_state, "
             "replaces_claim,occurred_at,recorded_at) VALUES (?,?,?,?,?,?,'confirmed',?,?,?)",
@@ -451,7 +467,7 @@ def edit(store: Store, claim_id: int, body: dict[str, Any]) -> dict[str, Any]:
                 row["claim_type"],
                 row["entity_id"],
                 dumps(payload),
-                dumps(scope),
+                dumps(scope) if scope is not None else None,
                 "manual",
                 actor,
                 claim_id,

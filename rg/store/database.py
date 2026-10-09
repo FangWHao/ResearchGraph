@@ -155,7 +155,7 @@ class Store:
                 0
             ],
             "known_source_paths": self.db.execute(
-                "SELECT count(DISTINCT path) FROM source_files"
+                "SELECT count(DISTINCT path) FROM source_files WHERE parser IN ('claude','codex')"
             ).fetchone()[0],
             "spool_receipts": self.db.execute("SELECT count(*) FROM spool_receipts").fetchone()[0],
             "spool_unfinished": self.db.execute(

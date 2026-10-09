@@ -64,7 +64,7 @@ def sources(store: Store) -> list[Source]:
     seen = {s.path for s in result}
     for row in store.db.execute(
         "SELECT f.path,f.parser,s.project_id FROM source_files f JOIN sessions s USING(session_pk) "
-        "ORDER BY f.file_instance_id DESC"
+        "WHERE f.parser IN ('claude','codex') ORDER BY f.file_instance_id DESC"
     ):
         path = Path(row["path"])
         covered = [

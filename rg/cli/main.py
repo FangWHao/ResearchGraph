@@ -134,10 +134,39 @@ def parser() -> argparse.ArgumentParser:
     derived.add_argument("--session", type=int)
     derived.add_argument("--limit", type=int, default=100)
     derived.add_argument("--retry-failed", action="store_true")
+    question = commands.add_parser("question", help="人工记录研究问题，保留原文；不调用模型")
+    question.add_argument("text")
+    question.add_argument("--project", required=True, help="明确项目 ID")
+    question.add_argument("--actor", default="human:本机用户", help="human:人工身份")
+    question.add_argument("--scope", nargs="+", action="extend", default=[], metavar="字段=值")
+    question.add_argument("--request-id", help="重试同一意图的 UUID；默认新建")
+    question.add_argument("--occurred-at", help="回填发生时间，需带明确时区")
+    question.add_argument("--expected-revision", type=int, help="读取版本后提交，冲突则不写入")
     return cli
 
 
 def run(args: argparse.Namespace, store: Store) -> object:
+    if args.command == "question":
+        import uuid
+
+        from rg.record.question import question
+
+        return question(
+            store,
+            {
+                "project_id": args.project,
+                "text": args.text,
+                "actor": args.actor,
+                "scope": parse_scope(args.scope),
+                "request_id": args.request_id or str(uuid.uuid4()),
+                "occurred_at": args.occurred_at,
+                "expected_revision": (
+                    args.expected_revision
+                    if args.expected_revision is not None
+                    else store.revision()
+                ),
+            },
+        )
     if args.command == "derive":
         from rg.derive.worker import derive
 

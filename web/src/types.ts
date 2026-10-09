@@ -40,6 +40,14 @@ export interface GraphData {
   run_states: { run_id: string; state: string; exit_code: number | null }[];
   capabilities: { impact_propagation: boolean; artifact_diff: boolean };
 }
+export interface QuestionRequest {
+  project_id: string; text: string; scope: Record<string, string> | null;
+  actor: string; expected_revision: number; request_id: string;
+}
+export interface QuestionResult {
+  revision: number; claim_id: number; entity_id: string; event_id: number;
+  request_id: string; replayed: boolean;
+}
 export interface EventWindow {
   event_id: number; session_pk: number; seq: number; kind: string; role: string | null;
   path: string; source_byte_start: number; source_byte_end: number;

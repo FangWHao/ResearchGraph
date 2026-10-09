@@ -6,7 +6,7 @@ import { actionNames, adoption, entityVersions, evidenceNames, evidenceState, gr
 import type { Claim, ClaimsPage, GraphData, ReviewState, SearchPage, Span } from './types';
 
 type Common = { data: GraphData; onClaim: (id: number) => void; onEvidence: (span: Span) => void };
-export function Questions({ data, onClaim, onEvidence }: Common) {
+export function Questions({ data, onClaim, onEvidence, onCreateQuestion }: Common & { onCreateQuestion: () => void }) {
   const entities = useMemo(() => entityVersions(data.claims), [data.claims]);
   const questions = entities.filter(item => item.payload.kind === 'question');
   const [focused, setFocused] = useState<number | null>(null);
@@ -33,8 +33,9 @@ export function Questions({ data, onClaim, onEvidence }: Common) {
     </article>;
   }
   return <>
-    <div className="summary-grid"><div><span>研究问题</span><strong>{questions.length.toString().padStart(2, '0')}</strong><small>来自本地会话记录</small></div><div><span>研究方案</span><strong>{entities.filter(item => item.payload.kind === 'approach').length.toString().padStart(2, '0')}</strong><small>每次采用都带范围</small></div><div><span>已确认记录</span><strong>{confirmed.toString().padStart(2, '0')}</strong><small>人工与原话规则分别标明</small></div><div><span>待复核记录</span><strong>{data.claims.filter(item => item.effective_state === 'candidate').length.toString().padStart(2, '0')}</strong><small>候选动作不计入当前采用</small></div></div>
-    {!questions.length ? <Empty title="还没有可查看的研究问题">导入并提取会话后，问题、方案及其证据会出现在这里。没有明确归属的方案单列在下方。</Empty> : <div className="question-layout">
+    <div className="questions-actions"><button className="button primary" onClick={onCreateQuestion}>新增研究问题</button></div>
+    <div className="summary-grid"><div><span>研究问题</span><strong>{questions.length.toString().padStart(2, '0')}</strong><small>来自会话或人工记录</small></div><div><span>研究方案</span><strong>{entities.filter(item => item.payload.kind === 'approach').length.toString().padStart(2, '0')}</strong><small>每次采用都带范围</small></div><div><span>已确认记录</span><strong>{confirmed.toString().padStart(2, '0')}</strong><small>人工与原话规则分别标明</small></div><div><span>待复核记录</span><strong>{data.claims.filter(item => item.effective_state === 'candidate').length.toString().padStart(2, '0')}</strong><small>候选动作不计入当前采用</small></div></div>
+    {!questions.length ? <Empty title="还没有可查看的研究问题">可以直接记录研究问题，或导入并提取会话。没有明确归属的方案单列在下方。</Empty> : <div className="question-layout">
       <div className="question-index"><div className="section-caption">研究问题 <span>{questions.length}</span></div>{questions.map((item, index) => <button key={item.claim_id} className={item.claim_id === question?.claim_id ? 'question-item active' : 'question-item'} onClick={() => setFocused(item.claim_id)}><span className="question-number">Q{(index + 1).toString().padStart(2, '0')}</span><strong>{label(item)}</strong><Badge state={item.effective_state} /></button>)}</div>
       <div className="question-detail"><div className="question-heading"><span className="eyebrow">正在研究的问题</span><h2>{label(question)}</h2><p>{question.payload.content}</p><div className="inline-row"><Scope value={question.scope} /><button className="text-button" onClick={() => onClaim(question.claim_id)}>查看记录与证据 <Icon name="arrow" size={15} /></button></div></div>
         {(['accepted', 'deferred', 'rejected', 'other'] as const).map(group => {

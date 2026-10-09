@@ -1,0 +1,11 @@
+.questions-actions { display: flex; justify-content: flex-end; margin: 0 0 20px; }
+.manual-project { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.manual-project strong { color: var(--ink); }
+.manual-refresh { margin-top: 14px; font-size: 13px; }
+.manual-refresh p { font-size: 13px; }
+.manual-question-modal footer { flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .questions-actions { justify-content: flex-start; }
+  .manual-question-modal footer > span { flex-basis: 100%; }
+  .manual-question-modal footer > .button { width: 100%; }
+}

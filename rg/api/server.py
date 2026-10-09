@@ -192,6 +192,10 @@ class Handler(BaseHTTPRequestHandler):
                 path = urlsplit(self.path).path
                 if path == "/api/review":
                     result = views.review(store, body)
+                elif path == "/api/records/question":
+                    from rg.record.question import question
+
+                    result = question(store, body)
                 elif match := re.fullmatch(r"/api/claims/([1-9][0-9]*)/edit", path):
                     result = views.edit(store, int(match[1]), body)
                 else:
