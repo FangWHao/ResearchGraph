@@ -48,7 +48,9 @@ def cache_count(store: Store, counter: TokenCounter, text: str) -> int:
     return tokens
 
 
-def slim_session(store: Store, session_id: int, counter: TokenCounter) -> list[dict[str, Any]]:
+def slim_session(
+    store: Store, session_id: int, counter: TokenCounter, event_ids: set[int] | None = None
+) -> list[dict[str, Any]]:
     permission = store.db.execute(
         "SELECT p.remote_model_allowed FROM sessions s JOIN projects p "
         "USING(project_id) WHERE session_pk = ?",
@@ -62,6 +64,8 @@ def slim_session(store: Store, session_id: int, counter: TokenCounter) -> list[d
         (session_id,),
     ).fetchall()
     for row in rows:
+        if event_ids is not None and row["event_id"] not in event_ids:
+            continue
         reason = row["exclude_reason"]
         mirror = store.db.execute(
             "SELECT reason FROM dedupe_links WHERE alias_id = ?", (row["event_id"],)
@@ -106,6 +110,7 @@ def slim_session(store: Store, session_id: int, counter: TokenCounter) -> list[d
             "JOIN slim_events s USING(event_id) WHERE r.session_pk = ? ORDER BY r.seq",
             (session_id,),
         )
+        if event_ids is None or row["event_id"] in event_ids
     ]
     for event in result:
         row = store.db.execute(

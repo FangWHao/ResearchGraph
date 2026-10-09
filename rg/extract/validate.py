@@ -8,6 +8,7 @@ from typing import Any
 from jsonschema import Draft202012Validator
 
 from rg.extract.monitor import set_status
+from rg.extract.progress import complete
 from rg.extract.redact import redact
 from rg.extract.rules import confirm_explicit
 from rg.extract.schemas import PASS2_SCHEMA
@@ -146,6 +147,7 @@ def persist(
     owned_windows: dict[int, list[tuple[int, int]]] | None = None,
     expected_scope: dict[str, str] | None = None,
     attempt_id: int | None = None,
+    progress_config: str | None = None,
 ) -> list[int]:
     try:
         validate(
@@ -183,6 +185,7 @@ def persist(
                 raise InvalidClaim("已成功运行缺少输出快照，不能判定重复")
             if previous["stage"] == "pass2" and json.loads(previous["output_json"]) != output:
                 raise InvalidClaim("不同输出不能复用已成功运行")
+            complete(store, progress_config, segment_id, "covered")
             return []
         for item in output["claims"]:
             if item["claim_type"] == "entity_version":
@@ -237,4 +240,5 @@ def persist(
                 )
         confirm_explicit(store, ids, project_id, allowed_ids, owned_windows, expected_scope)
         set_status(store, run_id, "ok", attempt_id=attempt_id)
+        complete(store, progress_config, segment_id, "covered")
     return ids

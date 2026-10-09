@@ -80,6 +80,9 @@ def parser() -> argparse.ArgumentParser:
     extract = commands.add_parser("extract", help="实测计数并有界提取；需项目允许外发")
     extract.add_argument("--session", type=int, required=True)
     extract.add_argument("--estimate", action="store_true", help="仅实测计数和切片，不调用生成")
+    extract.add_argument(
+        "--retry-failed", action="store_true", help="显式重试人工失败片段，保留历史尝试"
+    )
     extract.add_argument("--report", type=Path)
     model_arguments(extract)
     linked = commands.add_parser("link", help="逐对提出跨会话关系，保持候选")
@@ -242,7 +245,7 @@ def run(args: argparse.Namespace, store: Store) -> object:
                     "input_budget": worker.input_budget,
                     "content_budget": worker.budgets.content_tokens,
                 }
-            result = worker.process(args.session, scope)
+            result = worker.process(args.session, scope, args.retry_failed)
             if args.report:
                 report(store, args.session, args.report)
             return result
