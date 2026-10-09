@@ -266,3 +266,19 @@
 - 主 agent 核对源代码、接口口径、故障恢复与截图。桌面 1440 宽、小屏 390 宽的原始数据均已加载；发现标题被长范围说明挤断后由子 agent 最小修正，再次构建/浏览器验收并重拍，页面无横向溢出。截图和备份留在忽略目录，不读完整真实会话、不安装钩子、不改用户设置。
 - 下一步：完成本轮允许清单提交、现有草稿 PR 新 HEAD 远端检查及恢复包独立还原后结束本任务；下个任务继续运行/编辑/产物映射、未指定范围工作集和 MCP。正式人工参考及真实 M1/M2 质量门槛仍需核对，不将界面提前实现视为整个目标完成。
 - 提交前允许清单检查：git diff --cached --check 无输出、退出码 0；tracked_files=164 staged_files=14 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True。仅公开源码、中文记录与合成测试，凭据、截图、数据库、私有材料和缓存不纳入提交；远端结果按本轮新 HEAD 核对。
+
+
+## 2026-10-09 · L1 运行、编辑与前端证据
+
+- 任务：落实 §2、§5.1–5.3、§6.1–6.4、§8.1–8.3、§9 的运行与编辑记录；按用户授权由前端子 agent 接入。开始读进度末尾、相关章节与决定；基线 7e2659b 的恢复包已验证。中断后核对实际工作树和进程，旧子 agent 不在 live 列表，新的前端子 agent 接续现有代码而非重写。完整 M0–M4 仍未验收。
+- 改动的文件：新增 rg/derive 的六个模块、tests/golden/test_l1.py；修改版本 8 迁移、scanner/codex/watch、slimmer、CLI、backup、health、API、迁移测试与合成浏览器种子。前端修改 App/Views/components/types、健康浏览器期望，新增 DateText、EventLocator、EvidenceRecords、l1 逻辑/样式和两份测试。更新 README、需求落实、决定、PR 草稿和本文件，新增中文运行/编辑与前端验收。
+- 行为：从已复制 L0 离线派生，只按同会话唯一调用/执行器句柄关联，不按命令或时间猜测。运行观察与编辑记录只追加，工作队列与事实同事务；无结果不是失败、退出码缺失未知、冲突保留事实并降为未知。stdout 与 is_error 不补运行结果，开始时间无记录则为空。结果元数据变化不因正文相同被去重；非字符串 cwd 不会中止摄取。
+- 版本：Claude 完整报告与核对补丁生成候选文本，摘要明确 sha256:tool-utf8；Codex 更新/删除只有补丁，新增前版本也未知。不读当前文件补旧 preimage，不绑定最近快照作运行 I/O。缺口、用户同时修改、换行边界、超限和请求不一致明确保存；backup 保留候选内容/补丁，原文件删除仍可恢复。版本 7→8 失败整体回滚、不捏造旧事实，旧瘦身缓存升级后撤销任意 stdout 退出码推断。
+- 前端：全库事件编号入口补齐正文搜索不包含工具事件的实际入口，编号明确跨项目；原文请求/结果/观测可导航，双时间、候选、仅补丁、等待/失败/排除及部分清单可核对。长命令最多 8000 UTF8 字节，有完整字节数和正文上方预览提示；280px 键盘滚动区域保留完整原文链接。差异每份及同事件合计最多 64000 字节、每份最多 2000 行，超限不冒充完整版本。运行输入/输出版本仍明确未记录。
+- uv sync --locked：Resolved 23 packages in 12ms，Checked 22 packages in 42ms；uv run rg --help、derive --help 退出码均为 0。实际已安装 CLI 删除合成源文件后三次 derive --limit 1，依次 done/remaining=1/1、1/0、0/0，最终 exited/code0，source_deleted=True、l0_unchanged=True。
+- uv run pytest tests/golden/test_l1.py -q：49 passed in 5.39s；uv run pytest -q：296 passed in 88.21s；uv run pytest tests/golden -q：252 passed in 75.41s。全部/固定案例并行运行，不作性能基准；49 项新 L1 案例和版本 8 回滚不替代完整 §15/M2。
+- uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；wheel_files=67 source_resources=62 required_missing=0 source_mismatches=0 actual_secret_matches=0 private_or_static_files=0，派生模块包含在包内。
+- cd web && pnpm test：3 files、21 tests passed，734ms；pnpm build：TypeScript 通过、186 modules、built in 1.41s；pnpm test:browser：13 passed (13.4s)。实际 HTTP/Chromium 核对运行、候选编辑、补丁、短命令和 404；独立合成响应核对旧字段、partial、超限预览与 401。真实后端超长命令另由固定案例验证，前端边界响应不作为该采集证明。
+- 验收修复：首轮前端新增三项因工具事件正文搜索未命中而超时，原八项通过；增加编号入口后最终十三项全部通过。后续补预览说明前置、键盘滚动、未知完整性和跨项目说明，并复验。父 agent 实看桌面完整编辑、小屏补丁及预览截图，页面/抽屉无横向溢出。前端冻结 13 个文件，副本、截图与构建产物均在忽略目录；不读真实完整会话、不调远程模型、不装钩子、不改个人设置。
+- 下一步：完成允许清单提交、现有草稿 PR 新 HEAD 的远端检查和恢复包独立还原后结束本任务。后续继续完整运行 I/O、后台大文件摘要、未指定范围工作集、显式记录与 MCP/完整图；真实人工参考、正式客户端及完整 M1/M2 门槛仍待核对，整个目标不标完成。
+- 提交前允许清单检查：git diff --cached --check 无输出、退出码 0；tracked_files=180 staged_files=37 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True。仅公开源码、中文记录和合成测试；密钥、真实会话、私有材料、截图、数据库、队列及缓存不入仓库，远端结果按本轮新 HEAD 核对。

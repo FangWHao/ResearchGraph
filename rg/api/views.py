@@ -239,17 +239,32 @@ def evidence(store: Store, event_id: int, values: dict[str, str]) -> dict[str, A
     versions = [
         dict(row)
         for row in store.db.execute(
-            "SELECT version_id,path,algo,digest,size,source,observed_at FROM artifact_versions "
-            "WHERE evidence_event_id=? ORDER BY observed_at,version_id",
+            "SELECT version_id,path,algo,digest,size,source,observed_at,phase,basis,claim_state,"
+            "representation FROM artifact_versions "
+            "WHERE evidence_event_id=? ORDER BY observed_at,version_id LIMIT 40",
             (event_id,),
         )
     ]
+    from rg.derive.views import evidence as l1_evidence
+
+    facts = l1_evidence(store, event_id)
+    available = any(item["diff"]["available"] for item in facts["edits"])
     return {
         "event": event,
         "before": [_event(store, row[0], None, None) for row in reversed(before)],
         "after": [_event(store, row[0], None, None) for row in after],
         "artifact_versions": versions,
-        "artifact_diff": {"available": False, "reason": "尚无可比较的版本内容快照"},
+        "artifact_versions_partial": store.db.execute(
+            "SELECT count(*) FROM artifact_versions WHERE evidence_event_id=?", (event_id,)
+        ).fetchone()[0]
+        > 40,
+        "artifact_diff": {
+            "available": available,
+            "reason": "逐条查看工具记录的候选文本版本或补丁，完整性见对应缺口"
+            if available
+            else "尚无可比较的版本内容快照",
+        },
+        "l1": facts,
     }
 
 

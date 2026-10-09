@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 7
+LATEST_VERSION = 8
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -75,6 +75,48 @@ MIGRATIONS = {
         "SELECT RAISE(ABORT,'snapshot is append-only'); END",
         "CREATE TRIGGER snapshot_no_delete BEFORE DELETE ON workspace_snapshots BEGIN "
         "SELECT RAISE(ABORT,'snapshot is append-only'); END",
+    ),
+    8: (
+        "ALTER TABLE runs ADD COLUMN request_event_id INTEGER REFERENCES raw_events",
+        "ALTER TABLE runs ADD COLUMN root_id TEXT REFERENCES source_roots",
+        "ALTER TABLE runs ADD COLUMN gap TEXT",
+        "ALTER TABLE runs ADD COLUMN requested_at TEXT",
+        "CREATE UNIQUE INDEX runs_request_event ON runs(request_event_id)",
+        "CREATE TABLE run_observations ("
+        "observation_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs, "
+        "event_id INTEGER NOT NULL REFERENCES raw_events, state TEXT NOT NULL "
+        "CHECK(state IN ('requested','started','exited','unknown')), exit_code INTEGER, "
+        "executor_session_id INTEGER, reason TEXT, details TEXT NOT NULL, "
+        "occurred_at TEXT, recorded_at TEXT NOT NULL)",
+        "CREATE INDEX run_observations_run ON run_observations(run_id,event_id)",
+        "CREATE TRIGGER run_fact_no_update BEFORE UPDATE ON run_observations BEGIN "
+        "SELECT RAISE(ABORT,'run observation is append-only'); END",
+        "CREATE TRIGGER run_fact_no_delete BEFORE DELETE ON run_observations BEGIN "
+        "SELECT RAISE(ABORT,'run observation is append-only'); END",
+        "ALTER TABLE artifact_versions ADD COLUMN content_sha256 TEXT",
+        "ALTER TABLE artifact_versions ADD COLUMN phase TEXT",
+        "ALTER TABLE artifact_versions ADD COLUMN root_id TEXT REFERENCES source_roots",
+        "ALTER TABLE artifact_versions ADD COLUMN basis TEXT",
+        "ALTER TABLE artifact_versions ADD COLUMN claim_state TEXT "
+        "CHECK(claim_state IS NULL OR claim_state IN ('candidate','confirmed','dismissed'))",
+        "ALTER TABLE artifact_versions ADD COLUMN representation TEXT",
+        "CREATE TABLE edit_records (edit_id TEXT PRIMARY KEY, project_id TEXT NOT NULL "
+        "REFERENCES projects, session_pk INTEGER NOT NULL REFERENCES sessions, call_id TEXT, "
+        "request_event_id INTEGER NOT NULL REFERENCES raw_events, "
+        "result_event_id INTEGER NOT NULL REFERENCES raw_events, path TEXT, "
+        "root_id TEXT REFERENCES source_roots, operation TEXT NOT NULL, patch_sha256 TEXT, "
+        "before_version TEXT REFERENCES artifact_versions, "
+        "after_version TEXT REFERENCES artifact_versions, gap TEXT, user_modified INTEGER, "
+        "occurred_at TEXT, recorded_at TEXT NOT NULL)",
+        "CREATE INDEX edit_records_events ON edit_records(request_event_id,result_event_id)",
+        "CREATE TRIGGER edit_no_update BEFORE UPDATE ON edit_records BEGIN "
+        "SELECT RAISE(ABORT,'edit record is append-only'); END",
+        "CREATE TRIGGER edit_no_delete BEFORE DELETE ON edit_records BEGIN "
+        "SELECT RAISE(ABORT,'edit record is append-only'); END",
+        "CREATE TABLE l1_derivations (event_id INTEGER PRIMARY KEY REFERENCES raw_events, "
+        "state TEXT NOT NULL CHECK(state IN ('queued','waiting','done','failed')), "
+        "error TEXT, updated_at TEXT NOT NULL)",
+        "CREATE INDEX l1_derivations_queue ON l1_derivations(state,updated_at,event_id)",
     ),
 }
 

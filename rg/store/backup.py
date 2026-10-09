@@ -39,7 +39,10 @@ def _backup(store: Store, destination: Path) -> dict[str, int]:
                 "SELECT object_sha256 FROM raw_events "
                 "UNION SELECT object_sha256 FROM spool_receipts "
                 "UNION SELECT record_sha256 FROM workspace_snapshots "
-                "WHERE record_sha256 IS NOT NULL"
+                "WHERE record_sha256 IS NOT NULL "
+                "UNION SELECT content_sha256 FROM artifact_versions "
+                "WHERE content_sha256 IS NOT NULL "
+                "UNION SELECT patch_sha256 FROM edit_records WHERE patch_sha256 IS NOT NULL"
             )
         ]
         for sha in shas:

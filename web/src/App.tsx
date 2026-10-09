@@ -147,7 +147,7 @@ export function App() {
       <footer className="page-footer"><span>ResearchGraph · 可查证的研究决定史</span><span>审核、采用、证据、运行分别记录</span></footer>
     </main></div>
     {selectedClaim && <ClaimDrawer id={selectedClaim} epoch={epoch} actor={actor} onClose={() => setSelectedClaim(null)} onEvidence={onEvidence} onError={onError} onWrite={onWrite} onEdit={onEdit} onClaim={onClaim} />}
-    {selectedEvidence && <aside className="evidence-drawer" role="dialog" aria-label="原文证据"><header><div><span className="eyebrow">来源证据</span><h2>原文 #{selectedEvidence.event_id}</h2></div><button className="icon-button" aria-label="关闭原文" onClick={() => setSelectedEvidence(null)}><Icon name="close" /></button></header><div className="drawer-content"><EvidencePanel target={selectedEvidence} onError={onError} /></div></aside>}
+    {selectedEvidence && <aside className="evidence-drawer" role="dialog" aria-label="原文证据"><header><div><span className="eyebrow">来源证据</span><h2>原文 #{selectedEvidence.event_id}</h2></div><button className="icon-button" aria-label="关闭原文" onClick={() => setSelectedEvidence(null)}><Icon name="close" /></button></header><div className="drawer-content"><EvidencePanel target={selectedEvidence} onError={onError} onEvidence={onEvidence} /></div></aside>}
     {editing && <EditDialog key={editing.claim.claim_id} claim={editing.claim} revision={editing.revision} actor={actor} onClose={() => setEditing(null)} onWrite={onWrite} onError={onError} />}
   </div>;
 }

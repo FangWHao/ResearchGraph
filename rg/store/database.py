@@ -179,4 +179,20 @@ class Store:
                 (project, project),
             ).fetchone()
         )
+        result["l1"] = {
+            "runs": self.db.execute(
+                "SELECT count(*) FROM runs WHERE (? IS NULL OR project_id=?)", (project, project)
+            ).fetchone()[0],
+            "edit_records": self.db.execute(
+                "SELECT count(*) FROM edit_records WHERE (? IS NULL OR project_id=?)",
+                (project, project),
+            ).fetchone()[0],
+            "waiting": self.db.execute(
+                "SELECT count(*) FROM l1_derivations WHERE state='waiting'"
+            ).fetchone()[0],
+            "failed": self.db.execute(
+                "SELECT count(*) FROM l1_derivations WHERE state='failed'"
+            ).fetchone()[0],
+            "queue_scope": "all_projects",
+        }
         return result

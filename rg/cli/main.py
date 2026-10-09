@@ -130,10 +130,18 @@ def parser() -> argparse.ArgumentParser:
     served.add_argument("--open", action="store_true", help="自动打开浏览器")
     backed = commands.add_parser("backup", help="使用 SQLite backup API 备份证据")
     backed.add_argument("destination", type=Path)
+    derived = commands.add_parser("derive", help="从已复制的 L0 派生运行与编辑，不读当前文件")
+    derived.add_argument("--session", type=int)
+    derived.add_argument("--limit", type=int, default=100)
+    derived.add_argument("--retry-failed", action="store_true")
     return cli
 
 
 def run(args: argparse.Namespace, store: Store) -> object:
+    if args.command == "derive":
+        from rg.derive.worker import derive
+
+        return derive(store, args.limit, args.session, args.retry_failed)
     if args.command == "serve" or (args.command == "review" and args.open):
         from rg.api.server import serve
 

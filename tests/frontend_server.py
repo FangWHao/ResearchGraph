@@ -216,6 +216,138 @@ def seed(store: Store, directory: Path) -> None:
         (event_id,),
     )
     seed_health(store, project, empty_project, batch_project, source, batch_source)
+    seed_l1(store, project, directory)
+
+
+def seed_l1(store: Store, project: str, directory: Path) -> None:
+    """真实 HTTP 的运行/编辑验收输入；命令仅入库，永不执行。"""
+    records = [
+        {
+            "type": "session_meta",
+            "payload": {"id": "browser-l1-runtime", "cwd": "/synthetic/research"},
+        }
+    ]
+    for identity, label, result in (
+        ("requested", "合成运行仅请求", None),
+        ("started", "合成运行中", {"session_id": 88}),
+        ("zero", "合成运行退出零", {"exit_code": 0}),
+        ("two", "合成运行退出二", {"exit_code": 2}),
+        ("unknown", "合成运行退出未知", {}),
+    ):
+        records.append(
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "call_id": identity,
+                    "arguments": dumps({"cmd": label}),
+                },
+            }
+        )
+        if result is not None:
+            records.append(
+                {
+                    "type": "response_item",
+                    "payload": {
+                        "type": "function_call_output",
+                        "call_id": identity,
+                        "output": {
+                            "wall_time_seconds": 0.1,
+                            "output": "合成stdout exit_code: 9",
+                            **result,
+                        },
+                    },
+                }
+            )
+    source = directory / "synthetic-l1-runtime.jsonl"
+    lines(source, records)
+    scan_file(store, source, "codex", project)
+    source = directory / "synthetic-l1-edit.jsonl"
+    lines(
+        source,
+        [
+            {
+                "type": "assistant",
+                "uuid": "synthetic-l1-edit-request",
+                "sessionId": "browser-l1-edit",
+                "cwd": "/synthetic/research",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "full-edit",
+                            "name": "Edit",
+                            "input": {
+                                "file_path": "/synthetic/research/合成完整编辑.py",
+                                "old_string": "old",
+                                "new_string": "新",
+                            },
+                        }
+                    ]
+                },
+            },
+            {
+                "type": "user",
+                "uuid": "synthetic-l1-edit-result",
+                "sessionId": "browser-l1-edit",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "full-edit",
+                            "content": "合成完整编辑已报告",
+                        }
+                    ]
+                },
+                "toolUseResult": {
+                    "filePath": "/synthetic/research/合成完整编辑.py",
+                    "originalFile": "old\n",
+                    "structuredPatch": [
+                        {
+                            "oldStart": 1,
+                            "oldLines": 1,
+                            "newStart": 1,
+                            "newLines": 1,
+                            "lines": ["-old", "+新"],
+                        }
+                    ],
+                },
+            },
+        ],
+    )
+    scan_file(store, source, "claude", project)
+    source = directory / "synthetic-l1-patch.jsonl"
+    lines(
+        source,
+        [
+            {
+                "type": "session_meta",
+                "payload": {"id": "browser-l1-patch", "cwd": "/synthetic/research"},
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "apply_patch",
+                    "call_id": "patch-only",
+                    "input": (
+                        "*** Begin Patch\n*** Update File: 合成仅补丁.py\n"
+                        "@@\n-old\n+new\n*** End Patch\n"
+                    ),
+                },
+            },
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "patch-only",
+                    "output": "Success. Updated the following files:\nM 合成仅补丁.py\n",
+                },
+            },
+        ],
+    )
+    scan_file(store, source, "codex", project)
 
 
 def seed_health(

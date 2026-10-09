@@ -10,6 +10,8 @@ from rg.slim.tokens import TokenCounter
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
 
+SLIM_VERSION = "2"
+
 
 def summarize(kind: str, text: str, tool: str | None, call_id: str | None) -> str:
     if kind in {"user_msg", "assistant_msg", "plan_update"}:
@@ -18,12 +20,16 @@ def summarize(kind: str, text: str, tool: str | None, call_id: str | None) -> st
         lines = text.splitlines()
         errors = [x[:200] for x in lines if re.search(r"error|exception|失败|错误", x, re.I)][:10]
         edges = [x[:200] for x in lines[:5]] + [x[:200] for x in lines[-5:]]
-        code = re.search(r"(?:exit[_ ]code|exited with code)\s*[:=]?\s*(-?\d+)", text, re.I)
+        from rg.derive.runtime import EXEC_TOOLS, POLL_TOOLS, execution_result
+
+        result = execution_result(text) if tool in EXEC_TOOLS | POLL_TOOLS else None
         return dumps(
             {
                 "call_id": call_id,
                 "bytes": len(text.encode()),
-                "exit_code": int(code[1]) if code else "unknown",
+                "exit_code": result.exit_code
+                if result and result.exit_code is not None
+                else "unknown",
                 "preview": edges,
                 "errors": errors,
             }
@@ -80,9 +86,11 @@ def slim_session(
                     (f"excluded:{reason}", row["event_id"]),
                 )
             continue
-        if store.db.execute(
-            "SELECT 1 FROM slim_events WHERE event_id = ?", (row["event_id"],)
-        ).fetchone():
+        existing = store.db.execute(
+            "SELECT slim_version FROM slim_events WHERE event_id = ?", (row["event_id"],)
+        ).fetchone()
+        counter_version = counter.provider + ":" + counter.model + ":" + SLIM_VERSION
+        if existing and existing[0] == counter_version:
             continue
         raw = store.raw(row["event_id"])
         event = parse(row["parser"], json.loads(raw))[row["record_index"]]
@@ -90,12 +98,14 @@ def slim_session(
         tokens = cache_count(store, counter, text)
         with store.transaction() as db:
             db.execute(
-                "INSERT INTO slim_events VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO slim_events VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(event_id) DO UPDATE SET text=excluded.text,tokens=excluded.tokens,"
+                "slim_version=excluded.slim_version,dropped_bytes=excluded.dropped_bytes",
                 (
                     row["event_id"],
                     text,
                     tokens,
-                    counter.provider + ":" + counter.model + ":1",
+                    counter_version,
                     max(0, len(raw) - len(text.encode())),
                 ),
             )

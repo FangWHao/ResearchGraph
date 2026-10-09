@@ -197,3 +197,30 @@ def test_v6_snapshot_migration_rolls_back_and_keeps_legacy_rows(tmp_path: Path, 
         row["skipped"] == "legacy" and row["snapshot_key"] is None and row["record_sha256"] is None
     )
     recovered.close()
+
+
+def test_v7_l1_migration_rolls_back_and_does_not_invent_runtime_history(
+    tmp_path: Path, monkeypatch
+):
+    root, raw = legacy_store(tmp_path, monkeypatch, version=7)
+    with monkeypatch.context() as change:
+        change.setitem(migrations.MIGRATIONS, 8, (*migrations.MIGRATIONS[8], "INVALID SQL"))
+        with pytest.raises(sqlite3.OperationalError):
+            Store(root)
+    connection = sqlite3.connect(root / "rg.db")
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 7
+    assert "request_event_id" not in {
+        row[1] for row in connection.execute("PRAGMA table_info(runs)")
+    }
+    assert (
+        connection.execute(
+            "SELECT count(*) FROM sqlite_master WHERE name='run_observations'"
+        ).fetchone()[0]
+        == 0
+    )
+    connection.close()
+    value = Store(root)
+    assert value.raw(1) == raw
+    assert value.db.execute("SELECT count(*) FROM run_observations").fetchone()[0] == 0
+    assert value.db.execute("SELECT count(*) FROM artifact_versions").fetchone()[0] == 0
+    value.close()

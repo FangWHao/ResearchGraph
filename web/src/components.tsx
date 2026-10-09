@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { api, query } from './api';
+import { DateText } from './DateText';
+import { EvidenceRecords, VersionRecords } from './EvidenceRecords';
 import { actionNames, evidenceNames, kindNames, label, reviewNames, scopeText } from './model';
-import type { Claim, EvidenceData, EventWindow, Span } from './types';
+import type { Claim, EvidenceData, EvidenceTarget, EventWindow, Span } from './types';
+
+export { DateText } from './DateText';
 
 export function Icon({ name, size = 18 }: { name: string; size?: number }) {
   const paths: Record<string, ReactNode> = {
@@ -27,11 +31,6 @@ export function Source({ claim }: { claim: Claim }) {
   const name = claim.confirmation_source === 'human' ? '人工确认' : claim.confirmation_source === 'rule' ? '原话规则确认' : '尚未确认';
   return <span className="source-note">记录：{claim.actor.startsWith('model:') ? '模型候选' : claim.actor.startsWith('human:') ? '人工' : claim.actor} · {name}{claim.review ? ` · ${claim.review.actor}` : ''}</span>;
 }
-export function DateText({ value }: { value: string | null | undefined }) {
-  if (!value) return <span className="muted">时间未知</span>;
-  const parsed = new Date(value);
-  return <time dateTime={value} title={value}>{Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString('zh-CN', { hour12: false })}</time>;
-}
 export function Empty({ title, children }: { title: string; children?: ReactNode }) {
   return <div className="empty-state"><Icon name="evidence" size={28} /><h3>{title}</h3>{children && <p>{children}</p>}</div>;
 }
@@ -49,9 +48,9 @@ function RawWindow({ event, focus = false }: { event: EventWindow; focus?: boole
     {event.window_truncated && <p className="muted small">当前窗口 {event.window_start}–{event.window_end} / {event.total_bytes} UTF-8 字节，未显示部分保留在对象库。</p>}
   </section>;
 }
-export function EvidencePanel({ target, onError, compact = false }: {
-  target: { event_id: number; byte_start?: number; byte_end?: number; quote_sha256?: string };
-  onError: (error: unknown) => void; compact?: boolean;
+export function EvidencePanel({ target, onError, compact = false, onEvidence }: {
+  target: EvidenceTarget;
+  onError: (error: unknown) => void; compact?: boolean; onEvidence?: (target: EvidenceTarget) => void;
 }) {
   const [data, setData] = useState<EvidenceData | null>(null);
   const [context, setContext] = useState(compact ? 0 : 2);
@@ -76,10 +75,12 @@ export function EvidencePanel({ target, onError, compact = false }: {
     {data.before.map(event => <RawWindow key={event.event_id} event={event} />)}
     <RawWindow event={data.event} focus />
     {data.after.map(event => <RawWindow key={event.event_id} event={event} />)}
-    {!compact && <section className="artifact-section"><h4>相关文件版本</h4>
-      {data.artifact_versions.length ? data.artifact_versions.map(version => <div className="version-row" key={version.version_id}><span>{version.path}</span><code>{version.algo}:{version.digest}</code><span>{version.source}</span></div>) : <p className="muted">没有相关文件版本记录。</p>}
-      <p className="missing-note">差异缺失：{data.artifact_diff.reason}。</p>
-    </section>}
+    {!compact && <>
+      <EvidenceRecords data={data.l1} current={data.event.event_id} onOpen={onEvidence} />
+      <VersionRecords versions={data.artifact_versions} partial={data.artifact_versions_partial} />
+      {!data.artifact_diff.available && <p className="missing-note">差异缺失：{data.artifact_diff.reason}。</p>}
+      {data.artifact_diff.available && !data.l1?.edits.length && <p className="missing-note">接口提示存在差异，但未返回可展示的编辑详情。</p>}
+    </>}
   </div>;
 }
 export function ClaimBody({ claim, onClaim }: { claim: Claim; onClaim?: (id: number) => void }) {

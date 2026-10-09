@@ -32,6 +32,12 @@ def cycle(
         counts["deleted"] = mark_deleted(store)
         counts.update(register(store))
         counts.update(consume(store, sources(store), retry_failed, fault=fault))
+        from rg.derive.worker import derive
+
+        try:
+            counts.update(derive(store, retry_failed=retry_failed))
+        except TaskBusy:
+            counts["l1_busy"] += 1
         return dict(counts)
 
 

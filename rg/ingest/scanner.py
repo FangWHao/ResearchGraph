@@ -114,15 +114,21 @@ def _instance(store: Store, path: Path, tool: str, session: int) -> sqlite3.Row:
 
 
 def _alias(
-    db: sqlite3.Connection, event: Parsed, session: int, file_id: int, line_sha: str
+    db: sqlite3.Connection,
+    event: Parsed,
+    session: int,
+    file_id: int,
+    line_sha: str,
+    record: dict[str, Any],
 ) -> int | None:
     if event.native_id:
         matches = db.execute(
-            "SELECT r.event_id, r.object_sha256, r.record_index, f.parser "
+            "SELECT r.event_id, r.object_sha256, r.record_index, r.tool_name, f.parser "
             "FROM raw_events r JOIN source_files f USING(file_instance_id) "
             "WHERE r.native_id = ? AND r.kind = ? AND r.alias_of IS NULL "
-            "AND f.parser = (SELECT tool FROM sessions WHERE session_pk = ?)",
-            (event.native_id, event.kind, session),
+            "AND f.parser = (SELECT tool FROM sessions WHERE session_pk = ?) "
+            "AND (f.parser='claude' OR r.session_pk=?)",
+            (event.native_id, event.kind, session, session),
         ).fetchall()
         for match in matches:
             # UUID 才是 resume 的身份键；字段顺序、父链等变化不应产生新正文。
@@ -130,10 +136,16 @@ def _alias(
             from rg.store.objects import ObjectStore
 
             root = Path(db.execute("PRAGMA database_list").fetchone()[2]).parent / "objects"
-            old = parse(match["parser"], json.loads(ObjectStore(root).get(match["object_sha256"])))[
-                match["record_index"]
-            ]
-            if (old.text, old.kind, old.tool_name, old.call_id, old.role) == (
+            old_record = json.loads(ObjectStore(root).get(match["object_sha256"]))
+            old = parse(match["parser"], old_record)[match["record_index"]]
+            if event.kind == "tool_result" and (
+                old_record.get("toolUseResult") != record.get("toolUseResult")
+                or old_record.get("payload") != record.get("payload")
+                or old_record.get("message", {}).get("content")
+                != record.get("message", {}).get("content")
+            ):
+                continue
+            if (old.text, old.kind, old.tool_name or match["tool_name"], old.call_id, old.role) == (
                 event.text,
                 event.kind,
                 event.tool_name,
@@ -242,7 +254,7 @@ def _scan_file(
                         if call and call[0]:
                             event.tool_name = call[0]
                             injection(event)
-                    alias = _alias(db, event, session, file_id, sha)
+                    alias = _alias(db, event, session, file_id, sha, record)
                     excluded = "duplicate" if alias else event.excluded
                     seq += 1
                     cursor = db.execute(
@@ -309,6 +321,14 @@ def _scan_file(
                     (events[0].timestamp, events[-1].timestamp, session),
                 )
             offset = end
+    if counts.get("events") and store.db.execute("PRAGMA user_version").fetchone()[0] >= 8:
+        from rg.derive.worker import derive
+        from rg.store.locking import TaskBusy
+
+        try:
+            derive(store, session=session)
+        except TaskBusy:
+            counts["l1_busy"] += 1
     return dict(counts)
 
 

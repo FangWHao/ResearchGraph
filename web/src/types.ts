@@ -47,10 +47,48 @@ export interface EventWindow {
   total_bytes: number; window_start: number; window_end: number; window_truncated: boolean;
   before: string; quote: string; after: string; quote_sha256: string | null;
 }
+export type EvidenceTarget = { event_id: number; byte_start?: number; byte_end?: number; quote_sha256?: string };
+export interface ArtifactVersion {
+  version_id: string; path: string; algo: string; digest: string; source: string;
+  phase?: string | null; basis?: string | null; claim_state?: ReviewState | null;
+  representation?: string | null; observed_at?: string | null; size?: number | null;
+}
+export type RunState = 'requested' | 'started' | 'exited' | 'unknown';
+export interface RunObservation {
+  event_id: number; state: RunState; exit_code: number | null;
+  executor_session_id: number | null; reason: string | null; details: Record<string, unknown>;
+  occurred_at: string | null; recorded_at: string;
+}
+export interface L1Run {
+  run_id: string; project_id: string; session_pk: number | null; call_id: string | null;
+  command: string | null; command_truncated: boolean; command_total_bytes: number;
+  cwd: string | null; snapshot_id: number | null; root_id: string | null;
+  state: RunState; exit_code: number | null; gap: string | null;
+  request_event_id: number | null; requested_at: string | null;
+  started_at: string | null; ended_at: string | null;
+  observations: RunObservation[]; observations_partial: boolean;
+}
+export interface EditDiff {
+  available: boolean; format?: 'reported_versions' | 'patch_only'; text?: string;
+  complete_versions?: boolean; gap: string | null; reason: string;
+}
+export interface L1Edit {
+  edit_id: string; project_id: string; session_pk: number; call_id: string | null;
+  request_event_id: number; result_event_id: number; path: string | null; root_id: string | null;
+  operation: string; patch_sha256: string | null; before_version: string | null;
+  after_version: string | null; gap: string | null; association_gap?: string | null;
+  user_modified: number | null; occurred_at: string | null; recorded_at: string; diff: EditDiff;
+}
+export interface L1Evidence {
+  runs: L1Run[]; runs_partial: boolean; edits: L1Edit[]; edits_partial: boolean;
+  derivation?: { state: 'queued' | 'waiting' | 'done' | 'failed'; error: string | null; updated_at: string } | null;
+}
 export interface EvidenceData {
   event: EventWindow; before: EventWindow[]; after: EventWindow[];
-  artifact_versions: { version_id: string; path: string; algo: string; digest: string; source: string }[];
+  artifact_versions: ArtifactVersion[];
   artifact_diff: { available: boolean; reason: string };
+  artifact_versions_partial?: boolean;
+  l1?: L1Evidence | null;
 }
 export interface SearchPage {
   results: { event_id: number; session_pk: number; text: string; occurred_at: string | null }[];

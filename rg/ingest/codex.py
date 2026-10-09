@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from rg.ingest.common import Parsed, text_content
@@ -16,6 +17,17 @@ def parse_codex(record: dict[str, Any]) -> list[Parsed]:
         return [Parsed("compact_boundary", excluded="compaction_replay")]
     if kind == "event_msg":
         t = payload.get("type")
+        if t in {"exec_command_begin", "exec_command_end", "patch_apply_end"}:
+            return [
+                Parsed(
+                    "meta" if t == "exec_command_begin" else "tool_result",
+                    json.dumps(payload, ensure_ascii=False),
+                    native_id=f"{t}:{payload['call_id']}" if payload.get("call_id") else None,
+                    call_id=payload.get("call_id"),
+                    tool_name="apply_patch" if t == "patch_apply_end" else "exec_command",
+                    excluded="execution_metadata" if t == "exec_command_begin" else None,
+                )
+            ]
         if t in {"user_message", "agent_message"}:
             role = "user" if t == "user_message" else "assistant"
             return [Parsed(f"{role}_msg", str(payload.get("message", "")), role=role)]

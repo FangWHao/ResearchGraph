@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, ApiError, query } from './api';
+import { EventLocator } from './EventLocator';
 import { Badge, ClaimBody, DateText, Empty, EvidenceLink, EvidencePanel, Icon, Loading, Scope, Source } from './components';
 import { actionNames, adoption, entityVersions, evidenceNames, evidenceState, groupQueue, kindNames, label, relatedChildren, scopeKey, timeline } from './model';
 import type { Claim, ClaimsPage, GraphData, ReviewState, SearchPage, Span } from './types';
@@ -74,9 +75,11 @@ export function SearchView({ project, text, onEvidence, onError }: {
     api<SearchPage>(`/search?${query({ project, q: text, offset, limit: 30 })}`, undefined, controller.signal).then(data => { if (!controller.signal.aborted) setResult(data); }).catch(error => { if (!controller.signal.aborted) onError(error); });
     return () => controller.abort();
   }, [text, project, offset, onError]);
-  if (!text.trim()) return <Empty title="搜索原文">在顶部输入词语，查看可直接定位的会话证据。</Empty>;
-  if (!result) return <Loading />;
-  return <div className="search-view"><p className="muted">“{text}” · 当前项目 · {result.total} 条原文结果 · 按字面量匹配</p>{!result.results.length ? <Empty title="没有匹配的原文">尝试更短的词语，或切换项目。</Empty> : result.results.map(item => <button key={item.event_id} className="search-result" onClick={() => onEvidence({ event_id: item.event_id })}><div><span className="eyebrow">事件 #{item.event_id} · 会话 {item.session_pk}</span><DateText value={item.occurred_at} /></div><p>{item.text.split(text).map((part, index) => <span key={index}>{index > 0 && <mark>{text}</mark>}{part}</span>)}</p><span className="text-button">查看原文 <Icon name="arrow" size={14} /></span></button>)}<div className="pagination"><button className="button secondary" disabled={!offset} onClick={() => setOffset(Math.max(0, offset - 30))}>上一页</button><span>{offset + 1}–{Math.min(offset + 30, result.total)} / {result.total}</span><button className="button secondary" disabled={result.next_offset == null} onClick={() => setOffset(result.next_offset!)}>下一页</button></div></div>;
+  return <div className="search-view"><EventLocator onEvidence={onEvidence} />
+    {!text.trim() ? <Empty title="搜索原文">在顶部输入词语，查看可直接定位的会话证据。</Empty> : !result ? <Loading /> : <>
+      <p className="muted">“{text}” · 当前项目 · {result.total} 条原文结果 · 按字面量匹配</p>{!result.results.length ? <Empty title="没有匹配的原文">尝试更短的词语，或切换项目。</Empty> : result.results.map(item => <button key={item.event_id} className="search-result" onClick={() => onEvidence({ event_id: item.event_id })}><div><span className="eyebrow">事件 #{item.event_id} · 会话 {item.session_pk}</span><DateText value={item.occurred_at} /></div><p>{item.text.split(text).map((part, index) => <span key={index}>{index > 0 && <mark>{text}</mark>}{part}</span>)}</p><span className="text-button">查看原文 <Icon name="arrow" size={14} /></span></button>)}<div className="pagination"><button className="button secondary" disabled={!offset} onClick={() => setOffset(Math.max(0, offset - 30))}>上一页</button><span>{offset + 1}–{Math.min(offset + 30, result.total)} / {result.total}</span><button className="button secondary" disabled={result.next_offset == null} onClick={() => setOffset(result.next_offset!)}>下一页</button></div>
+    </>}
+  </div>;
 }
 
 export function ReviewQueue({ project, epoch, actor, onWrite, onError, onEdit, onEvidence, onClaim }: {
