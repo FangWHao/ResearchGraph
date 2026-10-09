@@ -174,3 +174,17 @@
 - `uv build --wheel`：成功；打开 wheel：`wheel_files=43 required_missing=0 actual_secret_matches=0 source_mismatches=0`，其中源码比对覆盖监控、worker 和迁移三个入口。恢复与提交检查只处理公开代码，不包含凭据或真实试点。
 - 提交前检查：`git diff --cached --check` 无输出，退出码 0；`tracked_files=109 staged_files=23 actual_secret_matches=0 forbidden_tracked_files=0`。未把 formatter 对无关 provider 的纯排版变化纳入本轮。
 - 下一步：完成本轮推送、远端检查和恢复包收尾后结束任务；下个会话继续 M1 的范围选择、规则确认或真实评估准备。M0–M4 的完整目标保持进行中，实际试点仍需人工参考与正式问题，达标前不开发界面。
+
+## 2026-10-09 · 同会话并发保护与响应缓存恢复
+
+- 任务：落实 §7.6 同会话顺序和 §7.10 重复处理；开始核对进度末尾、§2、§7.6–§7.10 与现有系统进程锁/尝试账本决定。前一监控提交 `03b0012` 已推送，PR 检查 37894266046 与推送检查均 success；恢复包仍保留前一已验证版本。
+- 改动的文件：worker、validator、overview 和通用锁；新增 `tests/golden/test_concurrency.py`，调整提取、监控和范围复核测试；更新 README、需求落实、决定、PR 草稿、本文件，新增中文并发验收记录。
+- 行为：同会话、同模型任务和同项目概览非阻塞互斥；项目进入任务缓存键。完整响应与尝试状态原子保存，重启可复用，仍严格验证原文；入库事务防重复，成功记录不被后续错误请求改成 invalid。忙不算失败，不拆片，不进人工失败队列，不关闭覆盖缺口。采集及不同会话可并行；服务离线仍能使用成功缓存。
+- `uv run pytest tests/golden/test_concurrency.py tests/test_review_scope.py tests/golden/test_extraction.py -q`：`29 passed in 5.70s`。实际线程和子进程验证：相同模型任务只生成 1 次，相同响应仅入库 1 批；终止后可取锁恢复，未知用量保留原预留，没有根据文件存在推断进程存活。
+- `uv run pytest -q`：`136 passed in 21.71s`。
+- `uv run pytest tests/golden -q`：`112 passed in 20.17s`；完整 §15 仍未通过。
+- `uv run ruff check rg tests scripts`：`All checks passed!`；`uv run pyright rg`：`0 errors, 0 warnings, 0 informations`。
+- `uv run rg --help`：退出码 0；`uv build --wheel`：成功。打开 wheel 输出 `wheel_files=43 required_missing=0 actual_secret_matches=0 source_mismatches=0`；原规格副本字节一致。
+- 首次完整回归为 127 项通过、2 项失败，原因是旧复核用例把不同结果写在同一个运行里；改为独立运行后通过。未放宽重复判定以绕过失败。并发测试使用合成提供方，没有新增远程模型调用。
+- 提交允许清单检查：`git diff --cached --check` 无输出、退出码 0；`tracked_files=111 staged_files=14 actual_secret_matches=0 forbidden_tracked_files=0`。未纳入凭据、真实材料、数据库、环境、缓存与本地 Word 归档；草稿 PR 正文为中文，由当前文件生成。
+- 下一步：完成允许清单提交、现有草稿 PR 推送与对应 HEAD 的远端验收，刷新恢复包并独立恢复比对后结束本任务。下个会话继续 M1 未指定范围的选择、自动确认规则或真实评估准备；人工参考门槛仍待满足，整个 M0–M4 未完成。

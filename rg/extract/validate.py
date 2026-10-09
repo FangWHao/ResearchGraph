@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import uuid
 from typing import Any
@@ -158,7 +159,12 @@ def persist(
             expected_scope,
         )
     except InvalidClaim as error:
-        set_status(store, run_id, "invalid", str(error), error.failure_kind, attempt_id)
+        with store.transaction() as db:
+            previous = db.execute(
+                "SELECT status FROM extraction_runs WHERE extraction_run_id=?", (run_id,)
+            ).fetchone()
+            if not previous or previous[0] != "ok":
+                set_status(store, run_id, "invalid", str(error), error.failure_kind, attempt_id)
         raise
     mapping = {
         x["temp_id"]: str(uuid.uuid4())
@@ -167,6 +173,16 @@ def persist(
     }
     ids = []
     with store.transaction() as db:
+        previous = db.execute(
+            "SELECT status,stage,output_json FROM extraction_runs WHERE extraction_run_id=?",
+            (run_id,),
+        ).fetchone()
+        if previous and previous[0] == "ok":
+            if not previous["output_json"]:
+                raise InvalidClaim("已成功运行缺少输出快照，不能判定重复")
+            if previous["stage"] == "pass2" and json.loads(previous["output_json"]) != output:
+                raise InvalidClaim("不同输出不能复用已成功运行")
+            return []
         for item in output["claims"]:
             if item["claim_type"] == "entity_version":
                 db.execute(

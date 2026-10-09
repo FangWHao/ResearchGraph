@@ -61,12 +61,18 @@ def setup(store: Store, tmp_path: Path):
         "lookup_terms": [],
         "unresolved": [],
     }
+    run = new_run(store, result)
+    return project, result, run
+
+
+def new_run(store: Store, output: dict, key: str = "test") -> int:
     run = store.db.execute(
         "INSERT INTO extraction_runs "
-        "(job_key, stage, input_event_ids, status, created_at) VALUES (?, ?, ?, ?, ?)",
-        ("test", "pass2", "[1]", "pending", now()),
+        "(job_key,stage,input_event_ids,status,output_json,created_at) VALUES (?,?,?,?,?,?)",
+        (key, "pass2", "[1]", "validated", dumps(output), now()),
     ).lastrowid
-    return project, result, run
+    assert run is not None
+    return run
 
 
 def test_model_output_candidates_and_review_conflicts(store: Store, tmp_path: Path):
@@ -282,6 +288,7 @@ def test_working_set_budget_and_reextraction_keeps_human(store: Store, tmp_path:
     output["claims"] = [output["claims"][1]]
     output["claims"][0]["target"] = working[0]["id"]
     output["claims"][0]["action"] = "withdrawn"
+    run = new_run(store, output, "reextraction")
     new_ids = persist(store, output, project, run, {working[0]["id"]}, {1}, "test-segment")
     assert store.claim_state(new_ids[0]) == "candidate"
     assert store.claim_state(ids[1]) == "confirmed"

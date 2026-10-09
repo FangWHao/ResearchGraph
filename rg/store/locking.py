@@ -6,8 +6,14 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
+class TaskBusy(RuntimeError):
+    pass
+
+
 @contextmanager
-def exclusive(path: Path) -> Iterator[None]:
+def exclusive(
+    path: Path, message: str = "该项目的链接 worker 正在运行，请稍后重试"
+) -> Iterator[None]:
     """非阻塞进程锁；进程退出后由系统释放，不持有 SQLite 写事务。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+b") as handle:
@@ -25,7 +31,7 @@ def exclusive(path: Path) -> Iterator[None]:
 
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
-            raise RuntimeError("该项目的链接 worker 正在运行，请稍后重试") from None
+            raise TaskBusy(message) from None
         try:
             yield
         finally:

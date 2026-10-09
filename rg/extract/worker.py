@@ -22,6 +22,7 @@ from rg.ingest.common import parse
 from rg.slim.slimmer import slim_session
 from rg.slim.tokens import BudgetExceeded, CountingUnavailable, DailyBudgetExceeded
 from rg.store.database import Store, dumps, now
+from rg.store.locking import TaskBusy, exclusive
 from rg.store.objects import digest
 
 CUES = re.compile("|".join(pattern.pattern for pattern in CUE_PATTERNS.values()), re.I)
@@ -72,7 +73,6 @@ class Worker:
             self.output_budget, output_limit if output_limit is not None else self.output_budget
         )
         _permission(self.store, project_id, self.provider)
-        self._check_model_limits()
         prompt = Path(__file__).with_name("prompts").joinpath(stage + ".txt").read_text()
         content = model_input(content, stage)
         request = self.provider.request(prompt, content, schema, output_budget)
@@ -82,6 +82,7 @@ class Worker:
             dumps(
                 [
                     stage,
+                    project_id,
                     request,
                     self.provider.provider,
                     self.provider.model,
@@ -94,180 +95,209 @@ class Worker:
                 ]
             ).encode()
         )
-        cached = self.store.db.execute(
-            "SELECT * FROM extraction_runs WHERE job_key = ?", (key,)
-        ).fetchone()
-        if cached and cached["status"] == "ok" and cached["output_json"]:
-            return cached["extraction_run_id"], json.loads(cached["output_json"])
-        # 相同失败输入的重试使用同一 run，并保留失败状态供监控。
-        if cached:
-            run_id = cached["extraction_run_id"]
-        else:
-            cursor = self.store.db.execute(
-                "INSERT INTO extraction_runs (job_key, stage, provider, model, prompt_version, "
-                "schema_version, input_event_ids, working_set_ids, budget_tokens, "
-                "status, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
-                (
-                    key,
-                    stage,
-                    self.provider.provider,
-                    self.provider.model,
-                    prompt_version,
-                    schema_version,
-                    dumps(item.input_ids),
-                    dumps(working_ids),
-                    limit,
-                    now(),
-                ),
-            )
-            run_id = cursor.lastrowid
-            if run_id is None:
-                raise RuntimeError("无法建立提取运行")
-        with self.store.transaction() as db:
-            db.execute(
-                "UPDATE extraction_runs SET status='pending', error=NULL, output_json=NULL, "
-                "input_tokens=NULL, measured_input_tokens=NULL, output_tokens=NULL, "
-                "stop_reason=NULL WHERE extraction_run_id=?",
-                (run_id,),
-            )
-            attempt = db.execute(
-                "INSERT INTO model_attempts (extraction_run_id,project_id,stage,provider,model, "
-                "segment_id,input_budget,output_budget,status,created_at) "
-                "VALUES (?,?,?,?,?,?,?,?,'pending',?)",
-                (
-                    run_id,
-                    project_id,
-                    stage,
-                    self.provider.provider,
-                    self.provider.model,
-                    item.segment_id,
-                    limit,
-                    output_budget,
-                    now(),
-                ),
-            ).lastrowid
-            if attempt is None:
-                raise RuntimeError("无法登记调用尝试")
-            self.attempt_ids[run_id] = attempt
-        try:
-            count = self.provider.count_request(request)
-            self.store.db.execute(
-                "UPDATE model_attempts SET measured_input_tokens=? WHERE attempt_id=?",
-                (count, attempt),
-            )
-            self.store.db.execute(
-                "UPDATE extraction_runs SET input_tokens = ?, measured_input_tokens = ? "
-                "WHERE extraction_run_id = ?",
-                (count, count, run_id),
-            )
-            if count > limit:
-                self._status(run_id, "over_budget", "输入超过预算，未发送")
-                raise BudgetExceeded("输入超过预算")
-            header = self.provider.request(prompt, "", schema, output_budget)
-            header_key = digest(
-                dumps(
-                    ["request-header", self.provider.provider, self.provider.model, header]
-                ).encode()
-            )
-            header_row = self.store.db.execute(
-                "SELECT tokens FROM token_cache WHERE cache_key = ?", (header_key,)
+        with exclusive(
+            self.store.root / "locks" / "jobs" / (key + ".lock"),
+            "该提取任务正在运行，请稍后重试",
+        ):
+            cached = self.store.db.execute(
+                "SELECT * FROM extraction_runs WHERE job_key = ?", (key,)
             ).fetchone()
-            header_tokens = header_row[0] if header_row else self.provider.count_request(header)
-            if not header_row:
-                self.store.db.execute(
-                    "INSERT OR IGNORE INTO token_cache VALUES (?, ?, ?, ?, ?)",
-                    (header_key, self.provider.provider, self.provider.model, header_tokens, now()),
-                )
-            if header_tokens > self.budgets.header_tokens or (
-                stage == "pass1" and self.provider.count_text(content) > self.budgets.content_tokens
-            ):
-                self._status(run_id, "over_budget", "指令/schema 或片段内容超过分配预算，未发送")
-                raise BudgetExceeded("组件预算超限")
-            day = now()[:10]
-            self.store.db.execute(
-                "UPDATE model_attempts SET usage_day=? WHERE attempt_id=?", (day, attempt)
-            )
-            reserve = count + output_budget
-            with self.store.transaction() as db:
-                db.execute("INSERT OR IGNORE INTO daily_usage VALUES (?, 0)", (day,))
-                used = db.execute(
-                    "SELECT reserved_tokens FROM daily_usage WHERE day = ?", (day,)
-                ).fetchone()[0]
-                if used + reserve > self.daily_budget:
-                    raise DailyBudgetExceeded("每日 token 上限已达到，暂停队列")
-                db.execute(
-                    "UPDATE daily_usage SET reserved_tokens = reserved_tokens + ? WHERE day = ?",
-                    (reserve, day),
-                )
-            self.store.db.execute("UPDATE model_attempts SET sent=1 WHERE attempt_id=?", (attempt,))
-            result = self.provider.generate(request)
-            self.store.db.execute(
-                "UPDATE model_attempts SET input_tokens=?, output_tokens=?, stop_reason=? "
-                "WHERE attempt_id=?",
-                (
-                    result.input_tokens if result.input_tokens >= 0 else None,
-                    result.output_tokens if result.output_tokens >= 0 else None,
-                    result.stop_reason,
-                    attempt,
-                ),
-            )
-            if result.input_tokens >= 0 and result.output_tokens >= 0:
-                self.store.db.execute(
-                    "UPDATE daily_usage SET reserved_tokens = reserved_tokens - ? + ? "
-                    "WHERE day = ?",
-                    (reserve, result.input_tokens + result.output_tokens, day),
-                )
-            self.store.db.execute(
-                "UPDATE extraction_runs SET input_tokens = ?, output_tokens = ?, stop_reason = ? "
-                "WHERE extraction_run_id = ?",
-                (result.input_tokens, result.output_tokens, result.stop_reason, run_id),
-            )
-            if result.contaminated:
-                self._status(run_id, "contaminated", "执行环境被压缩，结果作废")
-                raise InvalidClaim("污染结果")
-            if result.stop_reason in {"length", "max_tokens", "max_output_tokens"}:
-                self._status(run_id, "truncated", "输出截断，结果作废")
-                raise InvalidClaim("截断结果")
-            if result.stop_reason not in {"stop", "end_turn", "tool_use"}:
-                self._status(run_id, "failed", "模型未正常完成")
-                raise InvalidClaim("模型未正常完成")
-            if result.input_tokens > limit or result.output_tokens > output_budget:
-                self._status(run_id, "over_budget", "实际用量超过预算，结果作废")
-                raise InvalidClaim("实际用量超过预算")
-            try:
-                output = json.loads(result.text)
-            except (ValueError, TypeError):
-                self._status(run_id, "truncated", "JSON 不完整或无效")
-                raise InvalidClaim("无效 JSON") from None
-            if list(Draft202012Validator(schema).iter_errors(output)):
-                self._status(run_id, "invalid", "输出 schema 校验失败", "schema")
-                raise InvalidClaim("输出 schema 校验失败")
-            self.store.db.execute(
-                "UPDATE extraction_runs SET output_json = ?, status = ?, error = NULL "
-                "WHERE extraction_run_id = ?",
-                (dumps(output), "validated", run_id),
-            )
-            set_status(self.store, run_id, "validated", attempt_id=attempt)
-            return run_id, output
-        except CountingUnavailable:
-            self._status(run_id, "failed", "计数不可用，未发送生成请求", "counting")
-            raise
-        except DailyBudgetExceeded:
-            self._status(run_id, "budget_paused", "每日预算不足，未发送", "daily_budget")
-            raise
-        except BudgetExceeded:
             if (
-                self.store.db.execute(
-                    "SELECT status FROM extraction_runs WHERE extraction_run_id = ?", (run_id,)
-                ).fetchone()[0]
-                != "over_budget"
+                cached
+                and cached["status"] in {"ok", "validated", "lookup"}
+                and cached["output_json"]
             ):
-                self._status(run_id, "over_budget", "每日预算不足，未发送")
-            raise
-        except RuntimeError:
-            self._status(run_id, "failed", "提供方调用失败", "provider")
-            raise
+                attempt = self.store.db.execute(
+                    "SELECT attempt_id FROM model_attempts WHERE extraction_run_id=? "
+                    "AND status='validated' ORDER BY attempt_id DESC LIMIT 1",
+                    (cached["extraction_run_id"],),
+                ).fetchone()
+                if attempt:
+                    self.attempt_ids[cached["extraction_run_id"]] = attempt[0]
+                return cached["extraction_run_id"], json.loads(cached["output_json"])
+            self._check_model_limits()
+            # 相同失败输入的重试使用同一 run，并保留失败状态供监控。
+            if cached:
+                run_id = cached["extraction_run_id"]
+            else:
+                cursor = self.store.db.execute(
+                    "INSERT INTO extraction_runs (job_key, stage, provider, model, prompt_version, "
+                    "schema_version, input_event_ids, working_set_ids, budget_tokens, "
+                    "status, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+                    (
+                        key,
+                        stage,
+                        self.provider.provider,
+                        self.provider.model,
+                        prompt_version,
+                        schema_version,
+                        dumps(item.input_ids),
+                        dumps(working_ids),
+                        limit,
+                        now(),
+                    ),
+                )
+                run_id = cursor.lastrowid
+                if run_id is None:
+                    raise RuntimeError("无法建立提取运行")
+            with self.store.transaction() as db:
+                db.execute(
+                    "UPDATE extraction_runs SET status='pending', error=NULL, output_json=NULL, "
+                    "input_tokens=NULL, measured_input_tokens=NULL, output_tokens=NULL, "
+                    "stop_reason=NULL WHERE extraction_run_id=?",
+                    (run_id,),
+                )
+                attempt = db.execute(
+                    "INSERT INTO model_attempts (extraction_run_id,project_id,stage,provider,model,"
+                    "segment_id,input_budget,output_budget,status,created_at) "
+                    "VALUES (?,?,?,?,?,?,?,?,'pending',?)",
+                    (
+                        run_id,
+                        project_id,
+                        stage,
+                        self.provider.provider,
+                        self.provider.model,
+                        item.segment_id,
+                        limit,
+                        output_budget,
+                        now(),
+                    ),
+                ).lastrowid
+                if attempt is None:
+                    raise RuntimeError("无法登记调用尝试")
+                self.attempt_ids[run_id] = attempt
+            try:
+                count = self.provider.count_request(request)
+                self.store.db.execute(
+                    "UPDATE model_attempts SET measured_input_tokens=? WHERE attempt_id=?",
+                    (count, attempt),
+                )
+                self.store.db.execute(
+                    "UPDATE extraction_runs SET input_tokens = ?, measured_input_tokens = ? "
+                    "WHERE extraction_run_id = ?",
+                    (count, count, run_id),
+                )
+                if count > limit:
+                    self._status(run_id, "over_budget", "输入超过预算，未发送")
+                    raise BudgetExceeded("输入超过预算")
+                header = self.provider.request(prompt, "", schema, output_budget)
+                header_key = digest(
+                    dumps(
+                        ["request-header", self.provider.provider, self.provider.model, header]
+                    ).encode()
+                )
+                header_row = self.store.db.execute(
+                    "SELECT tokens FROM token_cache WHERE cache_key = ?", (header_key,)
+                ).fetchone()
+                header_tokens = header_row[0] if header_row else self.provider.count_request(header)
+                if not header_row:
+                    self.store.db.execute(
+                        "INSERT OR IGNORE INTO token_cache VALUES (?, ?, ?, ?, ?)",
+                        (
+                            header_key,
+                            self.provider.provider,
+                            self.provider.model,
+                            header_tokens,
+                            now(),
+                        ),
+                    )
+                if header_tokens > self.budgets.header_tokens or (
+                    stage == "pass1"
+                    and self.provider.count_text(content) > self.budgets.content_tokens
+                ):
+                    self._status(
+                        run_id, "over_budget", "指令/schema 或片段内容超过分配预算，未发送"
+                    )
+                    raise BudgetExceeded("组件预算超限")
+                day = now()[:10]
+                self.store.db.execute(
+                    "UPDATE model_attempts SET usage_day=? WHERE attempt_id=?", (day, attempt)
+                )
+                reserve = count + output_budget
+                with self.store.transaction() as db:
+                    db.execute("INSERT OR IGNORE INTO daily_usage VALUES (?, 0)", (day,))
+                    used = db.execute(
+                        "SELECT reserved_tokens FROM daily_usage WHERE day = ?", (day,)
+                    ).fetchone()[0]
+                    if used + reserve > self.daily_budget:
+                        raise DailyBudgetExceeded("每日 token 上限已达到，暂停队列")
+                    db.execute(
+                        "UPDATE daily_usage SET reserved_tokens = reserved_tokens + ? "
+                        "WHERE day = ?",
+                        (reserve, day),
+                    )
+                self.store.db.execute(
+                    "UPDATE model_attempts SET sent=1 WHERE attempt_id=?", (attempt,)
+                )
+                result = self.provider.generate(request)
+                self.store.db.execute(
+                    "UPDATE model_attempts SET input_tokens=?, output_tokens=?, stop_reason=? "
+                    "WHERE attempt_id=?",
+                    (
+                        result.input_tokens if result.input_tokens >= 0 else None,
+                        result.output_tokens if result.output_tokens >= 0 else None,
+                        result.stop_reason,
+                        attempt,
+                    ),
+                )
+                if result.input_tokens >= 0 and result.output_tokens >= 0:
+                    self.store.db.execute(
+                        "UPDATE daily_usage SET reserved_tokens = reserved_tokens - ? + ? "
+                        "WHERE day = ?",
+                        (reserve, result.input_tokens + result.output_tokens, day),
+                    )
+                self.store.db.execute(
+                    "UPDATE extraction_runs SET input_tokens = ?, output_tokens = ?, "
+                    "stop_reason = ? "
+                    "WHERE extraction_run_id = ?",
+                    (result.input_tokens, result.output_tokens, result.stop_reason, run_id),
+                )
+                if result.contaminated:
+                    self._status(run_id, "contaminated", "执行环境被压缩，结果作废")
+                    raise InvalidClaim("污染结果")
+                if result.stop_reason in {"length", "max_tokens", "max_output_tokens"}:
+                    self._status(run_id, "truncated", "输出截断，结果作废")
+                    raise InvalidClaim("截断结果")
+                if result.stop_reason not in {"stop", "end_turn", "tool_use"}:
+                    self._status(run_id, "failed", "模型未正常完成")
+                    raise InvalidClaim("模型未正常完成")
+                if result.input_tokens > limit or result.output_tokens > output_budget:
+                    self._status(run_id, "over_budget", "实际用量超过预算，结果作废")
+                    raise InvalidClaim("实际用量超过预算")
+                try:
+                    output = json.loads(result.text)
+                except (ValueError, TypeError):
+                    self._status(run_id, "truncated", "JSON 不完整或无效")
+                    raise InvalidClaim("无效 JSON") from None
+                if list(Draft202012Validator(schema).iter_errors(output)):
+                    self._status(run_id, "invalid", "输出 schema 校验失败", "schema")
+                    raise InvalidClaim("输出 schema 校验失败")
+                with self.store.transaction() as db:
+                    db.execute(
+                        "UPDATE extraction_runs SET output_json=? WHERE extraction_run_id=?",
+                        (dumps(output), run_id),
+                    )
+                    set_status(self.store, run_id, "validated", attempt_id=attempt)
+                return run_id, output
+            except CountingUnavailable:
+                self._status(run_id, "failed", "计数不可用，未发送生成请求", "counting")
+                raise
+            except DailyBudgetExceeded:
+                self._status(run_id, "budget_paused", "每日预算不足，未发送", "daily_budget")
+                raise
+            except BudgetExceeded:
+                if (
+                    self.store.db.execute(
+                        "SELECT status FROM extraction_runs WHERE extraction_run_id = ?", (run_id,)
+                    ).fetchone()[0]
+                    != "over_budget"
+                ):
+                    self._status(run_id, "over_budget", "每日预算不足，未发送")
+                raise
+            except RuntimeError:
+                self._status(run_id, "failed", "提供方调用失败", "provider")
+                raise
 
     def _status(
         self, run_id: int, status: str, error: str, failure_kind: str | None = None
@@ -298,6 +328,15 @@ class Worker:
                 )
 
     def process(self, session_id: int, scope: dict[str, str] | None = None) -> dict[str, int]:
+        if type(session_id) is not int or session_id < 1:
+            raise ValueError("会话 ID 必须为正整数")
+        with exclusive(
+            self.store.root / "locks" / "sessions" / f"{session_id}.lock",
+            "该会话的提取 worker 正在运行，请稍后重试",
+        ):
+            return self._process(session_id, scope)
+
+    def _process(self, session_id: int, scope: dict[str, str] | None = None) -> dict[str, int]:
         row = self.store.db.execute(
             "SELECT project_id FROM sessions WHERE session_pk = ?", (session_id,)
         ).fetchone()
@@ -305,7 +344,6 @@ class Worker:
             raise ValueError("会话未归属项目，不能猜测归属")
         project_id = row[0]
         _permission(self.store, project_id, self.provider)
-        self._check_model_limits()
         raw_identity = [
             tuple(x)
             for x in self.store.db.execute(
@@ -344,6 +382,7 @@ class Worker:
         ).fetchone()
         if previous:
             return {"segments": previous[0], "claims": 0, "manual": 0}
+        self._check_model_limits()
         events = slim_session(self.store, session_id, self.provider)
         items = segment(events, self.provider, self.budgets.content_tokens)
         for item in items:
@@ -352,14 +391,14 @@ class Worker:
         stats = {"segments": len(items), "claims": 0, "manual": 0}
         for item in items:
             self._process_item(item, project_id, stats, 0, scope)
-            if stats.get("paused"):
+            if stats.get("paused") or stats.get("busy"):
                 break
         pending = self.store.db.execute(
             "SELECT count(*) FROM coverage c JOIN raw_events r USING(event_id) "
             "WHERE r.session_pk = ? AND c.status = 'pending'",
             (session_id,),
         ).fetchone()[0]
-        if stats["manual"] == 0 and pending == 0:
+        if stats["manual"] == 0 and pending == 0 and not stats.get("busy"):
             for queued in self.store.db.execute(
                 "SELECT job_id,payload FROM jobs WHERE kind='budget_pause' AND state='queued'"
             ).fetchall():
@@ -498,6 +537,9 @@ class Worker:
                     stats["claims"] += len(claim_ids)
                 self._coverage(item, "pass2", "covered")
                 return
+        except TaskBusy:
+            stats["busy"] = 1
+            return
         except DailyBudgetExceeded:
             session = self.store.db.execute(
                 "SELECT session_pk FROM raw_events WHERE event_id=?", (item.ids[0],)
@@ -541,7 +583,7 @@ class Worker:
                 )
                 for child in children:
                     self._process_item(child, project_id, stats, failures + 1, scope)
-                    if stats.get("paused"):
+                    if stats.get("paused") or stats.get("busy"):
                         break
                 return
             self.store.db.execute(

@@ -63,7 +63,7 @@ def test_interleaved_workers_finish_their_own_attempts(store: Store, tmp_path: P
 
     class Interleaved(FakeProvider):
         def generate(self, request):
-            run, good = invoke(other, project)
+            run, good = invoke(other, project, "other-meter")
             persist(
                 store,
                 good,

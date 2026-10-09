@@ -12,6 +12,7 @@ from rg.extract.validate import InvalidClaim
 from rg.extract.worker import Worker, _permission
 from rg.slim.tokens import BudgetExceeded
 from rg.store.database import Store, dumps
+from rg.store.locking import exclusive
 from rg.store.objects import atomic_write, digest
 
 OVERVIEW_SCHEMA = obj(
@@ -75,6 +76,20 @@ def records(
 
 
 def overview(
+    worker: Worker,
+    project: str,
+    destination: Path,
+    session: int | None = None,
+    scope: dict[str, str] | None = None,
+) -> dict[str, int]:
+    with exclusive(
+        worker.store.root / "locks" / "overviews" / (digest(project.encode()) + ".lock"),
+        "该项目的概览 worker 正在运行，请稍后重试",
+    ):
+        return _overview(worker, project, destination, session, scope)
+
+
+def _overview(
     worker: Worker,
     project: str,
     destination: Path,
