@@ -60,7 +60,7 @@ def evidence(store: Store, event_id: int) -> dict[str, Any]:
     ]
     remaining = 64_000
     for edited in edits:
-        if len(calls(store, event(store, edited["request_event_id"]))) > 1:
+        if len(calls(store, event(store, edited["result_event_id"]))) > 1:
             edited["association_gap"] = "ambiguous_call_id"
         edited["diff"] = diff(store, edited)
         size = len(edited["diff"].get("text", "").encode())

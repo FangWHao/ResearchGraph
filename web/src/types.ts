@@ -159,7 +159,7 @@ export interface RunManifest {
 }
 export interface RunManifestPage { items: RunManifest[]; total: number; offset: number; next_offset: number | null }
 export interface EditDiff {
-  available: boolean; format?: 'reported_versions' | 'patch_only'; text?: string;
+  available: boolean; format?: 'reported_versions' | 'reported_before' | 'reported_after' | 'patch_only'; text?: string;
   complete_versions?: boolean; gap: string | null; reason: string;
 }
 export interface L1Edit {

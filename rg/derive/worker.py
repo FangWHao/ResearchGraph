@@ -4,7 +4,7 @@ from collections import Counter
 from collections.abc import Callable
 
 from rg.derive.edits import edit
-from rg.derive.records import Event, block, calls, event
+from rg.derive.records import Event, block, calls, event, native_patch
 from rg.derive.runtime import EXEC_TOOLS, POLL_TOOLS, apply_result, request
 from rg.ingest.common import RG_BLOCK
 from rg.store.database import Store, dumps, now
@@ -38,7 +38,8 @@ def _derive(
             "SELECT event_id,'queued',NULL,? FROM raw_events "
             "WHERE alias_of IS NULL AND ((kind IN ('tool_call','file_edit','tool_result') "
             "AND exclude_reason IS NULL) OR "
-            "(kind='meta' AND tool_name='exec_command' AND exclude_reason='execution_metadata'))",
+            "(kind='meta' AND tool_name IN ('exec_command','apply_patch') "
+            "AND exclude_reason='execution_metadata'))",
             (now(),),
         )
         if retry_failed:
@@ -98,7 +99,7 @@ def process(store: Store, value: Event) -> tuple[str, str | None]:
     call = matched[0]
     if contaminated(call):
         return "done", "rg_context_in_tool_payload"
-    if call["kind"] == "file_edit":
+    if call["kind"] == "file_edit" or native_patch(call, "patch_apply_begin"):
         edit(store, call, value)
     elif call["tool_name"] in EXEC_TOOLS | POLL_TOOLS:
         reason = apply_result(store, call, value)

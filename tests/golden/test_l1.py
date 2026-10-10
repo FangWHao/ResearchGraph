@@ -397,7 +397,9 @@ def test_codex_patch_does_not_invent_preimage(store, tmp_path, operation, body, 
     )
     row = store.db.execute("SELECT * FROM edit_records").fetchone()
     assert row["before_version"] is None and row["gap"] == "preimage_unknown"
-    assert evidence(store, 3, {})["l1"]["edits"][0]["diff"]["format"] == "patch_only"
+    shown = evidence(store, 3, {})["l1"]["edits"][0]["diff"]
+    assert shown["format"] == ("reported_after" if after is not None else "patch_only")
+    assert shown["complete_versions"] is False
     if after is not None:
         sha = store.db.execute(
             "SELECT content_sha256 FROM artifact_versions WHERE version_id=?",

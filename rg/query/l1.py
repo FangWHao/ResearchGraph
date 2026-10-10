@@ -189,9 +189,11 @@ class FileRunGraph:
             ):
                 continue
             candidates = self.reader.store.db.execute(
-                "SELECT event_id,occurred_at,recorded_at FROM raw_events WHERE session_pk=? "
-                "AND call_id=? AND kind IN ('tool_call','file_edit') AND alias_of IS NULL "
-                "AND exclude_reason IS NULL",
+                "SELECT event_id,kind,occurred_at,recorded_at FROM raw_events WHERE session_pk=? "
+                "AND call_id=? AND alias_of IS NULL AND "
+                "((kind IN ('tool_call','file_edit') AND exclude_reason IS NULL) OR "
+                "(kind='meta' AND tool_name='apply_patch' "
+                "AND exclude_reason='execution_metadata'))",
                 (record["session_pk"], record["call_id"]),
             )
             calls = [
@@ -199,7 +201,9 @@ class FileRunGraph:
                 for r in candidates
                 if self.reader.visible(r["occurred_at"], r["recorded_at"], ("E", r["event_id"]))
             ]
-            record["association_gap"] = "ambiguous_call_id" if len(calls) > 1 else None
+            native_calls = sum(r["kind"] == "meta" for r in calls)
+            ambiguous = native_calls > 1 or len(calls) - native_calls > 1
+            record["association_gap"] = "ambiguous_call_id" if ambiguous else None
             record["scope_basis"] = (
                 "referenced_version_only" if self.reader.scope_filter else "unassigned"
             )

@@ -17,15 +17,16 @@ def parse_codex(record: dict[str, Any]) -> list[Parsed]:
         return [Parsed("compact_boundary", excluded="compaction_replay")]
     if kind == "event_msg":
         t = payload.get("type")
-        if t in {"exec_command_begin", "exec_command_end", "patch_apply_end"}:
+        if t in {"exec_command_begin", "exec_command_end", "patch_apply_begin", "patch_apply_end"}:
+            begin = t in {"exec_command_begin", "patch_apply_begin"}
             return [
                 Parsed(
-                    "meta" if t == "exec_command_begin" else "tool_result",
+                    "meta" if begin else "tool_result",
                     json.dumps(payload, ensure_ascii=False),
                     native_id=f"{t}:{payload['call_id']}" if payload.get("call_id") else None,
                     call_id=payload.get("call_id"),
-                    tool_name="apply_patch" if t == "patch_apply_end" else "exec_command",
-                    excluded="execution_metadata" if t == "exec_command_begin" else None,
+                    tool_name="apply_patch" if t.startswith("patch_apply_") else "exec_command",
+                    excluded="execution_metadata" if begin else None,
                 )
             ]
         if t in {"user_message", "agent_message"}:

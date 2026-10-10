@@ -41,6 +41,37 @@ describe('运行与编辑证据不超出工具观测', () => {
     expect(editPresentation(patch).reason).toContain('不能代表完整文件内容');
   });
 
+  it('补丁表示保留已登记的单侧候选版本，不抹掉删除前或新增后报告', () => {
+    const patch = { available: true, format: 'patch_only' as const, text: '*** Delete File: result.txt', complete_versions: false, gap: null, reason: '合成补丁' };
+    const before = editPresentation(edit({ after_version: null, diff: patch }));
+    expect(before).toMatchObject({ kind: 'patch_only', text: patch.text });
+    expect(before.reason).toContain('编辑前候选'); expect(before.reason).not.toContain('编辑前后完整版本未知');
+    const after = editPresentation(edit({ before_version: null, diff: patch }));
+    expect(after.reason).toContain('编辑后候选'); expect(after.reason).not.toContain('编辑前后完整版本未知');
+  });
+
+  it('明确单侧格式保留候选全文、空文本与另一侧未知，不补造空文件差异', () => {
+    const text = '合成工具报告\n<script>window.nativePatchInjected=true</script>\n正文\u2028保留';
+    const before = edit({ after_version: null, diff: { available: true, format: 'reported_before', text, complete_versions: false, gap: 'postimage_unknown', reason: '合成单侧报告' } });
+    const after = edit({ before_version: null, diff: { ...before.diff, format: 'reported_after' } });
+    expect(editPresentation(before)).toMatchObject({ kind: 'reported_before', text });
+    expect(editPresentation(after)).toMatchObject({ kind: 'reported_after', text });
+    expect(editPresentation({ ...before, diff: { ...before.diff, text: '' } })).toMatchObject({ kind: 'reported_before', text: '' });
+    expect(editPresentation({ ...after, diff: { ...after.diff, text: '' } })).toMatchObject({ kind: 'reported_after', text: '' });
+    expect(before.after_version).toBeNull(); expect(after.before_version).toBeNull();
+  });
+
+  it('单侧格式与版本身份或完整标记矛盾时不显示错误方向的全文', () => {
+    for (const format of ['reported_before', 'reported_after'] as const) {
+      const diff = { available: true, format, text: '不可误认的全文', complete_versions: false, gap: null, reason: '合成单侧报告' };
+      const valid = edit({ diff, before_version: format === 'reported_before' ? 'before' : null, after_version: format === 'reported_after' ? 'after' : null });
+      for (const invalid of [edit({ diff }), { ...valid, before_version: null, after_version: null }, { ...valid, before_version: valid.after_version, after_version: valid.before_version }, { ...valid, diff: { ...diff, complete_versions: true } }, { ...valid, diff: { ...diff, complete_versions: undefined } }]) {
+        expect(editPresentation(invalid)).toMatchObject({ kind: 'unavailable', text: null });
+      }
+      expect(editPresentation({ ...valid, diff: { ...diff, available: false, reason: '超限，不返回部分全文' } })).toMatchObject({ kind: 'unavailable', text: null });
+    }
+  });
+
   it('超限或无表示信息不展示正文，也不由版本身份补造差异', () => {
     expect(editPresentation(edit({ diff: { available: false, text: '不应展示的超限内容', gap: null, reason: '差异超过展示上限' } })))
       .toMatchObject({ kind: 'unavailable', text: null, reason: '差异超过展示上限' });

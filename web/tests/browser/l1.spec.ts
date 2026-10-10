@@ -99,7 +99,8 @@ test('真实完整编辑仍为候选文本，补丁不充当完整版本，小�
   expect(patch.artifact_versions).toEqual([]);
   await openEvent(page, 23);
   await expect(edits.locator('.l1-card > .l1-heading > strong')).toHaveText('仅有补丁');
-  await expect(edits).toContainText('补丁不能代表完整文件内容');
+  await expect(edits.getByLabel('工具报告的候选编辑前全文', { exact: true })).toHaveCount(0);
+  await expect(edits.getByLabel('工具报告的候选编辑后全文', { exact: true })).toHaveCount(0);
   await expect(edits.getByLabel('工具报告的补丁正文')).toContainText('*** Update File: 合成仅补丁.py');
   await page.setViewportSize({ width: 390, height: 844 });
   await edits.scrollIntoViewIfNeeded();

@@ -20,10 +20,19 @@ export function editPresentation(edit: L1Edit) {
     return { kind: 'unavailable', title: '差异暂不可展示', text: null, reason: diff.reason } as const;
   }
   if (diff.format === 'patch_only') {
-    return { kind: 'patch_only', title: '仅有补丁', text: diff.text, reason: '编辑前后完整版本未知；补丁不能代表完整文件内容。' } as const;
+    const known = edit.before_version && edit.after_version ? '已登记编辑前后候选版本；'
+      : edit.before_version ? '已登记编辑前候选版本，编辑后完整版本未知；'
+      : edit.after_version ? '已登记编辑后候选版本，编辑前完整版本未知；' : '编辑前后完整版本未知；';
+    return { kind: 'patch_only', title: edit.before_version || edit.after_version ? '工具报告补丁 · 候选版本已登记' : '仅有补丁', text: diff.text, reason: `${known}当前正文仅为补丁，不能代表完整文件内容。` } as const;
   }
   if (diff.format === 'reported_versions' && diff.complete_versions === true && edit.before_version && edit.after_version) {
     return { kind: 'reported_versions', title: '工具报告版本差异 · 待复核', text: diff.text, reason: '编辑前后是工具报告的候选 UTF-8 文本，不证明当时文件原始字节完全一致。' } as const;
+  }
+  if (diff.format === 'reported_before' && diff.complete_versions === false && edit.before_version && !edit.after_version) {
+    return { kind: 'reported_before', title: '工具报告编辑前全文 · 待复核', text: diff.text, reason: '编辑前是工具报告的候选 UTF-8 全文，编辑后完整版本未知；没有编辑后版本不等于空文件，不证明文件已实际删除或保存字节一致。' } as const;
+  }
+  if (diff.format === 'reported_after' && diff.complete_versions === false && edit.after_version && !edit.before_version) {
+    return { kind: 'reported_after', title: '工具报告编辑后全文 · 待复核', text: diff.text, reason: '编辑后是工具报告的候选 UTF-8 全文，编辑前完整版本未知；不证明编辑前文件不存在或实际保存字节一致。' } as const;
   }
   return { kind: 'unavailable', title: '差异完整性未证实', text: null, reason: '接口没有提供一致的前后版本与表示信息，无法据此核对完整版本。' } as const;
 }
@@ -55,6 +64,11 @@ const gapNames: Record<string, string> = {
   cwd_root_unknown: '工作目录与项目根目录的归属未知',
   executor_session_unknown_or_ambiguous: '执行器会话归属未知或存在歧义',
   preimage_unknown: '编辑前完整版本未知', reported_preimage_missing: '工具未报告编辑前完整文本',
+  postimage_unknown: '编辑后完整版本未知；没有编辑后版本不等于空文件',
+  native_patch_failed: '原生补丁结束记录报告失败，不能据此证明编辑后版本',
+  native_patch_metadata_conflict: '原生补丁请求与结果字段存在矛盾，不能证实成功或完整版本',
+  native_patch_input_missing: '只有原生补丁报告，未记录原始自定义工具或函数补丁请求；工具报告不证明实际保存文件字节',
+  native_patch_changes_missing: '原生补丁缺少可核对的结构化变更报告，不能证实应用结果',
   patch_success_not_proven: '补丁应用结果未被工具记录证实',
   artifact_root_unknown: '文件与项目根目录的归属未知',
   tool_error_after_unknown: '工具报告错误，编辑后版本未知',

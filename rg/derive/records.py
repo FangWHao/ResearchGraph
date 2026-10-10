@@ -109,6 +109,16 @@ def calls(store: Store, value: Event) -> list[Event]:
             (value["session_pk"], value["call_id"]),
         )
     ]
+    if native_patch(value, "patch_apply_end") or native_patch(value, "patch_apply_begin"):
+        begins = patch_begins(store, value)
+        if len(result) > 1:
+            return result
+        if len(begins) > 1:
+            return begins
+        # 外层执行器请求不是补丁请求；原生回执只沿同会话、同调用的开始记录。
+        if result and result[0]["kind"] == "file_edit":
+            return result
+        return begins
     if not result:
         result = [
             event(store, row[0])
@@ -120,3 +130,24 @@ def calls(store: Store, value: Event) -> list[Event]:
             )
         ]
     return result
+
+
+def native_patch(value: Event, kind: str) -> bool:
+    return (
+        value["tool"] == "codex"
+        and value["record"].get("type") == "event_msg"
+        and block(value).get("type") == kind
+    )
+
+
+def patch_begins(store: Store, value: Event) -> list[Event]:
+    return [
+        candidate
+        for row in store.db.execute(
+            "SELECT event_id FROM raw_events WHERE session_pk=? AND call_id=? "
+            "AND kind='meta' AND tool_name='apply_patch' "
+            "AND exclude_reason='execution_metadata' AND alias_of IS NULL ORDER BY seq",
+            (value["session_pk"], value["call_id"]),
+        )
+        if native_patch(candidate := event(store, row[0]), "patch_apply_begin")
+    ]

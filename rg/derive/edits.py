@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from rg.derive.records import Event, arguments, block, bound_path, cwd
+from rg.derive.records import Event, arguments, block, bound_path, cwd, native_patch
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
 
@@ -261,6 +261,11 @@ def claude_edit(store: Store, call: Event, value: Event) -> None:
 
 
 def codex_edit(store: Store, call: Event, value: Event) -> None:
+    if native_patch(value, "patch_apply_end"):
+        from rg.derive.native_patch import native_edits
+
+        native_edits(store, call, value)
+        return
     item = block(call)
     patch = item.get("input") or item.get("arguments")
     if not isinstance(patch, str):
@@ -328,6 +333,15 @@ def diff(store: Store, row: dict[str, Any]) -> dict[str, Any]:
             )
         )
         kind = "reported_versions"
+    elif before or after:
+        sha = store.db.execute(
+            "SELECT content_sha256 FROM artifact_versions WHERE version_id=?", (before or after,)
+        ).fetchone()[0]
+        raw = store.objects.get(sha)
+        if len(raw) > limit or raw.count(b"\n") > 2000:
+            return {"available": False, "reason": "版本正文超过差异展示上限", "gap": row["gap"]}
+        text = raw.decode()
+        kind = "reported_before" if before else "reported_after"
     else:
         raw = store.objects.get(row["patch_sha256"])
         if len(raw) > limit:
@@ -344,5 +358,9 @@ def diff(store: Store, row: dict[str, Any]) -> dict[str, Any]:
         "gap": row["gap"],
         "reason": "工具报告的候选文本版本"
         if before and after
+        else "工具报告的编辑前候选全文；编辑后版本未知"
+        if before
+        else "工具报告的编辑后候选全文；编辑前版本未知"
+        if after
         else "仅有补丁；编辑前后完整版本未知",
     }

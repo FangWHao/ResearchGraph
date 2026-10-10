@@ -105,7 +105,7 @@ export function EvidenceRecords({ data, current, onOpen, onError }: {
           <Gap value={edit.association_gap} /><Gap value={edit.gap} />
           {edit.diff.gap && edit.diff.gap !== edit.gap && <Gap value={edit.diff.gap} />}
           {edit.user_modified === 1 && <p className="missing-note">工具报告用户同时修改，不能把所有变化归给 Agent。</p>}
-          {presentation.text != null && <pre className="l1-diff" aria-label={presentation.kind === 'patch_only' ? '工具报告的补丁正文' : '候选前后版本差异正文'}>{presentation.text || (presentation.kind === 'patch_only' ? '补丁正文为空，前后文件是否相同仍未知。' : '工具报告的前后文本没有差异。')}</pre>}
+          {presentation.text != null && <pre className="l1-diff" aria-label={presentation.kind === 'patch_only' ? '工具报告的补丁正文' : presentation.kind === 'reported_before' ? '工具报告的候选编辑前全文' : presentation.kind === 'reported_after' ? '工具报告的候选编辑后全文' : '候选前后版本差异正文'}>{presentation.text || (presentation.kind === 'patch_only' ? '补丁正文为空，前后文件是否相同仍未知。' : presentation.kind === 'reported_before' ? '工具报告的编辑前全文为空；编辑后版本未知。' : presentation.kind === 'reported_after' ? '工具报告的编辑后全文为空；编辑前版本未知。' : '工具报告的前后文本没有差异。')}</pre>}
           <details className="l1-details"><summary>版本与补丁标识</summary>
             <dl className="l1-identifiers"><div><dt>编辑前版本</dt><dd>{edit.before_version ?? '未知'}</dd></div><div><dt>编辑后版本</dt><dd>{edit.after_version ?? '未知'}</dd></div>
               <div><dt>补丁摘要</dt><dd>{edit.patch_sha256 ?? '未知'}</dd></div><div><dt>工具操作标识</dt><dd>{edit.operation}</dd></div></dl>
