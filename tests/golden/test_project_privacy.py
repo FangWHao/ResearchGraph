@@ -27,6 +27,7 @@ from rg.ingest.scanner import scan_file
 from rg.query.retrieval import retrieve
 from rg.slim.slimmer import slim_session
 from rg.store.database import ConflictError, Store, dumps
+from rg.store.migrations import LATEST_VERSION
 from rg.store.privacy import gate, read, update
 from tests.conftest import FakeProvider
 from tests.golden.test_exports import evidence, unpack
@@ -329,7 +330,7 @@ def test_v15_upgrade_failure_is_atomic_and_original_survives(tmp_path, monkeypat
         ).fetchall()
     with closing(Store(root)) as recovered:
         assert recovered.raw(1) == raw
-        assert recovered.db.execute("PRAGMA user_version").fetchone()[0] == 16
+        assert recovered.db.execute("PRAGMA user_version").fetchone()[0] == LATEST_VERSION
 
 
 def test_real_http_scope_auth_revision_duplicates_and_busy_gate(store, tmp_path):

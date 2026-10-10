@@ -69,6 +69,21 @@ def parser() -> argparse.ArgumentParser:
     semantic.add_argument("--occurred-until")
     semantic.add_argument("--scope", action="append", default=[])
     semantic.add_argument("--expected-revision", type=int)
+    file_graph = commands.add_parser(
+        "l1-graph", help="只读完整 L1 文件与运行图，区分执行事实和候选报告"
+    )
+    file_graph.add_argument("--project", required=True)
+    file_graph.add_argument(
+        "--collection",
+        choices=["nodes", "edges", "observations", "evidence", "unresolved"],
+        default="nodes",
+    )
+    file_graph.add_argument("--limit", type=int, default=20)
+    file_graph.add_argument("--offset", type=int, default=0)
+    file_graph.add_argument("--known-until")
+    file_graph.add_argument("--occurred-until")
+    file_graph.add_argument("--scope", action="append", default=[])
+    file_graph.add_argument("--expected-revision", type=int)
     exported = commands.add_parser("export", help="只读导出限定双时间和范围的历史 ZIP")
     exported.add_argument("--project", required=True)
     exported.add_argument("--output", type=Path, required=True, help="新 ZIP 文件，父目录需已存在")
@@ -286,8 +301,11 @@ def parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace, store: Store) -> object:
-    if args.command == "graph":
-        from rg.query.graph import query
+    if args.command in {"graph", "l1-graph"}:
+        if args.command == "l1-graph":
+            from rg.query.l1 import query
+        else:
+            from rg.query.graph import query
 
         values = {
             key: getattr(args, key)
@@ -783,7 +801,16 @@ def main() -> None:
         store = Store(
             args.data_dir,
             readonly=args.command
-            in {"mcp", "context", "client-pack", "versions", "run-evidence", "export", "graph"}
+            in {
+                "mcp",
+                "context",
+                "client-pack",
+                "versions",
+                "run-evidence",
+                "export",
+                "graph",
+                "l1-graph",
+            }
             or (args.command == "ask" and args.retrieve_only)
             or (
                 args.command == "project"

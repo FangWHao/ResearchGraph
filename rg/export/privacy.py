@@ -30,6 +30,7 @@ APPLICATION_UUID_FIELDS = IDENTITIES | {
     "snapshot_id",
     "run_id",
     "manifest_id",
+    "record_id",
 }
 ASSIGNMENTS = (
     r'(?i)"(?:api[_-]?key|token|access_token|password|secret|authorization|private_key)"'

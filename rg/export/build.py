@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from rg.export.privacy import Privacy
-from rg.query.artifacts import version_record
 from rg.query.graph import SemanticGraph
+from rg.query.l1 import FileRunGraph
+from rg.query.l1_records import all_pages
 from rg.query.reader import Reader, instant
-from rg.query.runs import manifests, native
 from rg.store.database import ConflictError, Store, dumps, now
 from rg.store.objects import digest
 
@@ -22,17 +21,6 @@ OPTIONS = {
     "include_evidence",
     "redact_patterns",
 }
-
-
-def all_pages(fetch: Callable[[int], dict[str, Any]]) -> list[dict[str, Any]]:
-    result: list[dict[str, Any]] = []
-    offset = 0
-    while True:
-        value = fetch(offset)
-        result.extend(value["items"])
-        offset = value["next_offset"]
-        if offset is None:
-            return result
 
 
 def references(
@@ -83,93 +71,6 @@ def references(
     return list(spans.values()), events
 
 
-def run_records(reader: Reader) -> tuple[list[dict[str, Any]], set[int], set[str]]:
-    identities = {
-        r[0]
-        for r in reader.store.db.execute(
-            "SELECT run_id FROM runs WHERE project_id=? UNION "
-            "SELECT run_id FROM run_manifests WHERE project_id=?",
-            (reader.project, reader.project),
-        )
-    }
-    result, events, versions = [], set(), set()
-    saved = reader.values
-    try:
-        for identity in sorted(identities):
-            reader.values = saved | {"limit": 100, "offset": 0, "io_offset": 0}
-            reports = all_pages(
-                lambda offset, identity=identity: manifests(
-                    reader, identity, values={"limit": 100, "offset": offset}
-                )
-            )
-            if reader.scope_filter and not reports:
-                continue
-            execution = native(reader, identity)
-            if execution:
-                facts = execution["observations"]
-                offset = execution["observations_pagination"]["next_offset"]
-                while offset is not None:
-                    reader.values = saved | {"limit": 100, "offset": offset}
-                    continued = native(reader, identity)
-                    assert continued is not None
-                    facts.extend(continued["observations"])
-                    offset = continued["observations_pagination"]["next_offset"]
-                execution["observations"] = facts
-                execution.pop("observations_pagination")
-                execution["observations_partial"] = False
-                events.add(execution["request_event_id"])
-                events.update(r["event_id"] for r in facts)
-            for report in reports:
-                offset = report["io"]["next_offset"]
-                entries = report["io"]["items"]
-                while offset is not None:
-                    from rg.query.runs import io
-
-                    reader.values = saved | {"io_offset": offset}
-                    continued_io = io(reader, report)
-                    entries.extend(continued_io["items"])
-                    offset = continued_io["next_offset"]
-                report["io"] = {"items": entries, "total": len(entries), "partial": False}
-                versions.update(r["requested_version_id"] for r in entries)
-                events.add(report["evidence_event_id"])
-            if execution or reports:
-                result.append(
-                    {
-                        "run_id": identity,
-                        "native": execution,
-                        "manifests": reports,
-                        "scope_basis": "reported_only" if reader.scope_filter else "unfiltered",
-                        "actual_io_completeness": "unknown",
-                    }
-                )
-    finally:
-        reader.values = saved
-    return result, events, versions
-
-
-def artifacts(reader: Reader, requested: set[str]) -> tuple[list[dict[str, Any]], set[int]]:
-    result, events = [], set()
-    for row in reader.store.db.execute(
-        "SELECT * FROM artifact_versions WHERE project_id=? ORDER BY version_id", (reader.project,)
-    ):
-        if reader.scope_filter and row["version_id"] not in requested:
-            continue
-        value = version_record(reader, dict(row))
-        if value is None:
-            continue
-        card, observations = value
-        result.append(
-            {
-                "version": card,
-                "observations": observations,
-                "scope_basis": "reported_only" if reader.scope_filter else "unassigned",
-            }
-        )
-        if card.get("evidence_event_id") is not None:
-            events.add(card["evidence_event_id"])
-    return result, events
-
-
 def sources(reader: Reader, events: set[int]) -> list[dict[str, Any]]:
     result = []
     for identity in sorted(events):
@@ -216,6 +117,8 @@ def algorithms(store: Store, claims: list[dict[str, Any]], reader: Reader) -> di
                 "export/privacy.py",
                 "export/package.py",
                 "query/graph.py",
+                "query/l1.py",
+                "query/l1_records.py",
                 "extract/redact.py",
                 "store/privacy.py",
             )
@@ -225,7 +128,9 @@ def algorithms(store: Store, claims: list[dict[str, Any]], reader: Reader) -> di
     }
 
 
-def graph(reader: Reader, claims: list[dict[str, Any]]) -> dict[str, Any]:
+def graph(
+    reader: Reader, claims: list[dict[str, Any]], l1: FileRunGraph | None = None
+) -> dict[str, Any]:
     nodes = {}
     edges, ports, merges = [], [], []
     for claim in claims:
@@ -289,6 +194,7 @@ def graph(reader: Reader, claims: list[dict[str, Any]]) -> dict[str, Any]:
         "projection": False,
         "same_topic_propagates": False,
         "semantic": SemanticGraph(reader).snapshot(),
+        "l1": (l1 if l1 is not None else FileRunGraph(reader)).snapshot(),
     }
 
 
@@ -315,8 +221,8 @@ def build(store: Store, body: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
             claim["payload_digest_basis"] = "canonical_json_v1"
             claim["citation_id"] = f"C{claim['claim_id']}"
         evidence, event_ids = references(reader, claims, include, privacy)
-        runs, run_events, requested = run_records(reader)
-        versions, version_events = artifacts(reader, requested)
+        file_graph = FileRunGraph(reader)
+        runs, versions = file_graph.runs, file_graph.versions
         claim_ids = {r["claim_id"] for r in claims}
         reviews = []
         for row in store.db.execute(
@@ -329,13 +235,13 @@ def build(store: Store, body: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
                 reviews.append(dict(row))
         data = {
             "claims.json": claims,
-            "graph.json": graph(reader, claims),
+            "graph.json": graph(reader, claims, file_graph),
             "state-events.json": [
                 r for r in claims if r["claim_type"] in {"decision_event", "evidence_event"}
             ],
             "reviews.json": reviews,
             "evidence.json": evidence,
-            "sources.json": sources(reader, event_ids | run_events | version_events),
+            "sources.json": sources(reader, event_ids | file_graph.event_ids),
             "artifacts.json": versions,
             "runs.json": runs,
             "algorithms.json": algorithms(store, claims, reader),

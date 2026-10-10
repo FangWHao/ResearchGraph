@@ -169,6 +169,14 @@ class Handler(BaseHTTPRequestHandler):
             from rg.api.graph import semantic
 
             return semantic(store, values)
+        if path == "/api/l1-graph":
+            from rg.api.graph import l1
+
+            return l1(store, values)
+        if path == "/api/l1-evidence":
+            from rg.api.graph import source
+
+            return source(store, values)
         if path == "/api/decision-targets":
             from rg.record.targets import targets
 

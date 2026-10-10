@@ -381,10 +381,10 @@ def test_revision_and_one_sqlite_snapshot_remain_consistent_with_concurrent_writ
 
     actual = module.graph
 
-    def concurrent(reader, claims):
+    def concurrent(reader, claims, file_graph=None):
         with closing(Store(store.root)) as writer:
             append(writer, entity, "entity_version", {"label": "后来插入"})
-        return actual(reader, claims)
+        return actual(reader, claims, file_graph)
 
     monkeypatch.setattr(module, "graph", concurrent)
     with closing(Store(store.root, readonly=True)) as reader_store:

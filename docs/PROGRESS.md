@@ -506,3 +506,18 @@
 - 改动的文件：tests/golden/test_artifacts.py、本文件及 docs/acceptance/M4项目临床编号遮盖验收_20261010.md。单次读取进程状态，文件消失表示进程已退出；保留真实父进程强杀、五秒子进程等待和存活失败断言。没有改生产代码、安装包资源、前端或规格。
 - 验收命令：uv run pytest tests/golden/test_artifacts.py::test_background_child_exits_when_actual_parent_pipe_disappears -q 独立运行十次，各 1 passed；重新 uv run pytest -q：731 passed in 281.34s (0:04:41)；uv run pytest tests/golden -q：684 passed in 266.88s (0:04:26)。ruff：All checks passed!；pyright：0 errors, 0 warnings, 0 informations；git diff --check 退出 0。两组全量并行，不作性能基准。
 - 下一步：仅提交上述三文件，维护草稿 PR，重新核对修正后 HEAD 的推送/PR CI 与恢复包；项目遮盖其它验收保持，整体 M0–M4 尚未完成。
+
+## 2026-10-10 · 已登记 L1 文件运行图与历史原文一致性
+
+- 任务：继续 §2/5/8.2/8.3/9/10/15 与原设计 §4/5；开始核对末尾进度、对应章节与既有决定。230c16a 基线恢复包 SHA256 e3271eac8bd4c45ddf5970b044f2999793eeaaf230c5a971bab6033f77def95f，319 个跟踪文件独立恢复字节一致。按用户既有前端子 agent 授权继续界面；整体 M0–M4 未标完成。
+- 改动的文件：新增 query/l1.py、l1_records.py、tests/l1_graph_browser.py、golden/test_l1_graph.py、前端文件运行图组件/读取钩子/模型/样式及单测和浏览器专项、两份中文验收。修改 API 图入口与 server、CLI、export/build 与 privacy、migrations、原导出并发/项目规则迁移测试、前端 App 与合成服务两行，以及 README、需求落实、决定与本文件；不改源规格、解析器、钩子或模型流水线。
+- 行为：完整遍历已登记文件/原生运行/候选清单与编辑/快照及明确同范围尝试，重复端口、未知/空列表、缺失端点与全部内容版本保留。五集合 CLI/HTTP 固定双截止/完整范围/修订，报告输入输出不代替原生执行观察。发现快照不证明旧字节，后来观察不补旧图；源证据接口只按同图条件续读原事件，无后来派生上下文。历史 ZIP 同源保存 l1，十一成员不变。只读不打开当前文件或执行历史命令，实际 I/O 完整性仍 unknown。版本 17 增加编辑修订并保留原子升级和原件。
+- uv sync --locked：Resolved 28 packages in 14ms、Checked 27 packages in 31ms；rg --help、l1-graph --help 退出0。L1/导出/L2 合并回归：80 passed in 28.62s；加强旧编辑迁移断言后 L1 专项 21 passed in 8.52s。最终 uv run pytest -q：752 passed in 291.98s (0:04:51)；uv run pytest tests/golden -q：705 passed in 277.93s (0:04:37)。两组全量并行，不作性能基准。ruff check rg tests scripts：All checks passed!；pyright：0 errors, 0 warnings, 0 informations；git diff --check 退出0。
+- 初次回归失败及修正：新测试漏导入 ConflictError、旧并发导出测试包装仍为两参数，修正装配后 80 项通过；保留并发写入与同一 SQLite 快照断言。合成 SQL 占位与必填字段修正，虚拟来源不计物理健康记录；没有放宽校验或读取真实会话。
+- 隔离 wheel：118 文件/113 源码资源全匹配，缺失/差异/实际密钥/私有资料均0。安装后113资源逐字一致、模块来自 site-packages、schema17。实际 CLI/127.0.0.1 HTTP 完整核对五集合8/113/2/7/2，四个原文字节窗口完整还原，历史截止只有请求，401/403/400/409/图及原文和导出200通过；数据库与原事件不变、model_attempts=0。关闭并删除临时合成原库后备份图完全一致；删除临时备份后ZIP十成员离线校验通过，不重建数据目录。
+- 用户明确选择整项目隐私清除，合同记入 DECISIONS，下一任务实现；本次没有清除真实资料。实际 I/O、影响传播合同、note/propose_note、真实工具和规模验收、Atlas 正式参考及完整 M0–M4 门槛继续保留。
+- 下一步：完成前端全量、真实浏览器、手机画布实际可见与截图验收，冻结后按允许清单提交，维护草稿PR，核对新HEAD两种CI与恢复包，再结束本任务。
+
+- 前端最终：pnpm test 11 files/92 passed/655ms；build 220 modules/1.02s；tsc 退出0；七个真实 HTTP 专项 20.1s；全量浏览器89 passed/1.3m，原83单测/82浏览器案例保留。手机切回项目的空白是真实视图拟合问题，修正受控节点测量回写及布局/尺寸后适配，保留节点与画布/屏幕实际相交断言，没有把 DOM 数量当可见证明。初验新增测试的文本换行和项目名称误判修正，物理观察按实际根/双截止保留未知，不修改数据或放宽校验。
+- 父任务实看最终桌面画布、清单详情、物理观察及390手机画布/摘要、详情五图，无横向溢出；14项冻结全OK，SHA256 10f05a9e25440bd5e847ad92c9c3ee83f72c17e75d35239723599947239b42c9；前端子 agent 已停止编辑。下一步按允许清单提交与维护草稿PR，核对当前HEAD推送/PR两种CI和独立恢复包后结束本任务，再推进整项目隐私清除。
+- 提交前允许清单：baseline=230c16a、staged_files=26、tracked_files=331、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=14；git diff --cached --check 退出0。只提交公开源码、中文记录和合成案例；凭据、真实资料、数据库、ZIP、截图与缓存仍忽略。

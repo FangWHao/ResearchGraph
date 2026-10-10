@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 16
+LATEST_VERSION = 17
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -335,6 +335,12 @@ MIGRATIONS = {
         "CREATE TRIGGER project_privacy_no_delete BEFORE DELETE ON project_privacy BEGIN "
         "SELECT RAISE(ABORT,'project privacy is append-only'); END",
         "CREATE TRIGGER project_privacy_revision AFTER INSERT ON project_privacy BEGIN "
+        "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
+    ),
+    17: (
+        "UPDATE graph_clock SET revision=revision+1 WHERE id=1 AND "
+        "EXISTS(SELECT 1 FROM edit_records)",
+        "CREATE TRIGGER edit_record_revision AFTER INSERT ON edit_records BEGIN "
         "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
     ),
 }
