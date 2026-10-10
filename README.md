@@ -69,6 +69,28 @@ uv run rg --data-dir /tmp/rg-demo mcp --project PROJECT_ID
 
 支持新版 MCP 2026-07-28 的逐请求元数据和旧版初始化协议；详情与官方客户端复现命令见 [只读 MCP 与状态卡验收](docs/acceptance/M4只读MCP与状态卡验收_20261010.md)。本轮没有修改个人客户端设置；候选写工具 `propose_note` 仍等待 note 类型的明确约定。
 
+## Codex 与 Claude 项目接入包
+
+```bash
+uv run rg --data-dir /合成数据目录 client-pack --project 项目ID --output /新目录/接入包
+uv run rg --data-dir /合成数据目录 client-pack --project 项目ID --output /另一个新目录/接入包 --encoding o200k_base
+```
+
+生成两套原生目录：Codex 的 `.agents/skills` 和 `.codex/config.toml`，Claude 的 `.claude/skills` 和 `.mcp.json`。每套包含 research-context、research-question、research-decide。数据库只读，不调用模型；输出已有时拒绝覆盖，不修改个人设置或安装钩子。包内 README 说明如何把技能目录和 MCP 条目合并到已登记项目的工作区，保留已有配置。包包含本机绝对路径，移动环境或数据目录后需要重新生成，不宜直接上传。
+
+上下文技能允许自动选用，用户也可输入 `$research-context` 或 `/research-context`。明确分析范围时使用只读 MCP 的完整 scope；未指定时读取固定项目的默认状态卡。人工命令只允许用户明确调用 `$research-question`、`$research-decide` 或对应的 `/research-question`、`/research-decide`。Agent 自己的判断、旧会话和 MCP 结果不能变成人工确认。
+
+记录脚本接收 UTF8 JSON 文件，通过固定解释器和参数数组调用同一 CLI，原话不插入 shell。包装入口也可直接使用：
+
+```bash
+uv run rg --data-dir /合成数据目录 client-record question --project 项目ID --input /临时目录/请求.json
+uv run rg --data-dir /合成数据目录 client-record decide --project 项目ID --input -
+```
+
+question 请求包含 `text` 和标准 UUID `request_id`；decide 包含 `selector`、`action`、`why` 和 `request_id`。可选完整 `scope`、带时区 `occurred_at`、非负整数 `expected_revision`；不接受项目、actor 或其他操作覆盖。重试复用 UUID 和原意图，沿用现有版本冲突和对象歧义合同。请求文件用后删除，回执供重试；包不自动保管临时请求。
+
+人工入口的身份规则依赖可信本机和客户端技能调用，不构成操作系统认证。MCP 仍仅开放五个只读工具，note/propose_note 未定义的部分继续保留。格式、脚本、官方客户端及独立 wheel 验证见[客户端接入包验收](docs/acceptance/M2客户端接入包验收_20261010.md)，不替代真实 Agent 会话效果或钩子 p95 验收。
+
 ## 有界问答
 
 ```bash
@@ -107,7 +129,7 @@ uv run rg --data-dir /tmp/rg-demo question '这个队列的验证目标是什么
 
 `--request-id` 接受 UUID：网络或进程重试同一意图时复用该编号，返回既有记录；相同编号用于不同文字、项目、身份或范围时拒绝写入。省略编号每次新建，内容相同也可以是不同记录。`--expected-revision` 指定读取时的图版本，冲突后刷新再人工提交；`--occurred-at` 可回填带时区的发生时间，入库时间仍单独保留。问题最多 16000 UTF8 字节，完整记录最多 65536 字节，引用按最多 8000 字节原文窗口保存。
 
-命令与本机令牌 HTTP 是可信人工入口，Agent 的候选写入口仍须单独实现。开发验证只写合成项目；`note` 存储类型与两种客户端包装尚待后续落实。详见 [人工问题验收](docs/acceptance/M2人工问题验收_20261009.md)。人工记录供补记与纠错使用，日常采集和提取走自动链路，不要求先手工录入问题或决定。
+命令与本机令牌 HTTP 是可信人工入口，Agent 的候选写入口仍须单独实现。开发验证只写合成项目；`note` 存储类型尚待约定，question/decide 的两种客户端包装见上文。详见 [人工问题验收](docs/acceptance/M2人工问题验收_20261009.md)。人工记录供补记与纠错使用，日常采集和提取走自动链路，不要求先手工录入问题或决定。
 
 ## 人工补记决定与选择对象
 

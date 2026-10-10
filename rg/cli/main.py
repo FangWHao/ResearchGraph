@@ -56,6 +56,16 @@ def parser() -> argparse.ArgumentParser:
     )
     commands = cli.add_subparsers(dest="command", required=True)
     commands.add_parser("init", help="建立数据库；不修改用户工具配置")
+    client_pack = commands.add_parser("client-pack", help="只读生成 Codex/Claude 项目接入包")
+    client_pack.add_argument("--project", required=True)
+    client_pack.add_argument("--output", type=Path, required=True)
+    client_pack.add_argument(
+        "--encoding", choices=["cl100k_base", "o200k_base"], default="cl100k_base"
+    )
+    client_record = commands.add_parser("client-record", help="明确调用的人工技能读取 JSON 原话")
+    client_record.add_argument("kind", choices=["question", "decide"])
+    client_record.add_argument("--project", required=True)
+    client_record.add_argument("--input", required=True, help="UTF8 JSON 文件路径，- 表示标准输入")
     hook_config = commands.add_parser("hook-config", help="生成钩子示例与根目录清单，不安装钩子")
     hook_config.add_argument("--output", type=Path, required=True)
     snapshot = commands.add_parser("snapshot", help="手工拍影子快照，或实测 p95 决定钩子模式")
@@ -211,6 +221,14 @@ def parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace, store: Store) -> object:
+    if args.command == "client-pack":
+        from rg.clients.package import package
+
+        return package(store, args.project, args.output, args.encoding)
+    if args.command == "client-record":
+        from rg.clients.record import record
+
+        return record(store, args.project, args.kind, args.client_body)
     if args.command == "context":
         from rg.mcp.tools import ToolService
 
@@ -538,9 +556,17 @@ def main() -> None:
     args = cli.parse_args()
     store = None
     try:
+        if args.command == "client-record":
+            from rg.clients.record import read_request
+
+            if args.input == "-":
+                args.client_body = read_request(sys.stdin.buffer, args.kind)
+            else:
+                with Path(args.input).open("rb") as stream:
+                    args.client_body = read_request(stream, args.kind)
         store = Store(
             args.data_dir,
-            readonly=args.command in {"mcp", "context"}
+            readonly=args.command in {"mcp", "context", "client-pack"}
             or (args.command == "ask" and args.retrieve_only),
         )
         if args.command == "mcp":

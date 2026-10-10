@@ -291,3 +291,14 @@
 - 决定：各项目问答草稿和结果分别保留在页面内存；请求序号、鉴权代次、项目和完整问题意图匹配后才显示返回。问题、范围或截止改变后旧结果标为旧意图；切换项目和停止等待不会让迟到回答覆盖新页面。模型错误保留本地检索来源，JSON 防回流包装只解析成数据，原文与 HTML 作为文字显示。
 - 放弃：让浏览器提交远程地址或凭据、用未遮盖文本代替发送预览、仅凭按钮点击开启许可、把项目许可描述成单次问答许可、撤回时删除原件或宣称已收回外发、模型失败清掉检索材料、把页面取消当作远程取消、先强迫确认所有候选再查询。
 - 实测后补充：模型曾把 records 元数据当作原文引用，保留严格逐字校验，提示明确元数据不属于 source.text，程序状态信息只放 caveats；新增错误元数据引文回归。拒绝通过扩大合法引文集合使错误回答过关。
+
+
+## 2026-10-10 · 项目技能、原话 JSON 与客户端接入包
+
+- 决定：client-pack 使用只读 Store 生成 Codex/Claude 原生技能目录及固定项目 stdio MCP 配置；输出必须是新目录，不改个人设置或安装钩子。包先在相邻临时目录生成，失败清理本次新目录；每个包文件附 SHA256。输出含本机路径，仅供当前环境安装，不能当成可跨机器共享的公共配置。
+- 决定：上下文技能默认允许自动选用；按 §8.1 用户亲自输入的要求，question/decide 技能只允许明确调用。Codex 使用 allow_implicit_invocation=false，Claude 使用 disable-model-invocation=true；不把普通任务描述、旧日志或 Agent 判断当人工授权。MCP 保持只读，note/propose_note 类型待定，不新增模型确认能力。
+- 理由：日常查询不要求人工审核；可选人工补记仍须保留来源身份。依据 [Codex 本地技能](https://learn.chatgpt.com/docs/build-skills)、[Codex MCP 配置](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)、[Claude 技能调用](https://code.claude.com/docs/en/skills)、[Claude 项目 MCP](https://code.claude.com/docs/en/mcp) 的当前格式。原生客户端工作区信任及首次 MCP 许可由客户端处理，不替用户写入绕过许可的设置。
+- 决定：用 client-record 接收有限 UTF8 JSON 文件或 stdin；固定项目及 human:本机用户，不接受 actor/项目覆盖。重复字段、未知字段、非对象、超长请求和缺失 request_id 均拒绝。现有 question/decide 验证、原话证据、完整范围、UUID 跨操作幂等、版本冲突和歧义候选合同复用，不由客户端重写。
+- 决定：技能脚本保存生成时的 Python 绝对路径，保留虚拟环境链接；-I 隔离导入并使用固定入口，避免同名 ripgrep 或工作区模块遮蔽。用户文字只经 JSON，脚本以参数数组且 shell=False 调用，输入文件路径按单个参数处理。临时请求用后删除，包不复制研究原件或凭据。
+- 边界：明确调用策略依赖客户端执行；可信本机 CLI 本身不是操作系统身份认证。格式核对、真实包装脚本、官方 SDK 子进程和独立 wheel 运行只证明这些接口；未调用真实 Agent 模型，不宣称真实自动触发、整条钩子或研究质量通过。
+- 放弃：直接把 $ARGUMENTS 插入 shell 动态块；自动将 Agent 判断确认为人工记录；未定义 note 类型就扩张写工具；覆盖已有项目或个人配置；用 PATH 中同名 rg 猜解释器；对 Python 环境链接 resolve 后丢失虚拟环境；把项目配置解析当真实会话验收。

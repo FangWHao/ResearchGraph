@@ -375,3 +375,18 @@
 - 验收修复：项目回执误写会话编号、问题可为空类型、回答沿用 CLI 的地址元数据分别修正。前端初次专项两项失败为 API hash 路径/文字断言；完整回归的健康路径预期随两条合成来源从 5 改为 7，登记来源 2 和队列 54 保持真实口径。中间 527/480 通过后因追加防元数据引用案例再验最终 528/481，早期结果不替代最终源码。
 - 下一步：允许清单提交，更新既有草稿 PR，按本轮新 HEAD 核对推送/PR 两种 CI；刷新公开代码包、独立还原全部跟踪文件后结束本任务。后续继续客户端包装、自动关联串联、完整运行 I/O、后台大文件摘要和全图语义；note/propose_note 类型待答复，正式参考与真实 M1–M4 门槛保留，整个目标不标完成。
 - 提交前允许清单检查：tracked_files=245 staged_files=25 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True frontend_frozen_files_unchanged=True；git diff --cached --check 退出码 0。仅公开源码、中文记录与合成测试提交；凭据、实际研究材料、截图、数据库和缓存继续留忽略目录，原规格保留原文。
+
+
+## 2026-10-10 · Codex/Claude 项目客户端接入包
+
+- 任务：落实 §2、§8.1、§10/11/14 的 question/decide/context 包装；开始读进度末尾、相关章节和决定，c6c9e2a 基线包 SHA256 及独立恢复的 245 个跟踪文件已核对。采用 OpenAI Docs 与 skill-creator 核对当前原生格式；不创建后端子 agent。整个 M0–M4 仍未验收。
+- 改动的文件：新增 rg/clients/__init__.py、package.py、record.py、tests/golden/test_client_package.py、scripts/check_client_package.py 和中文客户端验收；修改 CLI、CI、README、需求落实、决定、PR 草稿与本文件。前端源码未改，13 项冻结摘要全部 OK。
+- 行为：client-pack 只读生成 19 文件、两套原生技能/stdio 配置和逐文件摘要，已有输出不覆盖、不改个人配置、不装钩子。固定项目及环境解释器，保留虚拟环境链接，-I 隔离工作区；上下文自动选用、人工写入仅明确调用。包内绝对路径仅适于本机环境，不复制研究原件或凭据。
+- 写入：client-record 接收有限 UTF8 JSON 文件或 stdin，固定 human:本机用户/项目，拒绝重复、未知字段、覆盖身份/项目及缺失 UUID。脚本 shell=False、用户原话不插入命令；复用 question/decide 的原话证据、完整范围、双时间、版本冲突、跨操作重试和歧义候选。技能策略不是操作系统身份认证，MCP 仍只读，note/propose_note 待约定。
+- uv sync --locked：Resolved 28 packages in 12ms，Checked 27 packages in 60ms；uv run rg --help、client-pack --help、client-record --help 退出码均 0。uv run pytest -q：544 passed in 184.63s；uv run pytest tests/golden -q：497 passed in 171.46s。两者并行，不作性能基准；16 项新增固定案例覆盖真实子进程与错误历史风险。
+- uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；97 文件/92 源码资源、缺失/差异/实际密钥/私有文件均 0。独立环境重新安装最终 wheel，模块来自安装目录；两种上下文脚本逻辑库不变、人工问题写入 1 次且重试同回执、raw_events=1/model_attempts=0。
+- PYTHONPATH=. uv run --no-sync --with 'mcp==2.3.0' python scripts/check_client_package.py：官方 SDK 2.3.0 从两种生成配置分别启动 2026-07-28 子进程，各列出五个工具并读取状态卡，逻辑库不变；新增 CI 步骤。本机 Codex 0.162.0 的 mcp get 显式覆盖解析通过，不宣称自动项目发现或真实模型触发验收。
+- skill-creator quick_validate 对三个 Codex 技能均输出 Skill is valid!；三个 Claude YAML 前置字段及明确调用策略另核对。无动态 shell 块，UI 字段/提示及策略通过；通用验证器不支持 Claude 专属字段，不冒充原生加载。开发仅合成项目，未读完整真实会话、未发 Atlas 原文、未调用提取/Agent 模型。
+- 验收修复：初次专项两项失败为测试误读详情中不存在的 project_id，改按实体表实际项目核对；旧专项 105 passed in 42.30s，随后追加的路径/缺库案例由最终 544/497 验证，早期结果不替代最终源码。
+- 下一步：允许清单提交，更新现有草稿 PR，按新 HEAD 核对推送/PR 两种 CI；刷新公开代码包、独立恢复全部跟踪文件后结束本任务。后续继续自动关联串联、完整运行 I/O、后台大文件摘要、全图语义与 export/隐私清除；真实客户端会话/钩子 p95、正式参考与真实 M1–M4 门槛保留，整个目标不标完成。
+- 提交前允许清单检查：tracked_files=251 staged_files=13 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True frontend_unchanged=True；git diff --check 退出码 0。仅公开源码、中文文档和合成测试；凭据、原件、生成的本机包、数据库、截图及缓存继续留忽略目录。

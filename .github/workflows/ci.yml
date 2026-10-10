@@ -40,6 +40,8 @@ jobs:
         run: uv run --no-sync rg --help
       - name: 官方 MCP 客户端兼容性
         run: PYTHONPATH=. uv run --no-sync --with 'mcp==2.3.0' python scripts/check_mcp_client.py
+      - name: 项目接入包 MCP 启动
+        run: PYTHONPATH=. uv run --no-sync --with 'mcp==2.3.0' python scripts/check_client_package.py
       - name: 安装固定版本 Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
