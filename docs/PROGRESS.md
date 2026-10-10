@@ -330,3 +330,17 @@
 - 验收修复：初次测试误设拆片调用次数，改用计数不可用验证零生成和显式恢复；子进程改用 Path。缓存恢复暴露提前窗口查询和重复分量计数，已修复并加中断位置回归；恢复取消配置不能清掉原额度等待，也加了固定案例。较早全量 422/固定 375 不作最终证明，最后源码对应 423/376。前端中途服务 503 不计作应用失败；专项通过后核对没有完整运行输出，补一次完整 33 项并保存 stdout。
 - 下一步：允许清单提交后核对现有草稿 PR 新 HEAD 的两种 CI、刷新并独立还原恢复包，再结束本任务。后续继续自动关联/问答、客户端包装与 MCP、完整运行 I/O、后台大文件摘要和全图语义；系统常驻服务未安装，note 类型待答复，正式参考与真实 M1–M4 门槛仍待核对，整个目标不标完成。
 - 提交前允许清单检查：tracked_files=215 staged_files=25 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True；实际暂存内容与凭据/私有路径核对通过，git diff --cached --check 退出码 0。前端锁文件安装跳过解析、245ms，原锁与八文件冻结清单保持一致；源码、中文记录和合成测试之外的材料不纳入提交，远端按新 HEAD 验收。
+
+## 2026-10-10 · 只读 MCP 与历史状态卡
+
+- 任务：落实 §2、§5.1/5.3/5.4、§6.5、§7.11、§10 与 M4 的只读 Agent 入口；开始读进度末尾、相关章节和决定，4f3ef5d 基线恢复包 SHA256、独立还原和 215 跟踪文件已核对。用户取消固定 1500 token MCP 上限，状态卡保留调用方预算和本地精确编码；完整 M0–M4 未验收。
+- 改动的文件：新增 rg/query/{reader,context,tokenizer}.py、两个包入口、rg/mcp/{server,tools}.py、两份公开压缩词表与来源/许可证、scripts/check_mcp_client.py、tests/golden/test_read_tools.py；修改 Store/ObjectStore 只读打开、CLI、HTTP GET、依赖锁和 CI；新增中文 MCP 验收，更新 README、需求落实、决定、PR 草稿与本文件。
+- 行为：固定项目的 search/node/evidence/history/context 只读工具与 context CLI；mode=ro/query_only/对象写禁用，不建库、不迁移、不补应用缓存。发生与已知双截止、历史审核与替换，完整范围与整个历史计算采用/证据，再分页；候选、未知范围/时间及同刻冲突保持明确，超过 20 个来源 ID 标记 partial。按版本引用取观察，按真实 UTF8 字节连续取已复制原文，不读当前文件补旧证据。
+- 状态卡：按优先级尝试详情，超额给引用，按实际保留项推进下一页；标记整体本地实测，默认 2000、可调高。正式 cl100k/o200k 词表随包校验，查询不联网，不冒充目标模型计数。文本及执行错误包 rg-context，源尖括号不能关闭外围标记；重新导入排除。MCP 新版逐请求元数据、discover、缓存字段与旧初始化共存，stdout 仅协议、通知无回包、坏帧恢复、EOF 退出。
+- uv sync --locked：Resolved 28 packages in 6ms，Checked 27 packages in 102ms；uv run rg --help、mcp --help、context --help 退出码均 0。
+- uv run pytest tests/golden/test_read_tools.py tests/test_api.py -q：66 passed in 20.23s；uv run pytest -q：473 passed in 155.39s；uv run pytest tests/golden -q：426 passed in 142.45s。全量与固定案例并行，不作性能基准；50 项新增案例与原 16 项 API 不替代真实 M4 找答案时间。
+- uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 退出码 0。uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；wheel_files=90 source_resources=85 source_mismatches=0 actual_secret_matches=0 private_or_static_files=0，两份词表与许可证存在。独立环境安装 wheel、隔离解释器及实际 CLI 两种编码分别 669/624 token，数据库逻辑不变。
+- PYTHONPATH=. uv run --no-sync --with 'mcp==2.3.0' python scripts/check_mcp_client.py：SDK 2.3.0，auto→2026-07-28、legacy→2025-11-25；各列出五个工具并完成五次查询，状态卡 636/640 token，逻辑库不变。仅临时合成项目，已加入 CI。初次官方客户端发现必需缓存字段缺失后修正；初次 wheel 测试受当前目录遮蔽，改隔离解释器核对，不计为安装包通过。
+- cd web && pnpm test:browser：33 passed (28.0s)。HTTP GET 改只读后原人工写入与界面仍通过；前端八文件冻结清单全部 OK。本轮未改前端源码、不调提取模型、不读真实完整会话、不装钩子、不改个人客户端设置；公开词表与私有材料分开。
+- 下一步：允许清单提交后更新现有草稿 PR，按新 HEAD 检查推送/PR 两种 CI并独立恢复代码包，再结束本任务。后续继续客户端包装、自动关联与有界问答、后台大文件摘要、完整运行 I/O 及全图语义；note/propose_note 类型待答复，大库性能/取消/吞吐仍待验收，正式参考和真实 M1–M4 门槛保留，整个目标不标完成。
+- 提交前允许清单检查：tracked_files=229 staged_files=26 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True；git diff --cached --check 退出码 0。仅公开源码、正式词表/许可证、中文文档和合成测试；前端冻结源码恒等。远端结果与独立恢复按本轮新 HEAD 验收，不用旧提交成功替代。

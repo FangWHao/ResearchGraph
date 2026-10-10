@@ -41,9 +41,11 @@ def atomic_stream(path: Path, stream: BinaryIO, prefix: bytes = b"") -> None:
 
 
 class ObjectStore:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, *, readonly: bool = False):
         self.root = root
-        self.root.mkdir(parents=True, exist_ok=True)
+        self.readonly = readonly
+        if not readonly:
+            self.root.mkdir(parents=True, exist_ok=True)
 
     def path(self, sha: str) -> Path:
         if not re.fullmatch(r"[a-f0-9]{64}", sha):
@@ -51,6 +53,8 @@ class ObjectStore:
         return self.root / sha[:2] / f"{sha}.zst"
 
     def put(self, data: bytes) -> str:
+        if self.readonly:
+            raise PermissionError("只读对象库不能写入")
         sha = digest(data)
         path = self.path(sha)
         if not path.exists():

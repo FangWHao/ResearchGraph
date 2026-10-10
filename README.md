@@ -49,6 +49,26 @@ uv run rg --data-dir /tmp/rg-demo review --open --port 8787
 
 服务只监听 `127.0.0.1`。终端返回带本次随机令牌的浏览器链接；页面取得令牌后清除地址中的片段，后续请求同源 API。界面读取指定数据目录，不会自动导入 Atlas。问题页、队列、时间线、健康、搜索与图均可打开记录的原文窗口；复核支持确认、驳回、按片段批量确认，以及保留旧记录的人工修改。
 
+## Agent 只读查询与状态卡
+
+```bash
+uv run rg --data-dir /tmp/rg-demo context --project PROJECT_ID --budget 2000
+uv run rg --data-dir /tmp/rg-demo context --project PROJECT_ID --budget 6000 --scope data=v2 step=cnv
+uv run rg --data-dir /tmp/rg-demo mcp --project PROJECT_ID
+```
+
+`mcp` 使用标准输入输出，不打开端口。启动参数固定项目；提供 `research.search`、`research.node`、`research.evidence`、`research.history`、`research.context` 五个只读工具，不注册人工确认入口。指定数据库必须已经存在且完成当前版本升级，查询不会建库、迁移、写计数缓存或修改对象库。`context` 直接输出带 `<rg-context>` 标记的状态卡；再次导入时按注入内容排除。
+
+2026-10-10 用户明确取消 §7.11 的固定 1500 token 返回上限。普通查询按条目分页，默认 20、最多 100 条；原文默认 4000 UTF8 字节、最多 24000 字节。状态卡仍按调用方的 `budget` 实测，默认 2000，可调高；优先保留当前采用及拒绝或暂缓，再装填问题、待核对、反对证据和文件观察，超出预算的详情变成引用或进入下一页。这个预算计整个标记文本，不包含 MCP 的协议封装。
+
+本地默认编码为 `cl100k_base`，启动时可用 `--encoding o200k_base`。两份公开词表随包提供并按正式 SHA256 验证，查询期间不联网；返回注明编码，MCP `_meta` 另给标记正文的实测 token 数。它们不是 Claude 或 DeepSeek 的计数标准，提取模型的完整请求仍必须使用提供方实测。
+
+工具参数 `occurred_until` 和 `known_until` 分别限定发生时间与已记录时间，均需带时区；未指定时使用本次读取时间。历史审核、人工修改和原文引用也受已知时间约束。分页续读应复用返回的两个截止时间，可带 `expected_revision`，图变化时重新开始；候选、时间未知、同刻冲突和未知范围不会推断为当前采用。对象状态从整个符合截止时间的历史计算，再分页展示，不受界面图的 2000 条限制。
+
+`search` 默认检索 claims，`source=events` 可检索原文正文的字面量预览。原始事件没有统一分析范围，带 scope 的检索使用 claims。引用前缀 `C`、`S`、`E`、`V:` 分别表示记录、片段、事件和文件观察；`evidence` 的参数对应 `claim_id`、`span_id`、`event_id`、`version_id`，一次指定一种。原文窗口带实际字节位置、窗口摘要和下一字节偏移；源文件删除后仍读已复制原件。文件观察保留原算法及候选状态，不读取当前文件补写旧版本。
+
+支持新版 MCP 2026-07-28 的逐请求元数据和旧版初始化协议；详情与官方客户端复现命令见 [只读 MCP 与状态卡验收](docs/acceptance/M4只读MCP与状态卡验收_20261010.md)。本轮没有修改个人客户端设置；候选写工具 `propose_note` 仍等待 note 类型的明确约定。
+
 ## 人工记录研究问题
 
 问题页提供“新增研究问题”，也可以使用同一后端的人工命令：

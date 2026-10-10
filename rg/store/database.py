@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from rg.store.migrations import migrate
+from rg.store.migrations import LATEST_VERSION, migrate
 from rg.store.objects import ObjectStore
 
 
@@ -26,8 +26,28 @@ class ConflictError(ValueError):
 
 
 class Store:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, *, readonly: bool = False):
         self.root = root
+        self.readonly = readonly
+        if readonly:
+            self.objects = ObjectStore(root / "objects", readonly=True)
+            self.db = sqlite3.connect(
+                (root / "rg.db").resolve().as_uri() + "?mode=ro",
+                uri=True,
+                isolation_level=None,
+                timeout=30,
+            )
+            self.db.row_factory = sqlite3.Row
+            try:
+                self.db.execute("PRAGMA query_only = ON")
+                self.db.execute("PRAGMA foreign_keys = ON")
+                version = self.db.execute("PRAGMA user_version").fetchone()[0]
+                if version != LATEST_VERSION:
+                    raise ValueError("只读入口要求当前数据库版本；请先使用写入入口升级")
+            except BaseException:
+                self.db.close()
+                raise
+            return
         root.mkdir(parents=True, exist_ok=True)
         self.objects = ObjectStore(root / "objects")
         self.db = sqlite3.connect(root / "rg.db", isolation_level=None, timeout=30)
@@ -54,6 +74,8 @@ class Store:
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
+        if self.readonly:
+            raise PermissionError("只读数据库不能开始写事务")
         self.db.execute("BEGIN IMMEDIATE")
         try:
             yield self.db
@@ -62,6 +84,18 @@ class Store:
             raise
         else:
             self.db.commit()
+
+    @contextmanager
+    def snapshot(self) -> Iterator[sqlite3.Connection]:
+        """一个读取结果共享快照；已有事务的生命周期仍由调用方管理。"""
+        if self.db.in_transaction:
+            yield self.db
+            return
+        self.db.execute("BEGIN")
+        try:
+            yield self.db
+        finally:
+            self.db.rollback()
 
     def project(self, name: str, roots: list[Path]) -> str:
         project_id = str(uuid.uuid4())

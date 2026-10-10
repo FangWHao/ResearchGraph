@@ -137,7 +137,7 @@ class Handler(BaseHTTPRequestHandler):
                 if any(len(items) != 1 for items in raw_values.values()):
                     raise ValueError("查询参数不得重复")
                 values = {key: items[0] for key, items in raw_values.items()}
-                store = Store(self.server.root)
+                store = Store(self.server.root, readonly=True)
                 try:
                     store.db.execute("BEGIN")
                     result = self._dispatch(parsed.path, values, store)

@@ -3,7 +3,12 @@ name = "researchgraph"
 version = "0.1.0"
 description = "可查证的科研会话与研究决定史"
 requires-python = ">=3.12,<3.14"
-dependencies = ["httpx>=0.28,<1", "jsonschema>=4.23,<5", "zstandard>=0.23,<1"]
+dependencies = [
+    "httpx>=0.28,<1",
+    "jsonschema>=4.23,<5",
+    "tiktoken>=0.12,<1",
+    "zstandard>=0.23,<1",
+]
 
 [project.scripts]
 rg = "rg.cli.main:main"

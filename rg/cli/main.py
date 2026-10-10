@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sqlite3
+import sys
 from pathlib import Path
 
 from rg.extract.provider import Provider, load_key
@@ -172,10 +174,37 @@ def parser() -> argparse.ArgumentParser:
     resolved.add_argument("--actor", default="human:本机用户")
     resolved.add_argument("--request-id")
     resolved.add_argument("--expected-revision", type=int, required=True)
+    contextual = commands.add_parser("context", help="读取项目状态卡；不调用模型、不修改记录")
+    contextual.add_argument("--project", required=True)
+    contextual.add_argument("--scope", nargs="+", action="extend", default=[], metavar="字段=值")
+    contextual.add_argument("--budget", type=int, default=2000)
+    contextual.add_argument("--limit", type=int, default=20)
+    contextual.add_argument("--offset", type=int, default=0)
+    contextual.add_argument("--occurred-until")
+    contextual.add_argument("--known-until")
+    mcp = commands.add_parser("mcp", help="启动指定项目的只读 stdio MCP，不打开网络端口")
+    mcp.add_argument("--project", required=True)
+    for command in (contextual, mcp):
+        command.add_argument(
+            "--encoding", choices=["cl100k_base", "o200k_base"], default="cl100k_base"
+        )
+        command.add_argument("--tokenizer-dir", type=Path)
     return cli
 
 
 def run(args: argparse.Namespace, store: Store) -> object:
+    if args.command == "context":
+        from rg.mcp.tools import ToolService
+
+        values = {"budget": args.budget, "limit": args.limit, "offset": args.offset}
+        scope = parse_scope(args.scope)
+        if scope is not None:
+            values["scope"] = scope
+        for key in ("occurred_until", "known_until"):
+            if getattr(args, key) is not None:
+                values[key] = getattr(args, key)
+        service = ToolService(store, args.project, args.encoding, args.tokenizer_dir)
+        return service.call("research.context", values)["content"][0]["text"]
     if args.command in {"decide", "resolve-decision"}:
         import uuid
 
@@ -453,10 +482,31 @@ def run(args: argparse.Namespace, store: Store) -> object:
 def main() -> None:
     cli = parser()
     args = cli.parse_args()
-    store = Store(args.data_dir)
+    store = None
     try:
-        print(json.dumps(run(args, store), ensure_ascii=False, indent=2))
-    except (ValueError, RuntimeError, PermissionError) as error:
+        store = Store(args.data_dir, readonly=args.command in {"mcp", "context"})
+        if args.command == "mcp":
+            from rg.mcp.server import serve
+            from rg.mcp.tools import ToolService
+
+            # 项目校验在读取协议前完成；启动错误只写 stderr。
+            from rg.query.reader import Reader
+
+            Reader(store, args.project, {})
+            serve(
+                ToolService(store, args.project, args.encoding, args.tokenizer_dir),
+                sys.stdin.buffer,
+                sys.stdout.buffer,
+            )
+            return
+        result = run(args, store)
+        print(
+            result
+            if args.command == "context"
+            else json.dumps(result, ensure_ascii=False, indent=2)
+        )
+    except (ValueError, RuntimeError, OSError, sqlite3.Error) as error:
         cli.exit(1, f"错误：{error}\n")
     finally:
-        store.close()
+        if store is not None:
+            store.close()
