@@ -1,5 +1,5 @@
 import { DateText } from './DateText';
-import { editPresentation, gapText, runStateText, versionMetadata } from './l1';
+import { editPresentation, editRequestValidation, gapText, runStateText, versionMetadata } from './l1';
 import type { ArtifactVersion, EvidenceTarget, L1Evidence } from './types';
 import './l1.css';
 import { RunManifests } from './RunManifests';
@@ -95,12 +95,18 @@ export function EvidenceRecords({ data, current, onOpen, onError }: {
       {!data.edits.length && <p className="muted small">当前原文未关联到编辑记录。</p>}
       {data.edits.map(edit => {
         const presentation = editPresentation(edit);
+        const validation = editRequestValidation(edit);
         return <article className="l1-card" key={edit.edit_id} data-edit-id={edit.edit_id}>
           <div className="l1-heading"><strong>{presentation.title}</strong><span>工具记录</span></div>
           <p className="path">{edit.path ?? '文件路径未知'}</p>
           <div className="l1-links"><EventLink id={edit.request_event_id} label="编辑请求原文" current={current} onOpen={onOpen} />
             <EventLink id={edit.result_event_id} label="编辑结果原文" current={current} onOpen={onOpen} /></div>
           <Times occurred={edit.occurred_at} recorded={edit.recorded_at} />
+          {(edit.request_validation != null || edit.operation === 'multiedit') && <div data-request-validation={validation.status}>
+            <p className={validation.status === 'matches_request' ? 'l1-notice' : 'missing-note'}><strong>工具请求核验：{validation.title}</strong></p>
+            <p className="l1-notice">{validation.reason}</p>
+          </div>}
+          {validation.reportedAfter && <p className="missing-note">此前登记的编辑后候选仍保留为历史工具报告，不能作为本次已核定的编辑后完整版本。<span className="l1-code mono" data-reported-after-version={validation.reportedAfter}>{validation.reportedAfter}</span></p>}
           <p className="l1-notice">{presentation.reason}</p>
           <Gap value={edit.association_gap} /><Gap value={edit.gap} />
           {edit.diff.gap && edit.diff.gap !== edit.gap && <Gap value={edit.diff.gap} />}
@@ -108,6 +114,7 @@ export function EvidenceRecords({ data, current, onOpen, onError }: {
           {presentation.text != null && <pre className="l1-diff" aria-label={presentation.kind === 'patch_only' ? '工具报告的补丁正文' : presentation.kind === 'reported_before' ? '工具报告的候选编辑前全文' : presentation.kind === 'reported_after' ? '工具报告的候选编辑后全文' : '候选前后版本差异正文'}>{presentation.text || (presentation.kind === 'patch_only' ? '补丁正文为空，前后文件是否相同仍未知。' : presentation.kind === 'reported_before' ? '工具报告的编辑前全文为空；编辑后版本未知。' : presentation.kind === 'reported_after' ? '工具报告的编辑后全文为空；编辑前版本未知。' : '工具报告的前后文本没有差异。')}</pre>}
           <details className="l1-details"><summary>版本与补丁标识</summary>
             <dl className="l1-identifiers"><div><dt>编辑前版本</dt><dd>{edit.before_version ?? '未知'}</dd></div><div><dt>编辑后版本</dt><dd>{edit.after_version ?? '未知'}</dd></div>
+              {validation.reportedAfter && <div><dt>历史报告后候选版本</dt><dd>{validation.reportedAfter}</dd></div>}
               <div><dt>补丁摘要</dt><dd>{edit.patch_sha256 ?? '未知'}</dd></div><div><dt>工具操作标识</dt><dd>{edit.operation}</dd></div></dl>
           </details>
         </article>;

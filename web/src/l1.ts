@@ -14,8 +14,35 @@ export function runStateText(state: string, exitCode: number | null): string {
   return '运行状态未知';
 }
 
+export function editRequestValidation(edit: L1Edit) {
+  const validation = edit.request_validation;
+  const status = validation?.basis === 'saved_request_and_reported_versions'
+    && ['matches_request', 'mismatch', 'unavailable'].includes(validation.status)
+    ? validation.status : 'unknown';
+  const title = status === 'matches_request' ? '与已保存请求一致'
+    : status === 'mismatch' ? '与已保存请求不一致'
+    : status === 'unavailable' ? '无法核对已保存请求' : '请求核验情况未知';
+  const reason = status === 'matches_request'
+    ? '按已保存请求与工具报告文本确定性核对；版本仍为候选，不证明当时实际保存的文件字节，也不是科研确认。'
+    : status === 'mismatch'
+      ? '已保存请求与工具报告不一致，编辑后完整版本未核定；工具报告与原始记录仍保留。'
+      : status === 'unavailable'
+        ? '本次读取没有可用的完整请求核验，编辑后完整版本未核定；不读取当前文件补齐。'
+        : '接口未提供可识别的请求核验，不能视为请求已核对，也不证明实际保存字节一致。';
+  const reportedAfter = typeof edit.reported_after_version === 'string'
+    && edit.reported_after_version.length > 0 && edit.reported_after_version !== edit.after_version
+    ? edit.reported_after_version : null;
+  return { status, title, reason, reportedAfter };
+}
+
 export function editPresentation(edit: L1Edit) {
   const diff = edit.diff;
+  if ((edit.request_validation?.status === 'mismatch'
+    || edit.operation === 'multiedit' && edit.request_validation != null
+      && editRequestValidation(edit).status !== 'matches_request')
+    && (diff.format === 'reported_versions' || diff.format === 'reported_after')) {
+    return { kind: 'unavailable', title: '编辑后版本未核定', text: null, reason: '请求核验未通过，不能把报告的编辑后文本作为已核定的前后版本差异。' } as const;
+  }
   if (!diff.available || typeof diff.text !== 'string') {
     return { kind: 'unavailable', title: '差异暂不可展示', text: null, reason: diff.reason } as const;
   }
@@ -75,6 +102,9 @@ const gapNames: Record<string, string> = {
   user_modified: '工具报告用户同时修改，版本归属需要核对',
   reported_edit_disagrees_with_request: '请求文本与工具报告结果不一致',
   reported_edit_request_unsupported: '编辑请求表示暂不支持，无法据此核定完整文件版本',
+  multiedit_request_unavailable: '已保存的多步编辑请求缺失或不可读取，无法核验；不读取当前文件补齐',
+  multiedit_version_unavailable: '已保存的多步编辑候选文本缺失或不可读取，无法核验；历史记录仍保留',
+  multiedit_validation_pending: '多步编辑请求尚未完成后台核验',
   reported_content_invalid_utf8: '工具报告内容不能有效表示为 UTF-8 文本',
   reported_content_over_limit: '工具报告内容超过保存上限',
   newline_boundary_unknown: '文件换行边界未知', mixed_newlines_unknown: '混合换行表示无法完整核定',

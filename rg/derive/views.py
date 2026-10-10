@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from rg.derive.edits import diff
+from rg.derive.multiedit import project_edit
 from rg.derive.records import calls, event
 from rg.store.database import Store
 
@@ -51,7 +52,7 @@ def evidence(store: Store, event_id: int) -> dict[str, Any]:
             > 100
         )
     edits = [
-        dict(row)
+        project_edit(store, dict(row))
         for row in store.db.execute(
             "SELECT * FROM edit_records WHERE request_event_id=? OR result_event_id=? "
             "ORDER BY edit_id LIMIT 20",

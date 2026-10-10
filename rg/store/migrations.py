@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 24
+LATEST_VERSION = 25
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -436,6 +436,23 @@ MIGRATIONS = {
         "SELECT rowid,user,project_id,payload,graph_revision,updated_at FROM view_states_legacy",
         "DROP TABLE view_states_legacy",
         "CREATE INDEX view_states_personal ON view_states(project_id,user,view_id)",
+    ),
+    25: (
+        "CREATE TABLE edit_request_checks(check_id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "edit_id TEXT NOT NULL REFERENCES edit_records,"
+        "project_id TEXT NOT NULL REFERENCES projects,"
+        "input_signature TEXT NOT NULL,payload TEXT NOT NULL,recorded_at TEXT NOT NULL,"
+        "UNIQUE(edit_id,input_signature,payload))",
+        "CREATE INDEX edit_request_check_lookup ON "
+        "edit_request_checks(edit_id,input_signature,check_id)",
+        "CREATE TRIGGER edit_request_check_no_update BEFORE UPDATE ON edit_request_checks BEGIN "
+        "SELECT RAISE(ABORT,'edit request check is append-only'); END",
+        "CREATE TRIGGER edit_request_check_no_delete BEFORE DELETE ON edit_request_checks BEGIN "
+        "SELECT RAISE(ABORT,'edit request check is append-only'); END",
+        "CREATE TRIGGER edit_request_check_revision AFTER INSERT ON edit_request_checks BEGIN "
+        "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
+        "UPDATE graph_clock SET revision=revision+1 WHERE id=1 AND "
+        "EXISTS(SELECT 1 FROM edit_records WHERE operation='multiedit')",
     ),
 }
 

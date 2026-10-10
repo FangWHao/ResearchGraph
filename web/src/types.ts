@@ -187,6 +187,11 @@ export interface L1Edit {
   request_event_id: number; result_event_id: number; path: string | null; root_id: string | null;
   operation: string; patch_sha256: string | null; before_version: string | null;
   after_version: string | null; gap: string | null; association_gap?: string | null;
+  reported_after_version?: string | null;
+  request_validation?: {
+    status: 'matches_request' | 'mismatch' | 'unavailable';
+    basis: 'saved_request_and_reported_versions';
+  };
   user_modified: number | null; occurred_at: string | null; recorded_at: string; diff: EditDiff;
 }
 export interface L1Evidence {

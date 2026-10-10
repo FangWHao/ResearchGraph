@@ -5,11 +5,12 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from zstandard import ZstdError
+
+from rg.derive.multiedit import MAX_CONTENT_BYTES, expected_multiedit, project_edit
 from rg.derive.records import Event, arguments, block, bound_path, cwd, native_patch
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
-
-MAX_CONTENT_BYTES = 5_000_000
 
 
 @dataclass(frozen=True)
@@ -238,8 +239,13 @@ def claude_edit(store: Store, call: Event, value: Event) -> None:
                 expected = before.replace(
                     old_string, new_string, -1 if args.get("replace_all") is True else 1
                 )
+            if call["tool_name"] == "MultiEdit":
+                expected = expected_multiedit(before, args.get("edits"))
             if isinstance(expected, str) and expected != after:
                 raise ValueError("reported_edit_disagrees_with_request")
+        except UnicodeError:
+            after = None
+            gap = "reported_content_invalid_utf8"
         except ValueError as error:
             after = None
             gap = str(error)
@@ -312,15 +318,25 @@ def edit(store: Store, call: Event, value: Event) -> None:
 
 
 def diff(store: Store, row: dict[str, Any]) -> dict[str, Any]:
+    row = project_edit(store, row)
+    try:
+        return _diff(store, row)
+    except (OSError, ValueError, UnicodeError, ZstdError):
+        return {"available": False, "reason": "已存候选正文缺失或损坏", "gap": row["gap"]}
+
+
+def _diff(store: Store, row: dict[str, Any]) -> dict[str, Any]:
     limit = 64_000
     before, after = row["before_version"], row["after_version"]
     if before and after:
         contents = []
         for identity in (before, after):
-            sha = store.db.execute(
+            saved = store.db.execute(
                 "SELECT content_sha256 FROM artifact_versions WHERE version_id=?", (identity,)
-            ).fetchone()[0]
-            raw = store.objects.get(sha)
+            ).fetchone()
+            if saved is None:
+                raise ValueError("version_missing")
+            raw = store.objects.get(saved[0])
             if len(raw) > limit or raw.count(b"\n") > 2000:
                 return {"available": False, "reason": "版本正文超过差异展示上限", "gap": row["gap"]}
             contents.append(raw.decode())
@@ -334,10 +350,12 @@ def diff(store: Store, row: dict[str, Any]) -> dict[str, Any]:
         )
         kind = "reported_versions"
     elif before or after:
-        sha = store.db.execute(
+        saved = store.db.execute(
             "SELECT content_sha256 FROM artifact_versions WHERE version_id=?", (before or after,)
-        ).fetchone()[0]
-        raw = store.objects.get(sha)
+        ).fetchone()
+        if saved is None:
+            raise ValueError("version_missing")
+        raw = store.objects.get(saved[0])
         if len(raw) > limit or raw.count(b"\n") > 2000:
             return {"available": False, "reason": "版本正文超过差异展示上限", "gap": row["gap"]}
         text = raw.decode()

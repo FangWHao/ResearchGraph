@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from rg.derive.edit_checks import recorded_edit
 from rg.query.artifacts import snapshot
 from rg.query.graph import SemanticGraph
 from rg.query.l1_records import artifacts, run_records
@@ -204,6 +205,7 @@ class FileRunGraph:
             native_calls = sum(r["kind"] == "meta" for r in calls)
             ambiguous = native_calls > 1 or len(calls) - native_calls > 1
             record["association_gap"] = "ambiguous_call_id" if ambiguous else None
+            record = recorded_edit(self.reader.store, record)
             record["scope_basis"] = (
                 "referenced_version_only" if self.reader.scope_filter else "unassigned"
             )

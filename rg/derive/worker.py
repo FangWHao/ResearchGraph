@@ -75,6 +75,11 @@ def _derive(
                     (type(error).__name__, now(), row[0]),
                 )
             counts["l1_failed"] += 1
+    from rg.derive.edit_checks import validate_edits
+
+    checked = validate_edits(store, limit, retry_unavailable=retry_failed)
+    if checked:
+        counts["edit_checks"] += checked
     counts["l1_remaining"] = store.db.execute(
         "SELECT count(*) FROM l1_derivations d JOIN raw_events r USING(event_id) "
         "WHERE d.state IN ('queued','waiting') AND (? IS NULL OR r.session_pk=?)",

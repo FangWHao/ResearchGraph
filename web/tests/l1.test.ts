@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { editPresentation, eventNumber, runStateText, versionMetadata } from '../src/l1';
+import { editPresentation, editRequestValidation, eventNumber, runStateText, versionMetadata } from '../src/l1';
 import type { L1Edit } from '../src/types';
 
 function edit(fields: Partial<L1Edit> = {}): L1Edit {
@@ -84,5 +84,48 @@ describe('运行与编辑证据不超出工具观测', () => {
     expect(versionMetadata({ ...version, phase: 'before', basis: 'direct_record', claim_state: 'candidate', representation: 'tool_reported_utf8' }))
       .toEqual({ phase: '编辑前', review: '待复核', basis: '直接记录', representation: '工具报告的 UTF-8 文本' });
     expect(versionMetadata(version)).toEqual({ phase: '阶段未知', review: '审核状态未知', basis: '依据未知', representation: '版本表示未知' });
+  });
+
+  it('请求核验与候选文本身份独立，不改写报告或把一致视为物理验证', () => {
+    const matched = edit({ operation: 'multiedit', reported_after_version: 'after',
+      request_validation: { status: 'matches_request', basis: 'saved_request_and_reported_versions' } });
+    const original = JSON.stringify(matched);
+    expect(editRequestValidation(matched)).toMatchObject({ status: 'matches_request', reportedAfter: null });
+    expect(editPresentation(matched)).toMatchObject({ kind: 'reported_versions', text: matched.diff.text });
+    expect(versionMetadata({ claim_state: 'candidate', representation: 'tool_reported_utf8' }))
+      .toMatchObject({ review: '待复核', representation: '工具报告的 UTF-8 文本' });
+    expect(JSON.stringify(matched)).toBe(original);
+  });
+
+  it('不一致的旧后候选保留历史编号，不能由历史编号恢复完整差异', () => {
+    const prior = edit({ operation: 'multiedit', after_version: null, reported_after_version: 'old-reported-after',
+      request_validation: { status: 'mismatch', basis: 'saved_request_and_reported_versions' },
+      diff: { available: true, format: 'reported_before', text: '已保存编辑前全文\n', complete_versions: false, gap: 'reported_edit_disagrees_with_request', reason: '合成前候选' } });
+    expect(editRequestValidation(prior)).toMatchObject({ status: 'mismatch', reportedAfter: 'old-reported-after' });
+    expect(editPresentation(prior)).toMatchObject({ kind: 'reported_before', text: prior.diff.text });
+    expect(editPresentation({ ...prior, diff: edit().diff })).toMatchObject({ kind: 'unavailable', text: null });
+    expect(prior.after_version).toBeNull(); expect(prior.reported_after_version).toBe('old-reported-after');
+  });
+
+  it('无法核验时不采用接口附带的后候选正文，明确已知前候选仍可阅读', () => {
+    const unavailable = edit({ operation: 'multiedit',
+      request_validation: { status: 'unavailable', basis: 'saved_request_and_reported_versions' } });
+    expect(editRequestValidation(unavailable).status).toBe('unavailable');
+    expect(editPresentation(unavailable)).toMatchObject({ kind: 'unavailable', text: null });
+    expect(editPresentation({ ...unavailable, after_version: null,
+      diff: { available: true, format: 'reported_before', text: '', complete_versions: false, gap: null, reason: '空前候选' } }))
+      .toMatchObject({ kind: 'reported_before', text: '' });
+  });
+
+  it('缺失核验字段保持旧候选兼容且核验未知，未知依据不能冒充一致', () => {
+    const legacy = edit({ operation: 'multiedit' });
+    expect(editRequestValidation(legacy)).toMatchObject({ status: 'unknown', reportedAfter: null });
+    expect(editPresentation(legacy).kind).toBe('reported_versions');
+    const wrongBasis = { ...legacy, request_validation: { status: 'matches_request', basis: 'model_inference' } } as unknown as L1Edit;
+    expect(editRequestValidation(wrongBasis).status).toBe('unknown');
+    expect(editPresentation(wrongBasis)).toMatchObject({ kind: 'unavailable', text: null });
+    const wrongStatus = { ...legacy, request_validation: { status: 'confirmed', basis: 'saved_request_and_reported_versions' } } as unknown as L1Edit;
+    expect(editRequestValidation(wrongStatus).status).toBe('unknown');
+    expect(editPresentation(wrongStatus)).toMatchObject({ kind: 'unavailable', text: null });
   });
 });
