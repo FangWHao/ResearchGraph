@@ -93,8 +93,14 @@ def parser() -> argparse.ArgumentParser:
     preview.add_argument("session", type=int)
     preview.add_argument("--output", type=Path, required=True)
     extract = commands.add_parser("extract", help="实测计数并有界提取；需项目允许外发")
-    extract.add_argument("--session", type=int, required=True)
-    extract.add_argument("--estimate", action="store_true", help="仅实测计数和切片，不调用生成")
+    selection = extract.add_mutually_exclusive_group()
+    selection.add_argument("--session", type=int, help="显式处理一个会话；省略时使用持久队列")
+    selection.add_argument("--project", help="只自动处理这个项目；省略则处理所有已授权项目")
+    mode = extract.add_mutually_exclusive_group()
+    mode.add_argument("--estimate", action="store_true", help="仅实测计数和切片，不调用生成")
+    mode.add_argument("--watch", action="store_true", help="持续扫描、派生和提取；Ctrl+C 停止")
+    extract.add_argument("--interval", type=float, default=2, help="持续模式轮询间隔秒数")
+    extract.add_argument("--limit", type=int, default=20, help="单轮自动处理会话数，1–200")
     extract.add_argument(
         "--retry-failed", action="store_true", help="显式重试人工失败片段，保留历史尝试"
     )
@@ -370,6 +376,21 @@ def run(args: argparse.Namespace, store: Store) -> object:
         }
     if args.command in {"extract", "link", "overview"}:
         scope = parse_scope(args.scope)
+        if args.command == "extract":
+            from rg.extract.queue import Queue
+
+            Queue.validate_limit(args.limit)
+            if args.watch and args.session is not None:
+                raise ValueError("持续提取请按项目或全库运行，不能指定单个会话")
+            if args.report and args.session is None:
+                raise ValueError("报告必须指定单个会话")
+            if args.daily_budget < 1:
+                raise ValueError("每日额度须为正整数")
+            if args.watch:
+                import math
+
+                if not math.isfinite(args.interval) or args.interval <= 0:
+                    raise ValueError("轮询间隔必须为有限正数")
         if not args.base_url or not args.model:
             raise ValueError("必须提供 base URL 和模型名称")
         provider = Provider(args.base_url, args.model, load_key(args.key_file))
@@ -386,20 +407,22 @@ def run(args: argparse.Namespace, store: Store) -> object:
 
                 return overview(worker, args.project, args.output, args.session, scope)
             if args.estimate:
-                from rg.extract.segmenter import segment
-                from rg.slim.slimmer import slim_session
+                from rg.extract.estimate import estimate_batch, estimate_session
 
-                events = slim_session(store, args.session, provider)
-                provider.validate_budget(worker.input_budget, worker.output_budget)
-                items = segment(events, provider, worker.budgets.content_tokens)
-                return {
-                    "measured_slim_tokens": sum(x["tokens"] for x in events),
-                    "segments": len(items),
-                    "model": provider.model,
-                    "generation_calls": 0,
-                    "input_budget": worker.input_budget,
-                    "content_budget": worker.budgets.content_tokens,
-                }
+                if args.session is not None:
+                    return estimate_session(worker, args.session)
+                return estimate_batch(worker, args.project, args.limit)
+            if args.session is None:
+                queue = Queue(worker, args.project, scope)
+                if args.watch:
+                    from rg.store.database import dumps
+
+                    try:
+                        for result in queue.watch(args.interval, args.limit, args.retry_failed):
+                            print(dumps(result), flush=True)
+                    except KeyboardInterrupt:
+                        return {"watch": "stopped"}
+                return queue.run(args.limit, args.retry_failed)
             result = worker.process(args.session, scope, args.retry_failed)
             if args.report:
                 report(store, args.session, args.report)

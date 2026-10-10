@@ -30,6 +30,7 @@ from rg.extract.segmenter import Segment, split
 from rg.extract.validate import InvalidClaim, persist
 from rg.extract.working_set import working_set
 from rg.ingest.common import parse
+from rg.slim.cached import CachedCounter
 from rg.slim.tokens import BudgetExceeded, CountingUnavailable, DailyBudgetExceeded
 from rg.store.database import Store, dumps, now
 from rg.store.locking import TaskBusy, exclusive
@@ -63,6 +64,8 @@ class Worker:
         self.daily_budget = daily_budget
         self.attempt_ids: dict[int, int] = {}
         self.config_key: str | None = None
+        self.max_event_id: int | None = None
+        self.counter = CachedCounter(store, provider)
 
     def invoke(
         self,
@@ -343,15 +346,33 @@ class Worker:
                 )
 
     def process(
-        self, session_id: int, scope: dict[str, str] | None = None, retry_failed: bool = False
+        self,
+        session_id: int,
+        scope: dict[str, str] | None = None,
+        retry_failed: bool = False,
+        *,
+        max_event_id: int | None = None,
     ) -> dict[str, int]:
         if type(session_id) is not int or session_id < 1:
             raise ValueError("会话 ID 必须为正整数")
+        if max_event_id is not None and (
+            type(max_event_id) is not int
+            or max_event_id < 1
+            or not self.store.db.execute(
+                "SELECT 1 FROM raw_events WHERE event_id=? AND session_pk=?",
+                (max_event_id, session_id),
+            ).fetchone()
+        ):
+            raise ValueError("提取截止事件须属于该会话")
         with exclusive(
             self.store.root / "locks" / "sessions" / f"{session_id}.lock",
             "该会话的提取 worker 正在运行，请稍后重试",
         ):
-            return self._process(session_id, scope, retry_failed)
+            self.max_event_id = max_event_id
+            try:
+                return self._process(session_id, scope, retry_failed)
+            finally:
+                self.max_event_id = None
 
     def _process(
         self, session_id: int, scope: dict[str, str] | None = None, retry_failed: bool = False
@@ -368,8 +389,9 @@ class Worker:
             for x in self.store.db.execute(
                 "SELECT r.event_id,r.object_sha256,r.exclude_reason,r.seq,r.kind,r.call_id,"
                 "d.alias_id AS mirror_id FROM raw_events r LEFT JOIN dedupe_links d "
-                "ON d.alias_id=r.event_id WHERE r.session_pk=? ORDER BY r.seq",
-                (session_id,),
+                "ON d.alias_id=r.event_id WHERE r.session_pk=? "
+                "AND (? IS NULL OR r.event_id<=?) ORDER BY r.seq",
+                (session_id, self.max_event_id, self.max_event_id),
             )
         ]
         definition = self._definition(session_id, scope)
@@ -382,6 +404,19 @@ class Worker:
         if not plans:
             adopt_legacy(self.store, self.config_key, session_id, project_id, definition, snapshot)
             plans = inventory(self.store, self.config_key)
+        if self.max_event_id is not None:
+            for plan in plans:
+                ids = json.loads(plan["event_ids"])
+                if any(event <= self.max_event_id for event in ids) and any(
+                    event > self.max_event_id for event in ids
+                ):
+                    # 其他显式 worker 已规划跨截止事件的窗口；等队列刷新到完整窗口。
+                    return {"segments": 0, "claims": 0, "manual": 0, "busy": 1}
+            plans = [
+                plan
+                for plan in plans
+                if all(event <= self.max_event_id for event in json.loads(plan["event_ids"]))
+            ]
         restore(self.store, plans, self._coverage)
         previous = self.store.db.execute(
             "SELECT segments FROM session_results WHERE cache_key = ?", (result_key,)
@@ -405,6 +440,12 @@ class Worker:
                     (now(), self.config_key),
                 )
         plans = inventory(self.store, self.config_key)
+        if self.max_event_id is not None:
+            plans = [
+                plan
+                for plan in plans
+                if all(event <= self.max_event_id for event in json.loads(plan["event_ids"]))
+            ]
         items = [
             Segment(**json.loads(plan["segment_json"]))
             for plan in plans
@@ -413,8 +454,6 @@ class Worker:
         sequence = {row["event_id"]: row["seq"] for row in snapshot}
         items.sort(key=lambda item: (sequence[item.ids[0]], item.events[0].get("raw_start") or 0))
         manual = sum(plan["state"] == "manual" for plan in plans)
-        if items:
-            self._check_model_limits()
         for item in items:
             for stage in ["pass1", "pass2"]:
                 self._coverage(item, stage, "pending")
@@ -438,6 +477,11 @@ class Worker:
             "WHERE ce.claim_id=a.claim_id AND r.session_pk!=?)",
             ("rule:" + RULE_VERSION, session_id, session_id),
         ).fetchone()[0]
+        configuration = self.configuration(scope)
+        return [*configuration[:5], review_id, *configuration[5:]]
+
+    def configuration(self, scope: dict[str, str] | None = None) -> list[Any]:
+        """静态执行配置；审核变化在显式提取时核对，不自行触发无新增内容的队列。"""
         prompts = [
             Path(__file__).with_name("prompts").joinpath(stage + ".txt").read_text()
             for stage in ["pass1", "pass2"]
@@ -448,7 +492,6 @@ class Worker:
             prompts,
             PASS1_SCHEMA,
             PASS2_SCHEMA,
-            review_id,
             self.input_budget,
             self.output_budget,
             "overlap-v1",
@@ -459,8 +502,9 @@ class Worker:
     def _pending(self, session_id: int) -> int:
         return self.store.db.execute(
             "SELECT count(*) FROM coverage c JOIN raw_events r USING(event_id) "
-            "WHERE r.session_pk=? AND c.status='pending'",
-            (session_id,),
+            "WHERE r.session_pk=? AND c.status='pending' "
+            "AND (? IS NULL OR r.event_id<=?)",
+            (session_id, self.max_event_id, self.max_event_id),
         ).fetchone()[0]
 
     def _finish_session(self, session_id: int, result_key: str, segments: int) -> None:
@@ -502,7 +546,7 @@ class Worker:
                 )
         run_id: int | None = None
         try:
-            input_units = units(self.store, item, self.provider)
+            input_units = units(self.store, item, self.counter)
             content = dumps(input_units)
             pass1_run, locations = self.invoke(
                 "pass1", item, project_id, redact(content.encode()).data.decode(), PASS1_SCHEMA, []
@@ -536,7 +580,7 @@ class Worker:
                 self.store,
                 project_id,
                 content,
-                self.provider,
+                self.counter,
                 before_event=item.ids[0],
                 scope=scope,
                 paths=self._paths(item),
@@ -547,7 +591,7 @@ class Worker:
                 "raw_windows": raw_input,
                 "slim": json.loads(redact(content.encode()).data.decode()),
             }
-            if self.provider.count_text(dumps(content_windows)) > self.budgets.content_tokens:
+            if self.counter.count_text(dumps(content_windows)) > self.budgets.content_tokens:
                 raise BudgetExceeded("pass2 原文与瘦身窗口超过片段分配预算")
             for round_index in range(2):
                 input_data = {
@@ -574,7 +618,7 @@ class Worker:
                         self.store,
                         project_id,
                         content,
-                        self.provider,
+                        self.counter,
                         output["lookup_terms"],
                         before_event=item.ids[0],
                         scope=scope,

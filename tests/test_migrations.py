@@ -24,6 +24,24 @@ def legacy_store(tmp_path: Path, monkeypatch, version: int = 1) -> tuple[Path, b
     return root, raw
 
 
+def test_v10_queue_migration_is_atomic_and_does_not_invent_pending_tasks(tmp_path, monkeypatch):
+    root, raw = legacy_store(tmp_path, monkeypatch, version=10)
+    with monkeypatch.context() as change:
+        change.setitem(migrations.MIGRATIONS, 11, (*migrations.MIGRATIONS[11], "INVALID SQL"))
+        with pytest.raises(sqlite3.OperationalError):
+            Store(root)
+    db = sqlite3.connect(root / "rg.db")
+    assert db.execute("PRAGMA user_version").fetchone()[0] == 10
+    assert (
+        db.execute("SELECT count(*) FROM sqlite_master WHERE name='extraction_queue'").fetchone()[0]
+        == 0
+    )
+    db.close()
+    value = Store(root)
+    assert value.raw(1) == raw and value.health()["extraction_queue"]["total"] == 0
+    value.close()
+
+
 def test_v1_upgrade_keeps_original_events_and_is_idempotent(tmp_path: Path, monkeypatch):
     root, raw = legacy_store(tmp_path, monkeypatch)
     value = Store(root)

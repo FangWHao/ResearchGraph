@@ -1,4 +1,4 @@
-import type { HealthData } from './types';
+import type { ExtractionQueue, ExtractionQueueState, HealthData } from './types';
 
 export type HealthMetric = { key: string; label: string; value: number | null };
 
@@ -31,4 +31,25 @@ export function percentage(value: unknown): string {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? `${(value * 100).toLocaleString('zh-CN', { maximumFractionDigits: 1 })}%`
     : '未知';
+}
+
+export const queueStates: Record<ExtractionQueueState, string> = {
+  queued: '等待处理', running: '处理中（账本）', done: '本次任务完成', partial: '部分结果 · 有缺口',
+  paused: '等待每日额度', blocked: '受阻', cancelled: '已取消',
+};
+export function queueScope(scope: unknown): string {
+  return scope === 'project' ? '当前项目' : scope === 'all_projects' ? '全库 · 所有项目' : '范围未知';
+}
+export function queueMetrics(queue: ExtractionQueue | null | undefined): HealthMetric[] {
+  return [
+    { key: 'total', label: '队列任务总数', value: healthCount(queue?.total) },
+    ...Object.entries(queueStates).map(([key, label]) => ({ key, label, value: healthCount(queue?.counts?.[key as ExtractionQueueState]) })),
+  ];
+}
+export function queueNextOffset(queue: ExtractionQueue | null | undefined, offset: number): number | null {
+  const next = healthCount(queue?.next_offset);
+  return next != null && next > offset ? next : null;
+}
+export function queueText(value: unknown): string {
+  return typeof value === 'string' && value.trim() ? value : '未知';
 }

@@ -315,3 +315,18 @@
 - 产品方向：用户提出理想日常体验零人工干预；自动采集、提取、关联和查询应为默认，人工入口是可选补记/纠错，不强迫逐条复核。候选和未知仍保留检索，现行原话规则确认要求继续执行。本轮不读完整真实会话、不调远程模型、不装钩子、不改个人客户端设置。
 - 下一步：本轮允许清单提交后按新 HEAD 检查现有草稿 PR 两种远端 CI、刷新并独立恢复代码包，实际证明记录在 PR 与忽略目录，随后结束本任务。下个任务优先继续自动处理链路、客户端包装、MCP、未指定范围工作集及后台摘要；note 类型待答复，正式参考和真实 M1/M2 质量门槛仍待核对，整个目标不标完成。
 - 提交前允许清单检查：git diff --cached --check 无输出、退出码 0；tracked_files=206 staged_files=37 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True。仅公开源码、中文文档和合成测试，前端冻结源码恒等；凭据、真实会话、私有材料、截图、数据库、缓存及构建产物不入提交，远端按本轮新 HEAD 核对。
+
+## 2026-10-10 · 持久自动队列与持续提取
+
+- 任务：落实 §2、§4、§7.2/7.6/7.7/7.10、§10/11、§12 M3 的持久队列和扫描→提取循环，响应用户日常零人工干预方向；前端按既有明确授权由子 agent 接续。开始读进度末尾、相关章节和决定，b75f62c 基线恢复包独立还原与 206 跟踪文件已核对；完整 M0–M4 仍未验收。
+- 改动的文件：新增 rg/extract/{queue,queue_health,estimate}.py、rg/slim/cached.py、tests/golden/test_auto_queue.py；修改 worker、版本 11 迁移、Store、CLI、迁移和合成浏览器种子。前端新增队列面板和浏览器测试，修改健康页、类型、逻辑、样式及单测；新增两份中文持续提取验收，更新 README、需求落实、决定、PR 草稿与本文件。
+- 行为：不指定会话则自动发现已归属且允许外发的 claude/codex 会话，虚拟人工来源排除；watch 接扫描/spool/L1/提取，项目仅筛选模型阶段，离线采集仍全库。任务固定最大事件和不可变输入；晚到内容进下一任务，跨截止窗口等待完整计划，不重复旧完成候选。审核变化本身不触发无新增内容重排，worker 原审核配置合同与人工优先仍保留。
+- 持久性：一个数据目录一个系统锁调度器，领取编号保护提交，网络期间不占 SQLite 写事务；取得系统互斥才接管遗留 running，并追加恢复依据。日额度等下个 UTC 日，原文追加和切回旧配置保留同配置等待；忙碌轮转，失败默认保留缺口，watch 显式重试仅首轮。完整响应先缓存后重新校验，原始分量实测缓存支持服务离线接续，新生成完整请求仍逐次实测/核验窗口。
+- uv sync --locked：Resolved 23 packages in 13ms，Checked 22 packages in 123ms；uv run rg --help、extract --help 退出码 0。真实已安装 CLI 对本机明确模拟计数/生成服务持续处理两次新增，events=2、claims=2、generation_calls=4、pending=0、done 两项，Ctrl+C 正常退出 0；不冒充真实远程计数。
+- uv run pytest tests/golden/test_auto_queue.py tests/test_migrations.py -q：47 passed in 14.83s；uv run pytest -q：423 passed in 144.75s；uv run pytest tests/golden -q：376 passed in 131.61s。全量与固定案例并行运行，不作性能基准；35 项新增队列案例与 12 项迁移验证实际进程强杀、未知用量、归属、额度、窗口、权限、备份和版本 10→11 回滚，不替代完整 M3/§15。
+- uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；wheel_files=79 source_resources=74 source_mismatches=0 actual_secret_matches=0 private_or_static_files=0，全部模块与提示按源码字节匹配。
+- cd web && pnpm test：5 files、36 tests passed，575ms；pnpm build：TypeScript 通过、195 modules、973ms；pnpm test:browser：33 passed (25.5s)，保留原 30 并新增 3 项。真实 HTTP 核对七状态、固定范围计数、53/1/0 项目与全库 54、首 50/末 3 共享分页、图版本/候选/缺口不变及无写请求，旧字段覆盖只验展示边界；父 agent 实看桌面与 390 小屏图，冻结八文件全部 OK，无横向溢出。
+- 合成实测：只向用户授权的 DeepSeek 接口发送脚本内一句合成会话，生成两次、新增两个 candidate、pending=0、重跑零生成。pass1 实测输入/已用输入/输出 598/578/58，pass2 3071/3051/352，均 ok。凭据与实测证明留忽略目录，不读真实完整会话、不发送真实材料、不装钩子、不改个人设置。
+- 验收修复：初次测试误设拆片调用次数，改用计数不可用验证零生成和显式恢复；子进程改用 Path。缓存恢复暴露提前窗口查询和重复分量计数，已修复并加中断位置回归；恢复取消配置不能清掉原额度等待，也加了固定案例。较早全量 422/固定 375 不作最终证明，最后源码对应 423/376。前端中途服务 503 不计作应用失败；专项通过后核对没有完整运行输出，补一次完整 33 项并保存 stdout。
+- 下一步：允许清单提交后核对现有草稿 PR 新 HEAD 的两种 CI、刷新并独立还原恢复包，再结束本任务。后续继续自动关联/问答、客户端包装与 MCP、完整运行 I/O、后台大文件摘要和全图语义；系统常驻服务未安装，note 类型待答复，正式参考与真实 M1–M4 门槛仍待核对，整个目标不标完成。
+- 提交前允许清单检查：tracked_files=215 staged_files=25 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True；实际暂存内容与凭据/私有路径核对通过，git diff --cached --check 退出码 0。前端锁文件安装跳过解析、245ms，原锁与八文件冻结清单保持一致；源码、中文记录和合成测试之外的材料不纳入提交，远端按新 HEAD 验收。

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { healthCount, healthMetrics, percentage } from '../src/health';
+import { healthCount, healthMetrics, percentage, queueMetrics, queueNextOffset, queueScope } from '../src/health';
 
 describe('健康观测保留账本口径和未知状态', () => {
   it('保留重叠快照标记，不把四条记录推定成成功或异常总数', () => {
@@ -29,5 +29,27 @@ describe('健康观测保留账本口径和未知状态', () => {
     expect(percentage(NaN)).toBe('未知');
     expect(percentage(0)).toBe('0%');
     expect(percentage(1.25)).toBe('125%');
+  });
+
+  it('队列总数和状态计数来自全范围统计，不从当前页任务推算', () => {
+    const queue = { total: 53, counts: { queued: 47, running: 1, done: 1, partial: 1, paused: 1, blocked: 1, cancelled: 1 }, tasks: [{ state: 'queued' }] };
+    expect(Object.fromEntries(queueMetrics(queue).map(item => [item.key, item.value]))).toEqual({ total: 53, ...queue.counts });
+    expect(queueMetrics({ ...queue, tasks: [] })).toEqual(queueMetrics(queue));
+  });
+
+  it('队列旧字段未知不能补零或猜范围，显式零值保持', () => {
+    expect(queueMetrics(undefined).every(item => item.value === null)).toBe(true);
+    const incomplete = queueMetrics({ total: 0, counts: { queued: 0, running: -1 } });
+    expect(incomplete.find(item => item.key === 'queued')?.value).toBe(0);
+    expect(incomplete.find(item => item.key === 'running')?.value).toBeNull();
+    expect(incomplete.find(item => item.key === 'done')?.value).toBeNull();
+    expect(queueScope(null)).toBe('范围未知');
+    expect(queueScope('all_projects')).not.toBe(queueScope('project'));
+  });
+
+  it('任务分页仅接受向前的已知整数，未知与末页不能猜成下一页', () => {
+    expect(queueNextOffset({ next_offset: 50 }, 0)).toBe(50);
+    for (const queue of [undefined, {}, { next_offset: null }, { next_offset: -1 }, { next_offset: 0 }, { next_offset: 1.5 }]) expect(queueNextOffset(queue, 0)).toBeNull();
+    expect(queueNextOffset({ next_offset: 50 }, 50)).toBeNull();
   });
 });

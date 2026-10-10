@@ -399,6 +399,52 @@ def seed_health(
             ),
         )
     seed_model_observations(store, project)
+    seed_extraction_queue(store, project, batch_project)
+
+
+def seed_extraction_queue(store: Store, project: str, batch_project: str) -> None:
+    """只构造合成状态边界，不运行调度器、计数或远程生成。"""
+    from rg.extract.queue import journal
+
+    states = ["queued"] * 47 + ["running", "done", "partial", "paused", "blocked", "cancelled"]
+    for owner, values in ((project, states), (batch_project, ["done"])):
+        session, last_event = store.db.execute(
+            "SELECT s.session_pk,max(r.event_id) FROM sessions s "
+            "JOIN raw_events r USING(session_pk) "
+            "WHERE s.project_id=? GROUP BY s.session_pk ORDER BY s.session_pk LIMIT 1",
+            (owner,),
+        ).fetchone()
+        for index, state in enumerate(values):
+            task = digest(dumps(["synthetic-browser-queue", owner, index]).encode())
+            reason = (
+                "daily_budget"
+                if state == "paused"
+                else "remote_disabled"
+                if state == "blocked"
+                else None
+            )
+            queue_id = store.db.execute(
+                "INSERT INTO extraction_queue(task_key,session_pk,project_id,config_key,input_key,"
+                "max_event_id,provider,model,state,attempts,error,defer_reason,next_attempt_at,"
+                "created_at,updated_at) VALUES (?,?,?,?,?,?,'synthetic_fixture',"
+                "'synthetic_model',?,?,?,?,?,?,?)",
+                (
+                    task,
+                    session,
+                    owner,
+                    task,
+                    task,
+                    last_event,
+                    state,
+                    0 if state == "queued" else 1,
+                    "RuntimeError" if state == "partial" else None,
+                    reason,
+                    "2026-10-11T00:00:00+00:00" if state == "paused" else None,
+                    now(),
+                    now(),
+                ),
+            ).lastrowid
+            journal(store, queue_id, "synthetic_browser_boundary", None, {"state": state})
 
 
 def seed_model_observations(store: Store, project: str) -> None:

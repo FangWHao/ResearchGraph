@@ -191,6 +191,9 @@ class Store:
             ).fetchone()[0],
         }
         result["extraction"] = monitor(self, project, day, daily_budget, limit, offset)
+        from rg.extract.queue_health import health as queue_health
+
+        result["extraction_queue"] = queue_health(self, project, limit, offset)
         result["snapshots"] = dict(
             self.db.execute(
                 "SELECT count(*) AS total, "

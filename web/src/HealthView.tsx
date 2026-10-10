@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError, query } from './api';
 import { DateText, Empty, Loading } from './components';
+import { ExtractionQueuePanel } from './ExtractionQueuePanel';
 import { healthCount, healthMetrics, percentage } from './health';
 import type { HealthMetric } from './health';
 import type { HealthData } from './types';
@@ -21,11 +22,12 @@ export function HealthView({ project, epoch, onEvidence, onError }: {
   const [offset, setOffset] = useState(0);
   const [retry, setRetry] = useState(0);
   const [failure, setFailure] = useState('');
+  const limit = 50;
   useEffect(() => setOffset(0), [project]);
   useEffect(() => {
     const controller = new AbortController();
     setData(null); setFailure('');
-    api<HealthData>(`/health?${query({ project, offset })}`, undefined, controller.signal)
+    api<HealthData>(`/health?${query({ project, offset, limit })}`, undefined, controller.signal)
       .then(result => { if (!controller.signal.aborted) setData(result); })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
@@ -48,6 +50,8 @@ export function HealthView({ project, epoch, onEvidence, onError }: {
       <div><span>未归属会话 · 全库</span><strong>{data.unassigned_sessions}</strong><small>需要明确项目归属</small></div>
       <div><span>压缩点 · 当前项目</span><strong>{data.compression_points}</strong><small>不视作运行失败</small></div>
     </div>
+
+    <ExtractionQueuePanel queue={data.extraction_queue} offset={offset} limit={limit} onOffset={setOffset} />
 
     <div className="health-columns">
       <section className="panel" aria-labelledby="ingest-heading">
@@ -119,7 +123,7 @@ export function HealthView({ project, epoch, onEvidence, onError }: {
           <td><button className="text-button" onClick={() => onEvidence({ event_id: gap.event_id })}>事件 #{gap.event_id}</button></td><td>{gap.session_pk}</td><td>{gap.stage}</td><td className="mono">{gap.segment_id ?? '未知'}</td>
         </tr>)}</tbody></table>
       </div> : <p className="muted">当前页没有覆盖缺口。</p>}
-      <div className="pagination"><button className="button secondary" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>上一页</button><span>偏移 {offset}</span><button className="button secondary" disabled={data.extraction.coverage.next_offset == null} onClick={() => setOffset(data.extraction.coverage.next_offset!)}>下一页</button></div>
+      <div className="pagination"><button className="button secondary" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>上一页</button><span>偏移 {offset}</span><button className="button secondary" disabled={data.extraction.coverage.next_offset == null} onClick={() => setOffset(data.extraction.coverage.next_offset!)}>下一页</button></div>
     </section>
   </div>;
 }

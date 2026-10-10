@@ -132,6 +132,7 @@ export interface HealthData {
   events: number; unknown: number; bad_lines: number; unassigned_sessions: number;
   pending: number; manual_jobs: number; revision: number; global_counts: boolean;
   compression_points: number; hook_failures: number | null; hook_failures_reason: string;
+  extraction_queue?: ExtractionQueue | null;
   ingest?: {
     registered_sources: number; known_source_paths: number; spool_receipts: number;
     spool_unfinished: number; spool_failed: number;
@@ -157,4 +158,16 @@ export interface HealthData {
       utilization_samples?: number; validation_samples?: number;
       validation_rejections: number; citation_failures: number }[];
   };
+}
+
+export type ExtractionQueueState = 'queued' | 'running' | 'done' | 'partial' | 'paused' | 'blocked' | 'cancelled';
+export interface ExtractionQueueTask {
+  queue_id: number; session_pk: number; project_id: string; model: string; max_event_id: number;
+  state: string; attempts: number; error: string | null; defer_reason: string | null;
+  next_attempt_at: string | null; created_at: string; updated_at: string;
+}
+export interface ExtractionQueue {
+  scope?: 'project' | 'all_projects' | null; total?: number;
+  counts?: Partial<Record<ExtractionQueueState, number>>;
+  tasks?: Partial<ExtractionQueueTask>[]; limit?: number; offset?: number; next_offset?: number | null;
 }

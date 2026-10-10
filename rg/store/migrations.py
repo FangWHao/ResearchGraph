@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 10
+LATEST_VERSION = 11
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -158,6 +158,35 @@ MIGRATIONS = {
         "WHEN NEW.claim_type='decision_event' AND NEW.claim_state='confirmed' "
         "AND json_extract(NEW.payload,'$.target') IS NULL BEGIN "
         "SELECT RAISE(ABORT,'unresolved decision must be candidate'); END",
+    ),
+    11: (
+        "CREATE TABLE extraction_queue (queue_id INTEGER PRIMARY KEY, task_key "
+        "TEXT NOT NULL UNIQUE, "
+        "session_pk INTEGER NOT NULL REFERENCES sessions, project_id TEXT NOT "
+        "NULL REFERENCES projects, "
+        "config_key TEXT NOT NULL, input_key TEXT NOT NULL, max_event_id INTEGER "
+        "NOT NULL REFERENCES raw_events, "
+        "provider TEXT NOT NULL, model TEXT NOT NULL, scope TEXT, "
+        "state TEXT NOT NULL CHECK(state IN "
+        "('queued','running','done','partial','paused','blocked','cancelled')), "
+        "owner_id TEXT, attempts INTEGER NOT NULL DEFAULT 0, result TEXT, error TEXT, "
+        "defer_reason TEXT, next_attempt_at TEXT, created_at TEXT NOT NULL, "
+        "updated_at TEXT NOT NULL)",
+        "CREATE INDEX extraction_queue_ready ON "
+        "extraction_queue(config_key,state,next_attempt_at,updated_at)",
+        "CREATE TRIGGER extraction_queue_input_no_update BEFORE UPDATE OF task_key,session_pk,"
+        "project_id,config_key,input_key,max_event_id,provider,model,scope,created_at "
+        "ON extraction_queue BEGIN SELECT RAISE(ABORT,'queue input is immutable'); END",
+        "CREATE TABLE extraction_queue_events (event_id INTEGER PRIMARY KEY, "
+        "queue_id INTEGER NOT NULL REFERENCES extraction_queue, owner_id TEXT, kind TEXT NOT NULL, "
+        "details TEXT NOT NULL, recorded_at TEXT NOT NULL)",
+        "CREATE INDEX extraction_queue_history ON extraction_queue_events(queue_id,event_id)",
+        "CREATE TRIGGER extraction_queue_event_no_update BEFORE UPDATE ON "
+        "extraction_queue_events BEGIN "
+        "SELECT RAISE(ABORT,'queue event is append-only'); END",
+        "CREATE TRIGGER extraction_queue_event_no_delete BEFORE DELETE ON "
+        "extraction_queue_events BEGIN "
+        "SELECT RAISE(ABORT,'queue event is append-only'); END",
     ),
 }
 
