@@ -426,6 +426,30 @@ def test_backup_carries_denials_and_does_not_reimport_cleared_provider_log(tmp_p
     assert list((destination / "clear-records").glob("*.json"))
 
 
+def test_receipt_written_but_barrier_removal_failed_is_pending_until_resume(tmp_path, monkeypatch):
+    root, project, *_ = scene(tmp_path)
+    info, request = clear.preview(root, project), str(uuid4())
+    original = Path.unlink
+
+    def fail_barrier(path, *args, **kwargs):
+        if path == root / clear.ACTIVE:
+            raise OSError("synthetic barrier removal failure")
+        return original(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "unlink", fail_barrier)
+        with pytest.raises(OSError):
+            clear.execute(root, project, request, info["preview_sha256"])
+    assert (root / "clear-records" / (request + ".json")).exists()
+    assert clear.status(root, request)["state"] == clear.status(root)["state"] == "pending"
+    with pytest.raises(TaskBusy):
+        Store(root)
+    with pytest.raises(ConflictError, match="等待恢复"):
+        clear.execute(root, project, request, info["preview_sha256"])
+    assert clear.resume(root, request)["state"] == "complete"
+    assert clear.status(root, request)["state"] == "complete"
+
+
 @pytest.mark.parametrize("pending", [False, True])
 def test_real_cli_server_allows_clear_and_restart_resume(tmp_path, pending, monkeypatch):
     root, project, *_ = scene(tmp_path)

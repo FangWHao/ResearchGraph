@@ -116,9 +116,6 @@ def status(root: Path, request_id: str | None = None) -> dict:
         raise ValueError("清除记录目录不能为符号链接")
     if request_id is not None:
         request_id = canonical(request_id)
-        path = root / "clear-records" / (request_id + ".json")
-        if path.exists():
-            return public(read_json(path))
     # 恢复入口不能打开普通 Store；部分删除期间它必须保持拒绝。
     path = root / ACTIVE
     if path.exists() or path.is_symlink():
@@ -126,6 +123,10 @@ def status(root: Path, request_id: str | None = None) -> dict:
         if request_id is not None and value["request_id"] != request_id:
             raise ConflictError("另一个清除请求等待恢复")
         return public(value) | {"state": "pending"}
+    if request_id is not None:
+        path = root / "clear-records" / (request_id + ".json")
+        if path.exists():
+            return public(read_json(path))
     return {"state": "idle", "boundary": BOUNDARY}
 
 
@@ -235,14 +236,14 @@ def execute(root: Path, project: str, request_id: str, proof: str) -> dict:
     if not isinstance(proof, str) or not re.fullmatch(r"[a-f0-9]{64}", proof):
         raise ValueError("执行清除必须携带当前预览摘要")
     with lease(root, exclusive=True), closing(connect(root, readonly=False)) as db:
+        if (root / ACTIVE).exists() or (root / ACTIVE).is_symlink():
+            raise ConflictError("已有清除等待恢复，请使用 resume")
         previous = root / "clear-records" / (request_id + ".json")
         if previous.exists():
             value = read_json(previous)
             if value["project_id"] != project or value["preview_sha256"] != proof:
                 raise ConflictError("清除请求标识已用于不同输入")
             return public(value)
-        if (root / ACTIVE).exists() or (root / ACTIVE).is_symlink():
-            raise ConflictError("已有清除等待恢复，请使用 resume")
         db.execute("BEGIN IMMEDIATE")
         value, selected = plan(root, db, project)
         if value["preview_sha256"] != proof:
