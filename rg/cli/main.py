@@ -56,6 +56,19 @@ def parser() -> argparse.ArgumentParser:
     )
     commands = cli.add_subparsers(dest="command", required=True)
     commands.add_parser("init", help="建立数据库；不修改用户工具配置")
+    exported = commands.add_parser("export", help="只读导出限定双时间和范围的历史 ZIP")
+    exported.add_argument("--project", required=True)
+    exported.add_argument("--output", type=Path, required=True, help="新 ZIP 文件，父目录需已存在")
+    exported.add_argument("--until", "--occurred-until", dest="occurred_until")
+    exported.add_argument("--known-until")
+    exported.add_argument("--scope", action="append", default=[])
+    exported.add_argument("--expected-revision", type=int)
+    exported.add_argument(
+        "--include-evidence", action="store_true", help="显式加入遮盖后的引用正文"
+    )
+    exported.add_argument("--redact-pattern", action="append", default=[])
+    verified = commands.add_parser("verify-export", help="离线校验历史 ZIP 成员摘要，无需数据库")
+    verified.add_argument("input", type=Path)
     client_pack = commands.add_parser("client-pack", help="只读生成 Codex/Claude 项目接入包")
     client_pack.add_argument("--project", required=True)
     client_pack.add_argument("--output", type=Path, required=True)
@@ -255,6 +268,18 @@ def parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace, store: Store) -> object:
+    if args.command == "export":
+        from rg.export.package import write
+
+        values = {"project_id": args.project, "include_evidence": args.include_evidence,
+                  "redact_patterns": args.redact_pattern}
+        for key in ("occurred_until", "known_until", "expected_revision"):
+            if getattr(args, key) is not None:
+                values[key] = getattr(args, key)
+        scope = parse_scope(args.scope)
+        if scope is not None:
+            values["scope"] = scope
+        return write(store, values, args.output)
     if args.command == "record-run":
         from rg.record.manifest import record
 
@@ -666,6 +691,11 @@ def main() -> None:
     args = cli.parse_args()
     store = None
     try:
+        if args.command == "verify-export":
+            from rg.export.package import verify
+
+            print(json.dumps(verify(args.input), ensure_ascii=False, indent=2))
+            return
         if args.command == "record-run":
             from rg.record.manifest_schema import read
 
@@ -684,7 +714,9 @@ def main() -> None:
                     args.client_body = read_request(stream, args.kind)
         store = Store(
             args.data_dir,
-            readonly=args.command in {"mcp", "context", "client-pack", "versions", "run-evidence"}
+            readonly=args.command in {
+                "mcp", "context", "client-pack", "versions", "run-evidence", "export"
+            }
             or (args.command == "ask" and args.retrieve_only),
         )
         if args.command == "mcp":

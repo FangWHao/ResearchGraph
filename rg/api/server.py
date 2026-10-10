@@ -233,15 +233,27 @@ class Handler(BaseHTTPRequestHandler):
             self.connection.settimeout(10)
             raw = self.rfile.read(length)
             self._unread_body = False
-            body = json.loads(raw)
+            path = urlsplit(self.path).path
+            if path == "/api/exports":
+                from rg.clients.record import unique_pairs
+
+                body = json.loads(raw, object_pairs_hook=unique_pairs)
+            else:
+                body = json.loads(raw)
             if not isinstance(body, dict):
                 raise ValueError("请求体需为 JSON 对象")
-            path = urlsplit(self.path).path
             store = Store(
-                self.server.root, readonly=path in {"/api/qa/retrieve", "/api/qa/preview"}
+                self.server.root,
+                readonly=path in {"/api/qa/retrieve", "/api/qa/preview", "/api/exports"},
             )
             try:
-                if path == "/api/qa/retrieve":
+                if path == "/api/exports":
+                    from rg.export.package import archive
+
+                    _, data = archive(store, body)
+                    self._send(HTTPStatus.OK, data, "application/zip")
+                    return
+                elif path == "/api/qa/retrieve":
                     result = {"context_text": qa.wrap(qa.packet(store, body))}
                 elif path == "/api/qa/preview":
                     result = {

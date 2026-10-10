@@ -455,3 +455,18 @@
 - 前端最终 cd web && pnpm test：8 files/65 passed/651ms；pnpm build：208 modules/1.06s；pnpm test:browser：60 passed/41.6s，原 54 项保留；专项 6 passed/9.9s。父 agent 实看桌面角色/参数、原生状态与报告冲突同屏、390 手机角色与参数；首次滚动断言过早读取已改等待真实位置，异常版本对象字段保留诊断。最终冻结后停止前端编辑，再统一提交。
 - 前端冻结最终 12 文件/5 图全部 17 项 OK，清单 SHA256 8f0df6b075158fd32875fb3525f4831f85a2d03fd564bf077c64791a9fba5117；父 agent 五图均实看，包括续页后的工具报告文本/未知补丁，随后未再修改前端文件。
 - 提交前允许清单：tracked_files=274、allowed_changed_files=32、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=17。只提交公开源码、中文记录与合成案例；凭据、真实原件、数据库、图片和缓存仍忽略。
+
+## 2026-10-10 · 双时间历史导出与本地下载页面
+
+- 任务：继续 §2/10/11 及原设计 v1 §9。开始读进度末尾、对应章节和决定；25e051c 基线恢复包 SHA256 f74db61b79e65be6796ab878eab4e71cf2113284d2a9e844ff4a9946a2072f43，独立恢复 287 个跟踪文件均字节一致。按用户既有授权继续前端子 agent，后端由父 agent 开发，完整 M0–M4 不标完成。
+- 改动的文件：新增 rg/export/{__init__,build,privacy,package}.py、tests/golden/test_exports.py 和中文后端验收；修改 CLI、HTTP、README、需求落实、决定与本文件。前端新增 HistoryExportView、useHistoryExport、historyExport/CSS、语义/浏览器案例及中文验收，修改 App/api；没有改原规格、解析器、库结构或钩子。
+- 行为：CLI export/verify-export 及同源令牌 POST /api/exports，全部可见断言/审核/状态/图关系/共同输入/合并/来源引用/文件观察/候选报告共用只读快照和双截止/完整范围/revision；遍历全部分页，不用当前画面投影。来源当前路径/状态、未来审核/退出/观察不进入旧条件；指定范围只经明确报告关联运行/文件，保留 reported_only 和实际 I/O 未知。
+- 隐私：默认没有正文、完整会话、二进制或环境副本。显式证据校验原始摘要/UTF8 范围，先遮盖完整事件再取选定片段；分别保留原始/导出摘要、恒等映射和遮盖范围。支持本次临床正则，凭据字段另行清空；身份或字段碰撞拒绝发布。默认引用包在原件丢失时仍标未读取，正文缺原件则不发布；校验不解包或执行，不证明清单真实性或结论。
+- uv sync --locked：Resolved 28 packages in 1ms、Checked 27 packages in 46ms；rg --help 退出码 0。导出专项：34 passed in 10.48s。最终 uv run pytest -q：678 passed in 247.20s (0:04:07)；uv run pytest tests/golden -q：631 passed in 233.84s (0:03:53)。两者并行，不作性能基准；ruff check rg tests scripts：All checks passed!；pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。
+- 验收修复：首次两项失败分别为遮盖误判程序生成摘要身份、测试误用未启动 CLI 的模块入口，修正后补转义 JSON 密钥、损坏原件、未知发生时间等案例。初轮全量 678/245.23 秒、golden 631/232.00 秒，不替代最终权限观测/算法摘要补齐后的重跑。
+- uv build --wheel：112 文件/107 源码资源全匹配，缺失/差异/实际密钥/私有文件均 0。仓库外隔离安装模块来自 site-packages；来源工作区已删除仍导出完整 256 报告 I/O、原生 requested、种子文本精确。发布前真实 SIGKILL 返回 -9，没有半包目标、逻辑库不变、/tmp 临时文件 0600，同目标重试通过；实际 HTTP 200 ZIP 可校验。删整个证据库后离线 verify-export 仍校验十个成员，不重建数据目录，schema=15、model_attempts=0。
+- 实际 /mnt/d 独占硬链接与 ZIP 校验通过，但模式显示 0777。CLI 回执请求 0600/实际 0777/posix_private=false；Windows ACL 不在 POSIX 模式证明范围。强杀可能留下临时包，随机名称不保证挂载目录私有；没有保留 HTTP 服务端副本，也没有声称可删除用户已保存/分享的副本。
+- 前端最终 cd web && pnpm test：9 files/73 passed/997ms；pnpm build：212 modules/1.16s；pnpm test:browser：69 passed/51.8s，原 60 项保留。9 专项最终 12.3s，补 tsc --noEmit 无输出/退出 0。真实 HTTP 包的十一成员、每个长度/SHA、默认无正文/显式遮盖/双截止/完整或 null 范围/400/409/401/手机项目切换通过；延迟只模拟实际回包交付时序，库和模型不变。
+- 前端实看后补小屏页面内项目选择；父 agent 再实看桌面默认/隐私、390 完整/隐私四图，没有横向溢出。最终 9 文件/4 图共 13 项冻结全部 OK，SHA256 900aa7483e10e874b62b056ad5f1ffe40ef1596e29900b0b13ca1eb7592d7056；子 agent 已停止编辑，再统一提交。
+- 下一步：只提交允许清单的公开源码/中文记录/合成测试，维护草稿 PR，核对新 HEAD 的推送/PR 两种 CI 和恢复包独立还原。后续继续完整语义图/影响传播、项目临床配置与隐私清除、实际 I/O/真实工具和规模验收；note 类型、Atlas 正式参考和完整 M0–M4 门槛保留。
+- 提交前允许清单：baseline_tracked_files=287、allowed_changed_files=21、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=13；git diff --cached --check 退出码 0。只提交公开源码、中文记录和合成案例；真实资料、密钥、原件、数据库、下载 ZIP、截图与缓存继续忽略。
