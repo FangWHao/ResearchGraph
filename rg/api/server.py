@@ -152,6 +152,11 @@ class Handler(BaseHTTPRequestHandler):
             from rg.artifacts.views import versions
 
             return versions(store, values)
+        if path == "/api/version-diff":
+            from rg.api.graph import parameters
+            from rg.query.version_diff import query
+
+            return query(store, values.get("project", ""), parameters(values))
         if path == "/api/run-evidence":
             from rg.api.runs import evidence
 

@@ -1,0 +1,24 @@
+.version-diff { min-width: 0; }
+.diff-selection { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin: 18px 0; }
+.diff-selection label { display: grid; gap: 8px; font-size: 13px; min-width: 0; }
+.diff-selection input { width: 100%; min-width: 0; font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; }
+.diff-actions, .diff-result-heading { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.diff-result { margin-top: 26px; padding-top: 24px; border-top: 1px solid var(--line); }
+.diff-result-heading { justify-content: space-between; }
+.diff-identity { font-size: 14px; font-weight: 550; }
+.diff-sources { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.diff-version { min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 18px; }
+.diff-version .version-metadata { grid-template-columns: 1fr; gap: 13px; }
+.diff-version summary { cursor: pointer; font-size: 13px; }
+.diff-newlines { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; font-size: 12px; }
+.diff-newlines dt { color: var(--muted); }
+.diff-newlines dd { margin: 8px 0; overflow-wrap: anywhere; }
+.diff-text { min-width: 0; max-height: 600px; overflow: auto; background: #f1f4ed; padding: 18px; border: 1px solid var(--line); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.7; }
+.version-compare-actions { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 14px; }
+.version-compare-actions button[aria-pressed="true"] { font-weight: 650; }
+@media (max-width: 760px) {
+  .diff-selection, .diff-sources, .diff-newlines { grid-template-columns: 1fr; }
+  .diff-version { padding: 13px; }
+  .diff-actions .button { max-width: 100%; white-space: normal; }
+  .diff-text { padding: 12px; }
+}

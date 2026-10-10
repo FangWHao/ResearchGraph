@@ -297,9 +297,15 @@ uv run rg --data-dir /tmp/rg-demo hook-config --output /tmp/rg-hook-examples
 uv run rg --data-dir /tmp/rg-demo hash-files --project PROJECT_ID --limit 20
 uv run rg --data-dir /tmp/rg-demo hash-files --watch
 uv run rg --data-dir /tmp/rg-demo versions --project PROJECT_ID --limit 25 --offset 0
+uv run rg --data-dir /tmp/rg-demo version-diff BEFORE_VERSION_ID AFTER_VERSION_ID \
+  --project PROJECT_ID --expected-revision REVISION
 ```
 
 快照版本保留 git-sha1、原始字节、权限和链接目标文字；不跟随链接。后台大文件版本为 current_file/sha256，仅证明实际读取窗口中的当前普通文件，snapshot_id 保持空；发现它的快照只提供线索，不证明当时字节一致或实际用于运行。复用缓存时保留原完整读取窗口与观察来源，设备、inode、模式、大小、mtime、ctime 是变化提示，不是内容摘要。内容变化后重新读取；读取中发生变化则作废并等待五秒，文件缺失或非普通文件留下失败状态，可用 --retry-failed 明确重试。健康统计中的 running 不证明进程存活，当前版本、工具报告与旧运行 I/O 不互相补写。物理版本可通过 versions CLI/HTTP 及 MCP 双时间入口查看；显式运行清单可报告与尝试、文件版本的关联，实际输入输出的完整追踪仍待落实。完整证据见[后台摘要验收](docs/acceptance/M2物理文件版本与后台摘要验收_20261010.md)与[版本界面验收](docs/acceptance/前端物理文件版本验收_20261010.md)。
+
+比较两个明确版本时，`version-diff` 与本地文件版本页、`GET /api/version-diff` 共用只读查询。两侧必须属于同项目、同登记根目录与路径；可用 `--occurred-until` 和 `--known-until` 固定双截止，`expected_revision` 核对列表读取后是否有新增记录。比较先验证保存对象的长度、SHA256 和 Git blob 摘要，并显示实际选用的捕获观察；不读取当前文件或运行 Git，也不把工具报告文本、大文件当前哈希当成旧快照字节。
+
+已保存的 UTF-8 文本返回完整统一差异，权限变化与字节变化分别显示；链接只比较目标文字，不读取目标。两侧输入合计最多 64000 字节、每侧最多 2000 行、差异输出最多 64000 字节；二进制、无效编码、来源不明、缺失或损坏对象、超限都明确不可展示，不截断为完整结果。缺模式证明时显示未知。文件版本仍保持候选状态，不证明运行实际使用或研究结论成立。
 
 ## 离线运行清单
 

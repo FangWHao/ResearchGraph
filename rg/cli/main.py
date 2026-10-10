@@ -176,6 +176,15 @@ def parser() -> argparse.ArgumentParser:
     versions.add_argument("--path", help="精确匹配已记录的绝对路径")
     versions.add_argument("--limit", type=int, default=50)
     versions.add_argument("--offset", type=int, default=0)
+    version_diff = commands.add_parser(
+        "version-diff", help="只读比较同一文件两个已保存快照版本，不读取当前工作区"
+    )
+    version_diff.add_argument("before_version_id")
+    version_diff.add_argument("after_version_id")
+    version_diff.add_argument("--project", required=True)
+    version_diff.add_argument("--occurred-until", help="有效时间截止，带时区的ISO时间")
+    version_diff.add_argument("--known-until", help="当时已知截止，带时区的ISO时间")
+    version_diff.add_argument("--expected-revision", type=int)
     hashed = commands.add_parser("hash-files", help="离线建立快照版本并计算大文件完整 SHA256")
     hashed.add_argument("--project")
     hashed.add_argument("--limit", type=int, default=20)
@@ -311,6 +320,24 @@ def parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace, store: Store) -> object:
+    if args.command == "version-diff":
+        from rg.query.version_diff import query
+
+        return query(
+            store,
+            args.project,
+            {
+                key: getattr(args, key)
+                for key in (
+                    "before_version_id",
+                    "after_version_id",
+                    "occurred_until",
+                    "known_until",
+                    "expected_revision",
+                )
+                if getattr(args, key) is not None
+            },
+        )
     if args.command in {"graph", "l1-graph"}:
         if args.command == "l1-graph":
             from rg.query.l1 import query
@@ -842,6 +869,7 @@ def main() -> None:
                 "context",
                 "client-pack",
                 "versions",
+                "version-diff",
                 "run-evidence",
                 "export",
                 "graph",

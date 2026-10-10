@@ -6,6 +6,8 @@ import { versionMetadata } from './l1';
 import { exactPathError, metadataBoolean, objectFields, observationConflict, observationListIssue, observationSignature, parseVersionsPage, versionOrigin, versionsNextOffset } from './versions';
 import type { FileVersionRecord, VersionsPage } from './types';
 import './versions.css';
+import { VersionDiffPanel } from './VersionDiffPanel';
+import { useVersionDiff } from './useVersionDiff';
 
 function Observations({ version }: { version: FileVersionRecord }) {
   const observations = Array.isArray(version.observations) ? version.observations : null;
@@ -60,6 +62,7 @@ export function VersionsView({ project, epoch, onError }: { project: string; epo
   const error = failure?.key === key ? failure.message : '';
   const validation = inputError?.project === project ? inputError.message : '';
   const next = versionsNextOffset(data, offset);
+  const comparison = useVersionDiff({ project, revision: healthCount(data?.revision), epoch, onError, onRefresh: () => setRetry(value => value + 1) });
   useEffect(() => { setSelection({ project, draft: '', path: '', offset: 0 }); setInputError(null); }, [project]);
   useEffect(() => {
     const controller = new AbortController();
@@ -83,7 +86,7 @@ export function VersionsView({ project, epoch, onError }: { project: string; epo
   }
   return <div className="versions-view">
     <section className="panel versions-intro" aria-label="文件版本范围与依据">
-      <p>按当前项目查看已记录的文件身份与观察，不读取或展示文件正文。版本记录不能证明运行实际输入输出，完整复现清单需另有运行关联。</p>
+      <p>版本列表只读取已登记的文件身份与观察；下方主动比较时才读取已保存正文，不补读当前工作区文件。版本记录不能证明运行实际输入输出，完整复现清单需另有运行关联。</p>
       <form onSubmit={event => { event.preventDefault(); filter(draft); }} className="version-filter">
         <label htmlFor="version-path">精确绝对路径<span>留空查看全部；空格、大小写和特殊符号按原样匹配。</span></label>
         <input id="version-path" value={draft} onChange={event => { setSelection({ project, draft: event.target.value, path, offset }); setInputError(null); }} placeholder="/项目/文件路径" />
@@ -92,6 +95,7 @@ export function VersionsView({ project, epoch, onError }: { project: string; epo
       {validation && <p className="error-message" role="alert">{validation}</p>}
       {path && <p className="version-active-filter">当前精确筛选：<span>{path}</span></p>}
     </section>
+    <VersionDiffPanel workspace={comparison} />
     {error ? <section className="panel versions-retry" role="alert"><Empty title="文件版本暂不可用">{error} 此时无法判断版本是否存在。</Empty><button className="button secondary" onClick={() => setRetry(value => value + 1)}>重新读取文件版本</button></section> : !data ? <Loading /> : <>
       <section className="panel versions-list-panel" aria-labelledby="versions-list-heading">
         <h3 id="versions-list-heading">文件版本记录 <span className="eyebrow">当前项目</span></h3>
@@ -118,6 +122,7 @@ export function VersionsView({ project, epoch, onError }: { project: string; epo
               <div><dt>根目录 ID</dt><dd>{queueText(version.root_id)}</dd></div><div><dt>内容对象标识（记录值）</dt><dd>{version.content_sha256 === null ? '无内容副本记录' : queueText(version.content_sha256)}</dd></div>
               <div><dt>原文事件编号（记录值）</dt><dd>{healthCount(version.evidence_event_id) ?? '未知'}</dd></div>
             </dl></details>
+            {typeof version.version_id === 'string' && <div className="version-compare-actions"><button className="text-button" aria-pressed={comparison.draft.before === version.version_id} onClick={() => comparison.change({ before: version.version_id })}>选为比较前版本</button><button className="text-button" aria-pressed={comparison.draft.after === version.version_id} onClick={() => comparison.change({ after: version.version_id })}>选为比较后版本</button></div>}
           </li>;
         })}</ol>}
         <div className="pagination"><button className="button secondary" disabled={offset === 0} onClick={() => setSelection({ project, draft, path, offset: Math.max(0, offset - limit) })}>上一页文件版本</button><span>偏移 {offset} · 每页 {limit}</span><button className="button secondary" disabled={next == null} onClick={() => { if (next != null) setSelection({ project, draft, path, offset: next }); }}>下一页文件版本</button></div>

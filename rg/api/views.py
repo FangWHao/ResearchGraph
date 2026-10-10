@@ -530,5 +530,9 @@ def graph(store: Store, project: str) -> dict[str, Any]:
                 (project,),
             )
         ],
-        "capabilities": {"impact_propagation": False, "artifact_diff": False},
+        "capabilities": {
+            "impact_propagation": False,
+            "artifact_diff": True,
+            "artifact_diff_basis": "saved_snapshot_bytes",
+        },
     }
