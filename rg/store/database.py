@@ -295,4 +295,7 @@ class Store:
             ).fetchone()[0],
             "queue_scope": "all_projects",
         }
+        from rg.query.hook_errors import health as hook_health
+
+        result.update(hook_health(self))
         return result

@@ -5,6 +5,7 @@ import { ExtractionQueuePanel } from './ExtractionQueuePanel';
 import { PipelineQueuePanel } from './PipelineQueuePanel';
 import { ArtifactHealthPanel } from './ArtifactHealthPanel';
 import { ParserHealthPanel } from './ParserHealthPanel';
+import { HookErrorPanel } from './HookErrorPanel';
 import { healthCount, healthMetrics, percentage } from './health';
 import type { HealthMetric } from './health';
 import type { HealthData } from './types';
@@ -24,7 +25,8 @@ type HealthViewProps = {
 };
 
 export function HealthView(props: HealthViewProps) {
-  return <><ParserHealthPanel project={props.project} epoch={props.epoch}
+  return <><HookErrorPanel project={props.project} epoch={props.epoch} onError={props.onError} />
+    <ParserHealthPanel project={props.project} epoch={props.epoch}
     onEvidence={props.onEvidence} onError={props.onError} /><HealthContent {...props} /></>;
 }
 
@@ -105,7 +107,7 @@ function HealthContent({ project, epoch, onEvidence, onError, onVersions }: Heal
       </section>
       <section className="panel" aria-labelledby="quality-heading">
         <h3 id="quality-heading">采集质量 <span className="eyebrow">全库</span></h3>
-        <dl className="quality-grid"><div><dt>坏行</dt><dd>{data.bad_lines}</dd></div><div><dt>未知类型</dt><dd>{data.unknown}</dd></div><div><dt>人工失败队列</dt><dd>{data.manual_jobs}</dd></div><div><dt>钩子失败</dt><dd>{data.hook_failures ?? '未知'}</dd></div></dl>
+        <dl className="quality-grid"><div><dt>坏行</dt><dd>{data.bad_lines}</dd></div><div><dt>未知类型</dt><dd>{data.unknown}</dd></div><div><dt>人工失败队列</dt><dd>{data.manual_jobs}</dd></div><div><dt>已记录钩子失败</dt><dd>{data.hook_failures ?? '未知'}</dd></div></dl>
         <p className="missing-note">{data.hook_failures_reason}。</p>
       </section>
     </div>

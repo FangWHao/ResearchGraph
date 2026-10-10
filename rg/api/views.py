@@ -355,8 +355,6 @@ def health(store: Store, values: dict[str, str], daily_budget: int) -> dict[str,
         "WHERE r.kind='compact_boundary' AND (? IS NULL OR s.project_id=?)",
         (project, project),
     ).fetchone()[0]
-    result["hook_failures"] = None
-    result["hook_failures_reason"] = "尚未建立钩子失败账本"
     return result
 
 

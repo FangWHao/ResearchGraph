@@ -1,10 +1,12 @@
 # PR 草稿
 
-建议标题：自动记录研究决定史、解析账本与整项目清除
+建议标题：自动记录研究决定史、钩子诊断与整项目清除
 
 原始 Codex／Claude 会话缺少可定位的决定、范围和历史版本入口。本次增加 Python 后端与 React 本地工作区，把显式登记的增量日志整理成保留原文引用、完整范围与双时间的研究决定史。扫描器、离线钩子、影子快照、候选提取、跨会话关联和概览按持久队列接续；模型完整请求先实测token，默认128000可调，项目默认禁止外发，模型输出保持候选。
 
 采集现在为每条完整物理日志行持久记录类型集合、解析器版本、工具版本与版本依据，并与原事件和游标原子提交。多块、别名副本、未知内容和解析故障分开计数；直接声明与同一文件继承区分，非法声明重置上下文，复制／轮换／旧库不借版本。schema19只建表，不重读旧日志或补造历史。CLI与令牌只读接口及健康页共用项目分页诊断；续页冻结观测截止和归属摘要，迟到归属变化返回409，首次／最近事件可打开已保存原文。统计缺失、旧记录未观测和非法版本明确显示，识别类型不代表提取完整或研究确认。
+
+钩子错误日志现在由扫描循环有界采集，来源、报告、观测和游标原子保存；日志轮换或删除后已采集历史仍可查看。schema20只建表，旧日志待正常扫描；错误正文不进研究事件或对象库，白名单外类别只存摘要。残片、积压、超长行、缺失和读取失败明确显示，未观测仍未知。CLI、只读接口和健康页按全管理目录分页，固定观测与报告截止；已采集报告数不能代表实际失败总数。生产钩子继续脱敏、离线、静默exit 0；全库无正文运维账本随SQLite备份，整项目清除保留非项目运维元数据。
 
 已有项目可以追加仓库、worktree、数据或别名根目录，登记Git独立／共同目录与本地URL字节摘要；相同远端不合并项目。390宽直接显示项目切换入口，旧响应与页面草稿按项目隔离。文件版本页比较两个明确保存版本，核对对象字节、摘要、模式和捕获观察，区分实际字节与工具候选全文；未知、二进制、损坏或超限明确不可用。前端采用／证据状态按UTC微秒计算，候选、冲突、未知时间及未知范围不互换。
 
@@ -19,26 +21,26 @@
 
 ```text
 uv sync --locked                       Resolved28；Checked27
-uv run pytest -q                       934 passed in395.09s
-uv run pytest tests/golden -q           887 passed in380.98s
+uv run pytest -q                       974 passed in413.88s
+uv run pytest tests/golden -q           927 passed in399.07s
 uv run ruff check rg tests scripts      All checks passed!
 uv run pyright                         0 errors,0 warnings,0 informations
 uv run rg --help                       退出0
-uv run rg parser-health --help         退出0
-cd web && pnpm test                    122 passed/15files/965ms
-cd web && pnpm build                   232modules/1.43s
-cd web && pnpm test:browser             117 passed (1.7m)
-隔离Python3.12.3安装的新账本案例          36 passed in11.34s
+uv run rg hook-errors --help           退出0
+cd web && pnpm test                    128 passed/16files/1.06s
+cd web && pnpm build                   235modules/1.04s
+cd web && pnpm test:browser             121 passed (1.8m)
+隔离Python3.12.3安装的新错误账本案例       40 passed in9.29s
 ```
 
-后端两组全量并行，不作为性能基准；结束后串行完整浏览器。安装包129成员、124运行资源与源码／隔离安装逐字一致，实际密钥与私有文件匹配0。新固定案例覆盖物理多块和副本、版本继承／重启／非法／复制／轮换、原文完整保留、事务崩溃、追加约束、旧库原子升级与不补造、冻结分页、真实迟到项目登记冲突、只读CLI／HTTP、鉴权、源日志消失后的备份及合成整项目清除。
+后端两组全量并行，不作为性能基准；结束后串行完整浏览器。安装包131成员、126运行资源与源码／隔离安装逐字一致，实际密钥与私有文件匹配0。新增40项固定案例覆盖错误日志残片／重启／轮换／截断／边界变化、无变化幂等、预算积压／超长行、未知正文不复制、UTC双时间、链接／FIFO拒读、读取变化作废、事务与提交前实际进程退出恢复、不可变约束、旧库原子升级不补造、冻结分页、只读CLI／HTTP鉴权、源消失后的备份及合成整项目清除；原解析账本与项目归属案例保留。
 
-前端四项新专项4 passed(11.2s)，核对真实分页／原文引用、生产400／409／401、明确模拟的旧服务缺失与格式错误、390项目切换后的受控迟到响应。五张最终桌面／手机图由父任务实看，35项源码与证据冻结全通过；原有移动项目选择文件不改。
+前端四项新专项首轮4 passed(9.9s)，通过真实合成日志轮换／残片及追加验证全库报告、未知正文不显示、旧观测截止不纳入新报告；核对真实400／401、明确模拟的旧服务和错误分页，390项目切换后迟到旧观测与401不覆盖新响应。四张最终桌面／手机图由父任务实看，33项源码与证据冻结全通过；原有移动项目选择文件不改。
 
-证据见[解析账本验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/解析器类型与版本账本验收_20261010.md)、[解析界面验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/解析器健康界面验收_20261010.md)、[管理目录整项目清除验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/管理目录整项目清除验收_20261010.md)和[需求落实与剩余项](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。
+证据见[钩子失败账本验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/钩子失败账本验收_20261010.md)、[钩子界面验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/钩子失败报告界面验收_20261010.md)和[解析账本验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/解析器类型与版本账本验收_20261010.md)、[解析界面验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/解析器健康界面验收_20261010.md)、[管理目录整项目清除验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/管理目录整项目清除验收_20261010.md)和[需求落实与剩余项](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。
 
 ## 保留边界
 
-草稿仍待评审。整项目清除只覆盖当前管理目录，外部原日志、研究工作区和用户保存／分享的副本沿既有保留边界。所有真实工具版本、嵌套L1完整映射、跨项目片段优先级、自动worktree发现／跨设备路径、完整钩子失败账本、完整实际I/O、影响传播／note合同、真实客户端／规模／原生Windows、Atlas正式人工参考与完整M0–M4仍待落实。
+草稿仍待评审。整项目清除只覆盖当前管理目录，外部原日志、研究工作区和用户保存／分享的副本沿既有保留边界。所有真实工具版本、嵌套L1完整映射、跨项目片段优先级、自动worktree发现／跨设备路径、无法写错误日志时的钩子漏报、完整实际I/O、影响传播／note合同、真实客户端／规模／原生Windows、Atlas正式人工参考与完整M0–M4仍待落实。
 
 仅提交公开源码、中文说明与合成案例；凭据、真实会话、数据库、截图和缓存不入仓库。本阶段没有删除真实项目或调用远程模型。维护现有草稿PR #1，提交后核对当前HEAD的推送／PR两种CI和独立恢复包，不预报这些核对结果。

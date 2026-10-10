@@ -30,6 +30,9 @@ def cycle(
             except (OSError, ValueError, RuntimeError):
                 counts["errors"] += 1
         counts["deleted"] = mark_deleted(store)
+        from rg.ingest.hook_errors import collect
+
+        counts.update(collect(store))
         counts.update(register(store))
         counts.update(consume(store, sources(store), retry_failed, fault=fault))
         from rg.derive.worker import derive

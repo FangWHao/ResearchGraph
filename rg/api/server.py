@@ -152,6 +152,10 @@ class Handler(BaseHTTPRequestHandler):
             from rg.query.parsers import query
 
             return query(store, values)
+        if path == "/api/hook-errors":
+            from rg.query.hook_errors import query
+
+            return query(store, values)
         if path == "/api/versions":
             from rg.artifacts.views import versions
 

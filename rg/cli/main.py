@@ -188,6 +188,11 @@ def parser() -> argparse.ArgumentParser:
     parsers.add_argument("--offset", type=int, default=0)
     parsers.add_argument("--snapshot", type=int, help="续页使用第一页面的 snapshot_id")
     parsers.add_argument("--expected-scope-key", help="续页使用第一页面的 scope_key")
+    hook_errors = commands.add_parser("hook-errors", help="只读查看全库钩子失败报告与采集缺口")
+    hook_errors.add_argument("--project", help="验证项目存在，统计仍为全库")
+    hook_errors.add_argument("--limit", type=int, default=20)
+    hook_errors.add_argument("--offset", type=int, default=0)
+    hook_errors.add_argument("--snapshot", type=int, help="续页使用第一页面的 snapshot_id")
     versions = commands.add_parser("versions", help="分页读取文件版本与来源，不读取当前文件正文")
     versions.add_argument("--project")
     versions.add_argument("--path", help="精确匹配已记录的绝对路径")
@@ -614,6 +619,14 @@ def run(args: argparse.Namespace, store: Store) -> object:
             for key in ("project", "limit", "offset", "snapshot", "expected_scope_key")
             if getattr(args, key) is not None
         })
+    if args.command == "hook-errors":
+        from rg.query.hook_errors import query
+
+        return query(store, {
+            key: str(getattr(args, key))
+            for key in ("project", "limit", "offset", "snapshot")
+            if getattr(args, key) is not None
+        })
     if args.command == "versions":
         from rg.artifacts.views import versions
 
@@ -903,6 +916,7 @@ def main() -> None:
             in {
                 "mcp",
                 "parser-health",
+                "hook-errors",
                 "context",
                 "client-pack",
                 "versions",

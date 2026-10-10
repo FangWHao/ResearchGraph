@@ -453,6 +453,18 @@ Claude 工具版本只取顶层 `version`，Codex 只取 `session_meta.payload.c
 
 见[解析账本验收](docs/acceptance/解析器类型与版本账本验收_20261010.md)及[界面验收](docs/acceptance/解析器健康界面验收_20261010.md)。
 
+钩子失败报告由 `scan` 或自动流水线在后台采集，钩子本身不访问数据库。只读查看已保存的全库报告：
+
+```bash
+uv run rg --data-dir /tmp/rg-demo hook-errors --limit 20
+# 后续页固定第一页的 snapshot_id，刷新第一页才能看后来报告。
+uv run rg --data-dir /tmp/rg-demo hook-errors --limit 20 --snapshot SNAPSHOT_ID --offset NEXT_OFFSET
+```
+
+`GET /api/hook-errors` 使用本机令牌，参数与命令一致；`project` 只验证项目存在，统计仍属于整个管理目录。报告只保存时间、固定阶段、白名单异常类、字节位置和摘要；未知类只保留摘要，非法行不复制正文。错误日志不进入 L0、对象库或模型。来源轮换、缩短或前缀／提交边界变化建立新实例，已保存报告保留；相同字节的不同实例分别计数，报告数不能视为实际失败总数。
+
+迁移20不读取旧日志。没有观测到日志时失败次数未知；已观测空文件为零条报告，完整失败历史仍未知。残片、每批1000行后的积压、超过4096字节的行、读取失败和源文件缺失分别保留；超长行不截断、不推进游标。无变化轮询不重复追加观测，显示时间是最近持久观测变化，不是进程存活证明。备份保存账本而不复制原日志；整项目清除保留不含项目、会话、正文或用户路径的全库运维元数据。见[钩子失败账本验收](docs/acceptance/钩子失败账本验收_20261010.md)。
+
 ```bash
 uv run rg --data-dir /tmp/rg-demo health --project PROJECT_ID \
   --day 2026-10-09 --daily-budget 50000 --limit 20 --offset 0

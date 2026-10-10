@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 19
+LATEST_VERSION = 20
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -361,6 +361,38 @@ MIGRATIONS = {
         "SELECT RAISE(ABORT,'parser record is append-only'); END",
         "CREATE TRIGGER parser_record_no_delete BEFORE DELETE ON parser_records BEGIN "
         "SELECT RAISE(ABORT,'parser record is append-only'); END",
+    ),
+    20: (
+        "CREATE TABLE hook_error_sources(source_id INTEGER PRIMARY KEY,file_token TEXT NOT NULL,"
+        "prefix_sha256 TEXT NOT NULL,prefix_length INTEGER NOT NULL CHECK(prefix_length>=0),"
+        "committed_offset INTEGER NOT NULL CHECK(committed_offset>=0),"
+        "boundary_sha256 TEXT NOT NULL,boundary_length INTEGER NOT NULL CHECK(boundary_length>=0),"
+        "first_seen TEXT NOT NULL)",
+        "CREATE TABLE hook_error_reports(report_id INTEGER PRIMARY KEY,source_id INTEGER NOT NULL "
+        "REFERENCES hook_error_sources,byte_start INTEGER NOT NULL CHECK(byte_start>=0),"
+        "byte_end INTEGER NOT NULL CHECK(byte_end>byte_start),line_sha256 TEXT NOT NULL,"
+        "status TEXT NOT NULL CHECK(status IN ('reported','unknown_record')),"
+        "occurred_at TEXT,stage TEXT,exception_class TEXT,exception_class_sha256 TEXT,"
+        "recorded_at TEXT NOT NULL,UNIQUE(source_id,byte_start))",
+        "CREATE TABLE hook_error_checks(check_id INTEGER PRIMARY KEY,source_id INTEGER "
+        "REFERENCES hook_error_sources,status TEXT NOT NULL CHECK(status IN "
+        "('synced','partial_line','backlog','oversized_line','missing','unsafe','read_error',"
+        "'changed_during_read')),source_bytes INTEGER,committed_offset INTEGER,"
+        "report_highwater INTEGER NOT NULL,recorded_at TEXT NOT NULL)",
+        "CREATE INDEX hook_error_reports_source ON hook_error_reports(source_id,report_id)",
+        "CREATE TRIGGER hook_error_source_identity_no_update BEFORE UPDATE OF file_token,"
+        "prefix_sha256,prefix_length,first_seen ON hook_error_sources BEGIN "
+        "SELECT RAISE(ABORT,'hook error source identity is immutable'); END",
+        "CREATE TRIGGER hook_error_source_no_delete BEFORE DELETE ON hook_error_sources BEGIN "
+        "SELECT RAISE(ABORT,'hook error source history is retained'); END",
+        "CREATE TRIGGER hook_error_report_no_update BEFORE UPDATE ON hook_error_reports BEGIN "
+        "SELECT RAISE(ABORT,'hook error report is append-only'); END",
+        "CREATE TRIGGER hook_error_report_no_delete BEFORE DELETE ON hook_error_reports BEGIN "
+        "SELECT RAISE(ABORT,'hook error report is append-only'); END",
+        "CREATE TRIGGER hook_error_check_no_update BEFORE UPDATE ON hook_error_checks BEGIN "
+        "SELECT RAISE(ABORT,'hook error check is append-only'); END",
+        "CREATE TRIGGER hook_error_check_no_delete BEFORE DELETE ON hook_error_checks BEGIN "
+        "SELECT RAISE(ABORT,'hook error check is append-only'); END",
     ),
 }
 
