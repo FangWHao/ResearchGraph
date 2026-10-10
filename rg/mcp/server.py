@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any, BinaryIO
 
-from rg.mcp.tools import TOOLS, ToolService
+from rg.mcp.tools import CLIENT_TOOLS, TOOLS, ToolService
 from rg.query.context import wrap
 
 MODERN = "2026-07-28"
@@ -103,7 +103,7 @@ class Server:
         elif method == "tools/list":
             if supplied:
                 return error(identity, -32602, "工具列表固定；不接受游标或未知参数")
-            result = {"tools": TOOLS}
+            result = {"tools": CLIENT_TOOLS}
         elif method == "tools/call":
             if set(supplied) - {"name", "arguments"} or not isinstance(supplied.get("name"), str):
                 return error(identity, -32602, "工具调用参数无效")

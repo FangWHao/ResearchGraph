@@ -33,7 +33,9 @@ from rg.extract.segmenter import Segment, split
 from rg.extract.validate import InvalidClaim, persist
 from rg.extract.working_set import working_set
 from rg.ingest.common import parse
+from rg.ingest.scanner import PARSER_VERSION
 from rg.slim.cached import CachedCounter
+from rg.slim.slimmer import SLIM_VERSION
 from rg.slim.tokens import BudgetExceeded, CountingUnavailable, DailyBudgetExceeded
 from rg.store.database import ConflictError, Store, dumps, now
 from rg.store.locking import TaskBusy, exclusive
@@ -533,6 +535,7 @@ class Worker:
             "overlap-v1",
             RULE_VERSION,
             scope,
+            {"parser_version": PARSER_VERSION, "slim_version": SLIM_VERSION},
         ]
         if isinstance(self.counter, ProjectCounter) and self.counter.policy.rule_id:
             result.append(self.counter.policy.identity)

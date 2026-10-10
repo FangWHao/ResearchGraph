@@ -59,6 +59,19 @@ def parse_codex(record: dict[str, Any]) -> list[Parsed]:
         return events or [Parsed("meta", excluded="empty_message")]
     if t in {"function_call", "custom_tool_call"}:
         name = str(payload.get("name", ""))
+        namespace = payload.get("namespace")
+        if namespace is not None and not isinstance(namespace, str):
+            return [
+                Parsed(
+                    "unknown",
+                    native_id=payload.get("call_id"),
+                    call_id=payload.get("call_id"),
+                    excluded="unknown_tool_namespace",
+                )
+            ]
+        if namespace:
+            separator = "__" if namespace.startswith("mcp__") else "."
+            name = namespace + separator + name
         mapped = (
             "file_edit"
             if name in {"apply_patch", "functions.apply_patch"}

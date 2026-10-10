@@ -12,7 +12,7 @@ from rg.store.database import Store, now
 from rg.store.locking import exclusive
 from rg.store.objects import digest
 
-PARSER_VERSION = "2"
+PARSER_VERSION = "3"
 
 
 def _session(store: Store, path: Path, tool: str, project_id: str | None) -> int | None:

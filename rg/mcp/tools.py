@@ -111,6 +111,21 @@ TOOLS[2]["inputSchema"]["oneOf"] = [
     for key in ("claim_id", "span_id", "event_id", "version_id", "run_id")
 ]
 
+# 客户端可发现的 schema 避免根级组合词；服务端仍用完整 schema 校验互斥引用。
+CLIENT_TOOLS = [
+    {
+        **tool,
+        "inputSchema": {key: value for key, value in tool["inputSchema"].items() if key != "oneOf"},
+        "description": tool["description"]
+        + (
+            " claim_id、span_id、event_id、version_id、run_id 必须且只能提供一个。"
+            if tool["name"] == "research.evidence"
+            else ""
+        ),
+    }
+    for tool in TOOLS
+]
+
 
 class ToolService:
     def __init__(

@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from typing import Any
 
 RG_BLOCK = re.compile(r"<rg-context\b[^>]*>.*?(?:</rg-context>|$)", re.DOTALL)
+RG_MCP_ALIASES = frozenset(
+    f"mcp__researchgraph__research_{name}"
+    for name in ("context", "evidence", "history", "node", "search")
+)
 
 
 @dataclass
@@ -33,6 +37,7 @@ def injection(event: Parsed) -> Parsed:
     if event.tool_name and (
         event.tool_name.startswith("research.")
         or re.search(r"(?:__|\.)research(?:__|\.)", event.tool_name)
+        or event.tool_name in RG_MCP_ALIASES
     ):
         event.excluded = "injected_by_rg"
     if RG_BLOCK.search(event.text):

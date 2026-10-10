@@ -13,6 +13,7 @@ from rg.extract.redact import redact
 from rg.extract.rules import confirm_explicit
 from rg.extract.schemas import PASS2_SCHEMA
 from rg.ingest.common import RG_BLOCK
+from rg.ingest.exclusion import current_exclusion
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
 from rg.store.privacy import read as privacy_policy
@@ -99,12 +100,14 @@ def validate(
             if event_id not in event_ids:
                 raise InvalidCitation("引用事件不在本次原文窗口中")
             row = store.db.execute(
-                "SELECT r.*, s.project_id FROM raw_events r JOIN sessions s "
-                "USING(session_pk) WHERE event_id = ?",
+                "SELECT r.*, s.project_id,f.parser FROM raw_events r JOIN sessions s "
+                "USING(session_pk) JOIN source_files f USING(file_instance_id) WHERE event_id = ?",
                 (event_id,),
             ).fetchone()
             if not row or row["exclude_reason"] or row["project_id"] != project_id:
                 raise InvalidCitation("引用事件不存在、被排除或不属于本项目")
+            if current_exclusion(store, row):
+                raise InvalidCitation("引用事件按保存原件属于排除内容")
             if store.db.execute(
                 "SELECT 1 FROM dedupe_links WHERE alias_id = ?", (event_id,)
             ).fetchone():

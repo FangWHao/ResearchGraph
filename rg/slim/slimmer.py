@@ -5,12 +5,13 @@ import re
 from typing import Any
 
 from rg.ingest.common import parse
+from rg.ingest.exclusion import current_exclusion, saved_parse
 from rg.ingest.spans import event_span
 from rg.slim.tokens import TokenCounter
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
 
-SLIM_VERSION = "3"
+SLIM_VERSION = "4"
 
 
 def summarize(kind: str, text: str, tool: str | None, call_id: str | None) -> str:
@@ -77,12 +78,16 @@ def slim_session(
     for row in rows:
         if event_ids is not None and row["event_id"] not in event_ids:
             continue
+        event = None
         reason = row["exclude_reason"]
         mirror = store.db.execute(
             "SELECT reason FROM dedupe_links WHERE alias_id = ?", (row["event_id"],)
         ).fetchone()
         if mirror:
             reason = mirror[0]
+        if not reason and row["kind"] in {"tool_call", "tool_result", "file_edit", "plan_update"}:
+            event = saved_parse(store, row)
+            reason = current_exclusion(store, row, event)
         if reason:
             with store.transaction() as db:
                 db.execute("DELETE FROM slim_events WHERE event_id = ?", (row["event_id"],))
@@ -101,7 +106,7 @@ def slim_session(
         if existing and existing[0] == counter_version:
             continue
         raw = store.raw(row["event_id"])
-        event = parse(row["parser"], json.loads(raw))[row["record_index"]]
+        event = event or parse(row["parser"], json.loads(raw))[row["record_index"]]
         text = summarize(row["kind"], event.text, row["tool_name"], row["call_id"])
         safe_text = text
         if isinstance(counter, ProjectCounter):
