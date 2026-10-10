@@ -196,6 +196,9 @@ def parser() -> argparse.ArgumentParser:
     session_parent = commands.add_parser("session-parent", help="只读核对 Codex 父线程及头记录依据")
     session_parent.add_argument("--session", type=int, required=True)
     session_parent.add_argument("--project")
+    event_chain = commands.add_parser("event-chain", help="只读核对Claude父UUID及来源旁支")
+    event_chain.add_argument("--event", type=int, required=True)
+    event_chain.add_argument("--project")
     versions = commands.add_parser("versions", help="分页读取文件版本与来源，不读取当前文件正文")
     versions.add_argument("--project")
     versions.add_argument("--path", help="精确匹配已记录的绝对路径")
@@ -630,6 +633,12 @@ def run(args: argparse.Namespace, store: Store) -> object:
             for key in ("project", "limit", "offset", "snapshot")
             if getattr(args, key) is not None
         })
+    if args.command == "event-chain":
+        from rg.query.event_chain import query
+
+        return query(store, {"event": str(args.event)} | (
+            {"project": args.project} if args.project is not None else {}
+        ))
     if args.command == "session-parent":
         from rg.query.session_parent import query
 
@@ -927,6 +936,7 @@ def main() -> None:
                 "parser-health",
                 "hook-errors",
                 "session-parent",
+                "event-chain",
                 "context",
                 "client-pack",
                 "versions",

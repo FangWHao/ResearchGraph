@@ -180,6 +180,23 @@ export interface EvidenceData {
   artifact_versions_partial?: boolean;
   l1?: L1Evidence | null;
   session_parent?: SessionParentData | null;
+  event_chain?: EventChainData | null;
+}
+export type EventChainState = 'unsupported' | 'unobserved' | 'uuid_unavailable' | 'parent_not_declared'
+  | 'null_parent' | 'invalid_parent' | 'conflicting_record' | 'ambiguous_parent' | 'outside_project'
+  | 'missing_parent' | 'linked' | 'cycle' | 'metadata_incomplete';
+export interface EventChainData {
+  event_id: number; session_pk: number; file_instance_id: number; tool: string; state: EventChainState;
+  record_event_id: number | null; native_uuid: string | null; parent_uuid: string | null;
+  uuid_state: 'valid' | 'invalid' | 'missing'; parent_state: 'declared' | 'null' | 'missing' | 'invalid';
+  is_sidechain: boolean | null; sidechain_state: 'declared' | 'missing' | 'invalid';
+  recorded_at: string | null; basis: 'direct_record' | null;
+  resolution_scope: 'source_file' | 'project_uuid' | 'none';
+  parent_references: { event_id: number; file_instance_id: number }[];
+  parent_references_total: number; parent_references_partial: boolean; parent_source_contexts: number;
+  ancestry_state: EventChainState | 'multiple_source_contexts' | 'depth_limit';
+  ancestry_steps: number; ancestry_limit: number;
+  source_metadata_complete: boolean; scope_metadata_incomplete: boolean;
 }
 export type SessionParentState = 'unobserved' | 'no_parent_declared' | 'invalid' | 'conflicting'
   | 'missing_parent' | 'ambiguous_parent' | 'cycle' | 'linked' | 'outside_project' | 'unsupported';

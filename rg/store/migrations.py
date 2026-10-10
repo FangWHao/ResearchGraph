@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 21
+LATEST_VERSION = 22
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -407,6 +407,22 @@ MIGRATIONS = {
         "BEGIN SELECT RAISE(ABORT,'session parent observation is append-only'); END",
         "CREATE TRIGGER session_parent_no_delete BEFORE DELETE ON session_parent_observations "
         "BEGIN SELECT RAISE(ABORT,'session parent observation is append-only'); END",
+    ),
+    22: (
+        "ALTER TABLE source_files ADD COLUMN chain_observed_offset INTEGER NOT NULL DEFAULT 0 "
+        "CHECK(chain_observed_offset>=0)",
+        "CREATE TABLE claude_chain_records(event_id INTEGER PRIMARY KEY REFERENCES raw_events,"
+        "file_instance_id INTEGER NOT NULL REFERENCES source_files,byte_start INTEGER NOT NULL,"
+        "native_uuid TEXT,parent_uuid TEXT,uuid_state TEXT NOT NULL CHECK(uuid_state IN "
+        "('valid','missing','invalid')),parent_state TEXT NOT NULL CHECK(parent_state IN "
+        "('declared','null','missing','invalid')),sidechain INTEGER CHECK(sidechain IN (0,1)),"
+        "sidechain_state TEXT NOT NULL CHECK(sidechain_state IN ('declared','missing','invalid')),"
+        "body_key TEXT NOT NULL,recorded_at TEXT NOT NULL,UNIQUE(file_instance_id,byte_start))",
+        "CREATE INDEX claude_chain_uuid ON claude_chain_records(native_uuid,file_instance_id)",
+        "CREATE TRIGGER claude_chain_no_update BEFORE UPDATE ON claude_chain_records BEGIN "
+        "SELECT RAISE(ABORT,'Claude chain record is append-only'); END",
+        "CREATE TRIGGER claude_chain_no_delete BEFORE DELETE ON claude_chain_records BEGIN "
+        "SELECT RAISE(ABORT,'Claude chain record is append-only'); END",
     ),
 }
 

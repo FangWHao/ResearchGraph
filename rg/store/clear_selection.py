@@ -8,7 +8,8 @@ TABLES = frozenset(
     """
 artifact_discoveries artifact_discovery_attempts artifact_job_events artifact_jobs
 artifact_observations artifact_versions candidate_locations claim_evidence claims coverage
-daily_usage decision_requests decision_resolutions dedupe_links edit_records entities
+claude_chain_records daily_usage decision_requests decision_resolutions dedupe_links edit_records
+entities
 event_search evidence_spans explicit_records extraction_plans extraction_queue
 extraction_queue_events extraction_runs file_hash_cache graph_clock hook_error_checks
 hook_error_reports hook_error_sources ingest_sources jobs

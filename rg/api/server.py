@@ -160,6 +160,10 @@ class Handler(BaseHTTPRequestHandler):
             from rg.query.session_parent import query
 
             return query(store, values)
+        if path == "/api/event-chain":
+            from rg.query.event_chain import query
+
+            return query(store, values)
         if path == "/api/versions":
             from rg.artifacts.views import versions
 

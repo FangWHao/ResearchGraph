@@ -17,6 +17,7 @@ def cycle(
 ) -> dict[str, int]:
     with exclusive(store.root / "locks" / "scan.lock", "扫描守护进程正在运行"):
         counts: Counter[str] = Counter()
+        scanned_files: set[int] = set()
         values = sources(store)
         for path in files(values):
             try:
@@ -24,14 +25,23 @@ def cycle(
                 if not path.is_file():
                     continue
                 counts.update(scan_file(store, path, source.tool, source.project))
+                latest = store.db.execute(
+                    "SELECT file_instance_id FROM source_files WHERE path=? "
+                    "ORDER BY file_instance_id DESC LIMIT 1",
+                    (str(path.resolve()),),
+                ).fetchone()
+                if latest is not None:
+                    scanned_files.add(latest[0])
                 counts["files"] += 1
             except TaskBusy:
                 counts["busy"] += 1
             except (OSError, ValueError, RuntimeError):
                 counts["errors"] += 1
         counts["deleted"] = mark_deleted(store)
+        from rg.ingest.claude_chain import backfill_saved
         from rg.ingest.hook_errors import collect
 
+        counts.update(backfill_saved(store, skip_files=scanned_files))
         counts.update(collect(store))
         counts.update(register(store))
         counts.update(consume(store, sources(store), retry_failed, fault=fault))

@@ -253,7 +253,9 @@ def evidence(store: Store, event_id: int, values: dict[str, str]) -> dict[str, A
     from rg.derive.views import evidence as l1_evidence
 
     facts = l1_evidence(store, event_id)
+    from rg.query.event_chain import query as event_chain
     from rg.query.session_parent import query as session_parent
+
     available = any(item["diff"]["available"] for item in facts["edits"])
     return {
         "event": event,
@@ -272,6 +274,7 @@ def evidence(store: Store, event_id: int, values: dict[str, str]) -> dict[str, A
         },
         "l1": facts,
         "session_parent": session_parent(store, {"session": str(event["session_pk"])}),
+        "event_chain": event_chain(store, {"event": str(event_id)}),
     }
 
 
