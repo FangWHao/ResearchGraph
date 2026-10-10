@@ -516,7 +516,7 @@ def test_bulk_and_single_cli_preserve_results_and_close_provider(
     provider.close = lambda: closed.append(True)
     monkeypatch.setattr("rg.cli.main.Provider", lambda *args: provider)
     monkeypatch.setattr("rg.cli.main.load_key", lambda *args: "synthetic-only")
-    args = ["extract", "--base-url", "http://127.0.0.1", "--model", "synthetic"]
+    args = ["extract", "--base-url", "http://127.0.0.1", "--model", "synthetic", "--extract-only"]
     assert run(parser().parse_args(args), store)["claims"] == 1
     assert run(parser().parse_args([*args, "--session", "1"]), store)["claims"] == 0
     assert closed == [True, True]

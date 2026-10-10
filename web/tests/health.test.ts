@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { healthCount, healthMetrics, percentage, queueMetrics, queueNextOffset, queueScope } from '../src/health';
+import { healthCount, healthMetrics, percentage, pipelineMetrics, pipelineReason, pipelineTarget, queueMetrics, queueNextOffset, queueScope } from '../src/health';
 
 describe('健康观测保留账本口径和未知状态', () => {
   it('保留重叠快照标记，不把四条记录推定成成功或异常总数', () => {
@@ -51,5 +51,28 @@ describe('健康观测保留账本口径和未知状态', () => {
     expect(queueNextOffset({ next_offset: 50 }, 0)).toBe(50);
     for (const queue of [undefined, {}, { next_offset: null }, { next_offset: -1 }, { next_offset: 0 }, { next_offset: 1.5 }]) expect(queueNextOffset(queue, 0)).toBeNull();
     expect(queueNextOffset({ next_offset: 50 }, 50)).toBeNull();
+  });
+
+  it('关联与概览的总数只读自己的账本，暂停不能推定成日额度', () => {
+    const queue = { total: 54, counts: { queued: 45, running: 1, done: 2, partial: 1, paused: 3, blocked: 1, cancelled: 1 }, tasks: [{ state: 'done' }] };
+    expect(Object.fromEntries(pipelineMetrics(queue).map(item => [item.key, item.value]))).toEqual({ total: 54, ...queue.counts });
+    expect(pipelineMetrics({ ...queue, tasks: [] })).toEqual(pipelineMetrics(queue));
+    expect(pipelineMetrics(undefined).every(item => item.value === null)).toBe(true);
+    expect(pipelineReason(null)).toBe('无等待原因记录');
+    expect(pipelineReason(undefined)).toBe('未知');
+    expect(pipelineReason('daily_budget')).toContain('UTC');
+    for (const reason of ['CountingUnavailable', 'RuntimeError', 'stage_busy']) {
+      expect(pipelineReason(reason)).not.toContain('额度');
+      expect(pipelineReason(reason)).toContain('下次尝试');
+    }
+    expect(pipelineReason('new_reason')).toBe('new_reason');
+  });
+
+  it('阶段目标必须与会话编号一致，缺失与矛盾不能猜为整个项目', () => {
+    expect(pipelineTarget({ target_key: 'project', session_pk: null })).toBe('整个项目');
+    expect(pipelineTarget({ target_key: 'session:12', session_pk: 12 })).toBe('会话 #12');
+    for (const task of [{}, { target_key: 'project' }, { target_key: 'session:12' }, { target_key: 'session:01', session_pk: 1 }]) expect(pipelineTarget(task)).toBe('目标未知');
+    for (const task of [{ target_key: 'project', session_pk: 12 }, { target_key: 'session:12', session_pk: null }, { target_key: 'session:12', session_pk: 1 }]) expect(pipelineTarget(task)).toBe('目标字段不一致');
+    expect(pipelineTarget({ target_key: 'session:9007199254740992', session_pk: 9007199254740992 })).toBe('目标字段不一致');
   });
 });

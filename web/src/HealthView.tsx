@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, query } from './api';
 import { DateText, Empty, Loading } from './components';
 import { ExtractionQueuePanel } from './ExtractionQueuePanel';
+import { PipelineQueuePanel } from './PipelineQueuePanel';
 import { healthCount, healthMetrics, percentage } from './health';
 import type { HealthMetric } from './health';
 import type { HealthData } from './types';
@@ -18,24 +19,33 @@ export function HealthView({ project, epoch, onEvidence, onError }: {
   project: string; epoch: number; onEvidence: (target: { event_id: number }) => void;
   onError: (error: unknown) => void;
 }) {
-  const [data, setData] = useState<HealthData | null>(null);
-  const [offset, setOffset] = useState(0);
+  const [response, setResponse] = useState<{ key: string; data: HealthData } | null>(null);
+  const [pages, setPages] = useState({ project, offset: 0, pipelineOffset: 0 });
   const [retry, setRetry] = useState(0);
-  const [failure, setFailure] = useState('');
+  const [error, setError] = useState<{ key: string; message: string } | null>(null);
   const limit = 50;
-  useEffect(() => setOffset(0), [project]);
+  const offset = pages.project === project ? pages.offset : 0;
+  const pipelineOffset = pages.project === project ? pages.pipelineOffset : 0;
+  const key = JSON.stringify([project, offset, pipelineOffset, epoch, retry]);
+  const currentKey = useRef(key);
+  currentKey.current = key;
+  const data = response?.key === key ? response.data : null;
+  const failure = error?.key === key ? error.message : '';
+  useEffect(() => setPages({ project, offset: 0, pipelineOffset: 0 }), [project]);
+  const setOffset = (value: number) => setPages({ project, offset: value, pipelineOffset });
+  const setPipelineOffset = (value: number) => setPages({ project, offset, pipelineOffset: value });
   useEffect(() => {
     const controller = new AbortController();
-    setData(null); setFailure('');
-    api<HealthData>(`/health?${query({ project, offset, limit })}`, undefined, controller.signal)
-      .then(result => { if (!controller.signal.aborted) setData(result); })
+    setError(null);
+    api<HealthData>(`/health?${query({ project, offset, pipeline_offset: pipelineOffset, limit })}`, undefined, controller.signal)
+      .then(result => { if (!controller.signal.aborted && currentKey.current === key) setResponse({ key, data: result }); })
       .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        setFailure(error instanceof Error ? error.message : '本地服务读取失败');
+        if (controller.signal.aborted || currentKey.current !== key) return;
+        setError({ key, message: error instanceof Error ? error.message : '本地服务读取失败' });
         if (error instanceof ApiError && error.status === 401) onError(error);
       });
     return () => controller.abort();
-  }, [project, offset, epoch, retry, onError]);
+  }, [project, offset, pipelineOffset, key, onError]);
   if (failure) return <div className="health-retry" role="alert">
     <Empty title="健康统计暂不可用">{failure}。本次未取得统计，无法判断采集是否正常。</Empty>
     <button className="button secondary" onClick={() => setRetry(value => value + 1)}>重新读取健康统计</button>
@@ -52,6 +62,8 @@ export function HealthView({ project, epoch, onEvidence, onError }: {
     </div>
 
     <ExtractionQueuePanel queue={data.extraction_queue} offset={offset} limit={limit} onOffset={setOffset} />
+
+    <PipelineQueuePanel queue={data.pipeline_queue} offset={pipelineOffset} limit={limit} onOffset={setPipelineOffset} />
 
     <div className="health-columns">
       <section className="panel" aria-labelledby="ingest-heading">

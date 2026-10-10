@@ -194,6 +194,7 @@ class Store:
         daily_budget: int = 500000,
         limit: int = 50,
         offset: int = 0,
+        pipeline_offset: int = 0,
     ) -> dict[str, Any]:
         from rg.extract.monitor import monitor
 
@@ -228,6 +229,9 @@ class Store:
         from rg.extract.queue_health import health as queue_health
 
         result["extraction_queue"] = queue_health(self, project, limit, offset)
+        from rg.extract.queue_health import pipeline_health
+
+        result["pipeline_queue"] = pipeline_health(self, project, limit, pipeline_offset)
         result["snapshots"] = dict(
             self.db.execute(
                 "SELECT count(*) AS total, "

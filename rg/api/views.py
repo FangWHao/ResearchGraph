@@ -313,9 +313,12 @@ def search(store: Store, values: dict[str, str]) -> dict[str, Any]:
 
 def health(store: Store, values: dict[str, str], daily_budget: int) -> dict[str, Any]:
     limit, offset = page(values)
+    pipeline_offset = int(values.get("pipeline_offset", "0"))
+    if not 0 <= pipeline_offset <= 2147483647:
+        raise ValueError("流水线偏移超出范围")
     project = values.get("project") or None
     project_exists(store, project)
-    result = store.health(project, None, daily_budget, limit, offset)
+    result = store.health(project, None, daily_budget, limit, offset, pipeline_offset)
     result["global_counts"] = True
     rows = store.db.execute(
         "SELECT f.*,s.tool,s.native_session_id,s.project_id FROM source_files f "

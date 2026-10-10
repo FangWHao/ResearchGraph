@@ -10,7 +10,7 @@ from rg.snapshot.capture import identifier
 from rg.snapshot.git import Git
 from rg.store.database import Store, dumps
 from rg.store.locking import exclusive
-from rg.store.objects import atomic_write
+from rg.store.objects import atomic_write, digest
 
 
 def backup(store: Store, destination: Path) -> dict[str, int]:
@@ -19,6 +19,18 @@ def backup(store: Store, destination: Path) -> dict[str, int]:
     if destination.resolve().is_relative_to(store.root.resolve()):
         raise ValueError("备份目录不能在数据目录内")
     with ExitStack() as locks:
+        locks.enter_context(
+            exclusive(
+                store.root / "locks" / "postprocess.lock", "自动关联或概览正在运行，请稍后备份"
+            )
+        )
+        for (project,) in store.db.execute("SELECT project_id FROM projects ORDER BY project_id"):
+            locks.enter_context(
+                exclusive(
+                    store.root / "locks" / "overviews" / (digest(project.encode()) + ".lock"),
+                    "概览正在写入，请稍后备份",
+                )
+            )
         # 自有影子仓库只追加对象；复制时也避开尚未改名的临时对象和引用。
         repositories = sorted((store.root / "snapshots").glob("*.git"))
         for repository in repositories:
@@ -57,7 +69,7 @@ def _backup(store: Store, destination: Path) -> dict[str, int]:
         }
         if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise ValueError("备份数据库完整性检查失败")
-        for name in ["snapshots", "spool"]:
+        for name in ["snapshots", "spool", "overviews"]:
             if (store.root / name).exists():
                 shutil.copytree(store.root / name, destination / name, symlinks=True)
         projects = target.execute(

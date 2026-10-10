@@ -145,22 +145,29 @@ def link(
     limit: int = 50,
     scope: dict[str, str] | None = None,
     retry_failed: bool = False,
-) -> dict[str, int]:
+    *,
+    retry_attempts: dict[str, int] | None = None,
+) -> dict[str, Any]:
     if not 1 <= limit <= 1000:
         raise ValueError("候选对页长必须为 1 到 1000")
     _permission(worker.store, project, worker.provider)
     with exclusive(worker.store.root / "locks" / (digest(project.encode()) + ".link")):
-        return _schedule(worker, project, limit, scope, retry_failed)
+        return _schedule(worker, project, limit, scope, retry_failed, retry_attempts)
 
 
 def _schedule(
-    worker: Worker, project: str, limit: int, scope: dict[str, str] | None, retry_failed: bool
-) -> dict[str, int]:
+    worker: Worker,
+    project: str,
+    limit: int,
+    scope: dict[str, str] | None,
+    retry_failed: bool,
+    retry_attempts: dict[str, int] | None = None,
+) -> dict[str, Any]:
     store = worker.store
     prompt = Path(__file__).with_name("prompts").joinpath("link.txt").read_text()
     header = worker.provider.request(prompt, "", LINK_SCHEMA, min(worker.output_budget, 1000))
     processing = [worker.provider.provider, worker.provider.model, header, 3000, "link-scheduler1"]
-    stats = {
+    stats: dict[str, Any] = {
         "pairs": 0,
         "claims": 0,
         "cached": 0,
@@ -189,7 +196,12 @@ def _schedule(
                 stats["pairs"] += 1
                 stats["cached"] += 1
                 continue
-        if previous and previous["state"] == "failed" and not retry_failed:
+        retry = retry_failed and (
+            retry_attempts is None
+            or previous is not None
+            and previous["attempts"] <= retry_attempts.get(key, -1)
+        )
+        if previous and previous["state"] == "failed" and not retry:
             stats["pairs"] += 1
             stats["skipped_failed"] += 1
             continue
@@ -321,6 +333,7 @@ def _schedule(
                 (now(), key),
             )
             stats["paused"] = stats["has_more"] = 1
+            stats["pause_reason"] = "daily_budget"
             break
         except RuntimeError as error:
             # 提供方或计数不可用时保留当前项，不让故障消耗其余页或冒充人工失败。
@@ -329,6 +342,7 @@ def _schedule(
                 (type(error).__name__, now(), key),
             )
             stats["paused"] = stats["has_more"] = 1
+            stats["pause_reason"] = type(error).__name__
             break
         except ValueError as error:
             if run is not None:

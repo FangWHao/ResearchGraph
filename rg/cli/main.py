@@ -95,11 +95,12 @@ def parser() -> argparse.ArgumentParser:
     scanned.add_argument("--interval", type=float, default=2, help="轮询间隔秒数，默认 2")
     scanned.add_argument("--retry-failed", action="store_true", help="显式重试失败的 spool 提示")
     health = commands.add_parser("health", help="本地查看覆盖缺口、模型用量与提取告警")
-    health.add_argument("--project", help="仅筛选提取指标和覆盖缺口，日额度仍为全库")
+    health.add_argument("--project", help="筛选项目任务与指标，日额度仍为全库")
     health.add_argument("--day", help="模型用量日期 YYYY-MM-DD，默认当天 UTC")
     health.add_argument("--daily-budget", type=int, default=500000, help="与 worker 使用同一日额度")
-    health.add_argument("--limit", type=int, default=50, help="覆盖缺口页长")
-    health.add_argument("--offset", type=int, default=0, help="覆盖缺口偏移")
+    health.add_argument("--limit", type=int, default=50, help="各队列与覆盖缺口页长")
+    health.add_argument("--offset", type=int, default=0, help="提取任务与覆盖缺口偏移")
+    health.add_argument("--pipeline-offset", type=int, default=0, help="关联与概览队列独立偏移")
     search = commands.add_parser("search", help="原文检索，用户文本按字面量处理")
     search.add_argument("text")
     search.add_argument("--limit", type=int, default=20)
@@ -114,9 +115,17 @@ def parser() -> argparse.ArgumentParser:
     selection.add_argument("--project", help="只自动处理这个项目；省略则处理所有已授权项目")
     mode = extract.add_mutually_exclusive_group()
     mode.add_argument("--estimate", action="store_true", help="仅实测计数和切片，不调用生成")
-    mode.add_argument("--watch", action="store_true", help="持续扫描、派生和提取；Ctrl+C 停止")
+    mode.add_argument(
+        "--watch", action="store_true", help="持续扫描、派生、提取、关联与概览；Ctrl+C 停止"
+    )
     extract.add_argument("--interval", type=float, default=2, help="持续模式轮询间隔秒数")
-    extract.add_argument("--limit", type=int, default=20, help="单轮自动处理会话数，1–200")
+    extract.add_argument("--limit", type=int, default=20, help="每轮各阶段任务上限，1–200")
+    extract.add_argument(
+        "--link-limit", type=int, default=50, help="每项目每轮新关联尝试数，1–1000"
+    )
+    extract.add_argument(
+        "--extract-only", action="store_true", help="仅运行原提取队列，跳过关联和概览"
+    )
     extract.add_argument(
         "--retry-failed", action="store_true", help="显式重试人工失败片段，保留历史尝试"
     )
@@ -393,8 +402,12 @@ def run(args: argparse.Namespace, store: Store) -> object:
                 return {"watch": "stopped"}
         return cycle(store, args.retry_failed)
     if args.command == "health":
+        if not 0 <= args.pipeline_offset <= 2147483647:
+            raise ValueError("流水线偏移超出范围")
         mark_deleted(store)
-        return store.health(args.project, args.day, args.daily_budget, args.limit, args.offset)
+        return store.health(
+            args.project, args.day, args.daily_budget, args.limit, args.offset, args.pipeline_offset
+        )
     if args.command == "search":
         return store.search(args.text, args.limit)
     if args.command == "evidence":
@@ -467,6 +480,8 @@ def run(args: argparse.Namespace, store: Store) -> object:
             from rg.extract.queue import Queue
 
             Queue.validate_limit(args.limit)
+            if not 1 <= args.link_limit <= 1000:
+                raise ValueError("每项目新关联尝试数需为 1 到 1000")
             if args.watch and args.session is not None:
                 raise ValueError("持续提取请按项目或全库运行，不能指定单个会话")
             if args.report and args.session is None:
@@ -506,7 +521,13 @@ def run(args: argparse.Namespace, store: Store) -> object:
                     return estimate_session(worker, args.session)
                 return estimate_batch(worker, args.project, args.limit)
             if args.session is None:
-                queue = Queue(worker, args.project, scope)
+                from rg.extract.pipeline import Pipeline
+
+                queue = (
+                    Queue(worker, args.project, scope)
+                    if args.extract_only
+                    else Pipeline(worker, args.project, scope, args.link_limit)
+                )
                 if args.watch:
                     from rg.store.database import dumps
 

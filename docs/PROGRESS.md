@@ -390,3 +390,19 @@
 - 验收修复：初次专项两项失败为测试误读详情中不存在的 project_id，改按实体表实际项目核对；旧专项 105 passed in 42.30s，随后追加的路径/缺库案例由最终 544/497 验证，早期结果不替代最终源码。
 - 下一步：允许清单提交，更新现有草稿 PR，按新 HEAD 核对推送/PR 两种 CI；刷新公开代码包、独立恢复全部跟踪文件后结束本任务。后续继续自动关联串联、完整运行 I/O、后台大文件摘要、全图语义与 export/隐私清除；真实客户端会话/钩子 p95、正式参考与真实 M1–M4 门槛保留，整个目标不标完成。
 - 提交前允许清单检查：tracked_files=251 staged_files=13 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True frontend_unchanged=True；git diff --check 退出码 0。仅公开源码、中文文档和合成测试；凭据、原件、生成的本机包、数据库、截图及缓存继续留忽略目录。
+
+
+## 2026-10-10 · 自动关联、概览与阶段健康
+
+- 任务：落实 §2、§7.2/7.7–7.10、§9/11 的自动后续阶段，沿用户日常零人工干预方向；按既有授权使用前端子 agent。开始核对进度末尾、相关章节和决定，04171d5 基线恢复包及 251 个跟踪文件已验证；整个 M0–M4 不标完成。
+- 改动的文件：新增 rg/extract/pipeline.py、tests/golden/test_auto_pipeline.py 及两份中文验收；修改 CLI、linker、overview、队列健康、Store、备份、版本 12 迁移及原队列诊断测试。前端新增 PipelineQueuePanel 与四个浏览器案例，修改 HealthView、health 类型/样式/单测、合成服务；更新 README、需求落实、决定、PR 草稿与本文件。
+- 行为：自动批处理/watch 串接提取、关联和项目/会话概览；持久不可变输入、归属提交、进程锁接管和只追加历史。关联不由新关系自循环触发，审核只刷新后续阶段。各阶段默认 20 项、关联每项目 50 个新尝试可调，extract-only 保留诊断；权限、候选、提供方完整实测与作废合同不变。
+- 等待：额度 UTC 次日、服务 30 秒、阶段忙碌 2 秒，新输入继承同配置等待；跨页失败每对一轮最多重试一次。关联仍在分页/等待时暂缓概览，partial 保留缺口并允许阅读已有记录，done 不代表全覆盖或审核。概览直接读取 claims，输入变化不覆盖旧文件；回执绑定本次发布字节，另一发布者替换可识别。备份含概览，移除原目录后恢复、文件缺失/修改均经核对缓存重建。
+- uv sync --locked：Resolved 28 packages in 11ms、Checked 27 packages in 54ms；rg --help、extract --help、health --help 退出码均 0，health 有独立 pipeline-offset。专项 uv run pytest tests/golden/test_auto_pipeline.py tests/golden/test_links_overview.py -q：35 passed in 13.36s；19 项新增固定案例包含最终全量。
+- uv run pytest -q：563 passed in 202.43s (0:03:22)；uv run pytest tests/golden -q：516 passed in 189.67s (0:03:09)。两者并行，不作性能基准。uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 退出码 0。
+- 新阶段实际 SIGKILL：发送后未知用量预留 1010 保留，恢复 1 项、关联完成及三概览，已知用量另增 120；系统锁释放、旧执行器不能提交，重跑零生成。备份避开阶段/发布锁，目标忙时未创建目录。此合成案例不替代真实客户端或 Windows 验收。
+- cd web && pnpm test：6 files/47 passed/857ms；pnpm build：200 modules/1.03s；专项浏览器 11 passed/12.4s，完整浏览器 47 passed/34.1s。父 agent 实看桌面/390 手机/等待任务三图，无横向溢出，12 项冻结全部 OK；摘要 7a187eaf495e1077eca3a97eeb0a24513161c4e86f1f97f578c1f92b0704d9d6。两个队列独立分页、迟到隔离、目标矛盾与纯文本诊断保留；旧截图因合成重跑变化，旧问答源码未改。
+- uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；98 文件/93 源码资源，缺失/差异/实际密钥/私有文件均 0。独立环境安装最终包，仓库外真实 CLI watch 连明确本机 TCP 模拟服务：首轮 8/累计 14 次生成、45 次计数请求，逐次核对完整输入已计数；无变化轮次零网络、旧 L0 不变、模型仅候选、四份概览、SIGINT 退出 0。模拟不冒充提供方计数，本轮无真实模型调用、无 Atlas 外发或个人配置修改。
+- 验收修复：初次失败包含合成关系方向非法、测试日额度不足容纳输出、未带概览备份、未变会话不应重复概览、原队列测试需用诊断入口；缓存重建的分量计数改为复用实测缓存。另补 CLI 独立分页和发布回执竞争回归。前端首次兼容案例因未等待加载失败，补等待后重跑，不放宽生产行为。早期 562/515 不替代最终 563/516 验收。
+- 下一步：允许清单提交、维护已有草稿 PR，按新 HEAD 核对推送与 PR 两种 CI，刷新代码包并独立恢复全部跟踪文件后结束本任务。后续继续完整运行 I/O、后台大文件摘要、全图语义、export 与隐私清除；note 类型待答复，正式参考及真实 M1–M4/规模性能/实际客户端门槛继续保留。
+- 提交前允许清单检查：tracked_files=257 staged_files=26 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True frontend_frozen_files_unchanged=True；git diff --cached --check 退出码 0。仅公开源码、中文记录及合成测试；凭据、研究原件、数据库、截图、缓存及包留忽略目录，原规格不改。

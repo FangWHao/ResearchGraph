@@ -28,7 +28,8 @@
 .queue-task-metadata dt { color: var(--muted); }
 .queue-task-metadata dd { margin: 4px 0 0; overflow-wrap: anywhere; }
 .queue-task-reason { font-size: 12px; line-height: 1.7; margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.extraction-queue-panel .pagination { flex-wrap: wrap; }
+.extraction-queue-panel .pagination, .pipeline-queue-panel .pagination { flex-wrap: wrap; }
+.queue-result pre { font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
 @media (max-width: 760px) {
   .health-view .quality-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
   .health-view .health-metrics, .health-view .health-queue-metrics { gap: 18px 10px; }

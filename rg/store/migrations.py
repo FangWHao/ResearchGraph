@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 11
+LATEST_VERSION = 12
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -187,6 +187,30 @@ MIGRATIONS = {
         "CREATE TRIGGER extraction_queue_event_no_delete BEFORE DELETE ON "
         "extraction_queue_events BEGIN "
         "SELECT RAISE(ABORT,'queue event is append-only'); END",
+    ),
+    12: (
+        "CREATE TABLE pipeline_queue (queue_id INTEGER PRIMARY KEY, task_key TEXT NOT NULL UNIQUE, "
+        "project_id TEXT NOT NULL REFERENCES projects, session_pk INTEGER REFERENCES sessions, "
+        "stage TEXT NOT NULL CHECK(stage IN ('link','overview')), target_key TEXT NOT NULL, "
+        "config_key TEXT NOT NULL, input_key TEXT NOT NULL, scope TEXT, "
+        "state TEXT NOT NULL CHECK(state IN "
+        "('queued','running','done','partial','paused','blocked','cancelled')), "
+        "owner_id TEXT, attempts INTEGER NOT NULL DEFAULT 0, retry_plan TEXT, result TEXT, "
+        "error TEXT, defer_reason TEXT, next_attempt_at TEXT, created_at TEXT NOT NULL, "
+        "updated_at TEXT NOT NULL)",
+        "CREATE INDEX pipeline_queue_ready ON "
+        "pipeline_queue(stage,state,next_attempt_at,updated_at)",
+        "CREATE TRIGGER pipeline_queue_input_no_update BEFORE UPDATE OF task_key,project_id,"
+        "session_pk,stage,target_key,config_key,input_key,scope,created_at ON pipeline_queue "
+        "BEGIN SELECT RAISE(ABORT,'pipeline input is immutable'); END",
+        "CREATE TABLE pipeline_queue_events (event_id INTEGER PRIMARY KEY, queue_id INTEGER "
+        "NOT NULL REFERENCES pipeline_queue, owner_id TEXT, kind TEXT NOT NULL, details TEXT "
+        "NOT NULL, recorded_at TEXT NOT NULL)",
+        "CREATE INDEX pipeline_queue_history ON pipeline_queue_events(queue_id,event_id)",
+        "CREATE TRIGGER pipeline_queue_event_no_update BEFORE UPDATE ON pipeline_queue_events "
+        "BEGIN SELECT RAISE(ABORT,'pipeline event is append-only'); END",
+        "CREATE TRIGGER pipeline_queue_event_no_delete BEFORE DELETE ON pipeline_queue_events "
+        "BEGIN SELECT RAISE(ABORT,'pipeline event is append-only'); END",
     ),
 }
 

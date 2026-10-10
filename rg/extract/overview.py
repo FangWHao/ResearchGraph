@@ -11,7 +11,7 @@ from rg.extract.segmenter import Segment
 from rg.extract.validate import InvalidClaim
 from rg.extract.worker import Worker, _permission
 from rg.slim.tokens import BudgetExceeded
-from rg.store.database import Store, dumps
+from rg.store.database import Store, dumps, now
 from rg.store.locking import exclusive
 from rg.store.objects import atomic_write, digest
 
@@ -27,6 +27,10 @@ OVERVIEW_SCHEMA = obj(
     },
     ["text", "claim_ids", "caveats"],
 )
+
+
+class ChangedInput(RuntimeError):
+    pass
 
 
 def records(
@@ -81,12 +85,14 @@ def overview(
     destination: Path,
     session: int | None = None,
     scope: dict[str, str] | None = None,
-) -> dict[str, int]:
+    *,
+    expected_input: str | None = None,
+) -> dict[str, Any]:
     with exclusive(
         worker.store.root / "locks" / "overviews" / (digest(project.encode()) + ".lock"),
         "该项目的概览 worker 正在运行，请稍后重试",
     ):
-        return _overview(worker, project, destination, session, scope)
+        return _overview(worker, project, destination, session, scope, expected_input)
 
 
 def _overview(
@@ -95,19 +101,23 @@ def _overview(
     destination: Path,
     session: int | None = None,
     scope: dict[str, str] | None = None,
-) -> dict[str, int]:
+    expected_input: str | None = None,
+) -> dict[str, Any]:
     store = worker.store
     _permission(store, project, worker.provider)
     source = records(store, project, session, scope)
+    input_key = digest(dumps(source).encode())
+    if expected_input is not None and expected_input != input_key:
+        raise ChangedInput("概览输入已变化")
     # 每页直接读 claims，不把任何已生成的概览作为下一页或其他阶段的输入。
     batches: list[list[dict[str, Any]]] = []
     pending: list[dict[str, Any]] = []
     for row in source:
-        if worker.provider.count_text(dumps([row])) > worker.budgets.content_tokens:
+        if worker.counter.count_text(dumps([row])) > worker.budgets.content_tokens:
             raise BudgetExceeded("单条结构化记录超过概览预算，需人工处理")
         if (
             pending
-            and worker.provider.count_text(dumps(pending + [row])) > worker.budgets.content_tokens
+            and worker.counter.count_text(dumps(pending + [row])) > worker.budgets.content_tokens
         ):
             batches.append(pending)
             pending = []
@@ -142,6 +152,7 @@ def _overview(
         "仅供阅读；不作证据，不参与后续提取。候选与人工确认记录分别标注。",
         "",
         f"输入记录：{len(source)}；分页：{len(pages)}。",
+        f"输入摘要：{input_key}；生成时间：{now()}。",
         "",
     ]
     if not pages:
@@ -162,5 +173,14 @@ def _overview(
         if page["caveats"]:
             lines.extend(["待澄清事项：", "", *["- " + text for text in page["caveats"]], ""])
     lines.append("</rg-context>")
-    atomic_write(destination, "\n".join(lines).encode())
-    return {"claims": len(source), "pages": len(pages)}
+    published = "\n".join(lines).encode()
+    # 短写事务只核对并发布；整个计数/生成阶段都不占数据库写事务。
+    with store.transaction():
+        _permission(store, project, worker.provider)
+        if digest(dumps(records(store, project, session, scope)).encode()) != input_key:
+            raise ChangedInput("生成期间概览输入已变化，未发布")
+        atomic_write(destination, published)
+    result: dict[str, Any] = {"claims": len(source), "pages": len(pages)}
+    if expected_input is not None:
+        result["artifact_sha256"] = digest(published)
+    return result

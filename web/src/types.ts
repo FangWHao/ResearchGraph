@@ -133,6 +133,7 @@ export interface HealthData {
   pending: number; manual_jobs: number; revision: number; global_counts: boolean;
   compression_points: number; hook_failures: number | null; hook_failures_reason: string;
   extraction_queue?: ExtractionQueue | null;
+  pipeline_queue?: PipelineQueue | null;
   ingest?: {
     registered_sources: number; known_source_paths: number; spool_receipts: number;
     spool_unfinished: number; spool_failed: number;
@@ -170,4 +171,16 @@ export interface ExtractionQueue {
   scope?: 'project' | 'all_projects' | null; total?: number;
   counts?: Partial<Record<ExtractionQueueState, number>>;
   tasks?: Partial<ExtractionQueueTask>[]; limit?: number; offset?: number; next_offset?: number | null;
+}
+
+export interface PipelineQueueTask {
+  queue_id: number; project_id: string; session_pk: number | null;
+  stage: string; target_key: string; state: string; attempts: number;
+  error: string | null; defer_reason: string | null; next_attempt_at: string | null;
+  created_at: string; updated_at: string; result: string | null;
+}
+export interface PipelineQueue {
+  scope?: 'project' | 'all_projects' | null; total?: number;
+  counts?: Partial<Record<ExtractionQueueState, number>>;
+  tasks?: Partial<PipelineQueueTask>[]; limit?: number; offset?: number; next_offset?: number | null;
 }

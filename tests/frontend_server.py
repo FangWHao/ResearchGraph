@@ -401,6 +401,7 @@ def seed_health(
         )
     seed_model_observations(store, project)
     seed_extraction_queue(store, project, batch_project)
+    seed_pipeline_queue(store, project, batch_project)
 
 
 def seed_extraction_queue(store: Store, project: str, batch_project: str) -> None:
@@ -446,6 +447,77 @@ def seed_extraction_queue(store: Store, project: str, batch_project: str) -> Non
                 ),
             ).lastrowid
             journal(store, queue_id, "synthetic_browser_boundary", None, {"state": state})
+
+
+def seed_pipeline_queue(store: Store, project: str, batch_project: str) -> None:
+    """关联/概览的独立合成账本；不运行调度器或生成模型。"""
+    entries: list[tuple[str, str, str | None]] = [("link", "queued", None)] * 44 + [
+        ("link", "queued", "stage_busy"),
+        ("overview", "running", None),
+        ("link", "done", None),
+        ("overview", "done", None),
+        ("link", "partial", "link_review"),
+        ("link", "paused", "daily_budget"),
+        ("link", "paused", "CountingUnavailable"),
+        ("overview", "paused", "RuntimeError"),
+        ("overview", "blocked", "remote_disabled"),
+        ("link", "cancelled", "input_changed"),
+    ]
+    for owner, values in (
+        (project, entries),
+        (batch_project, [("link", "done", None), ("overview", "queued", None)]),
+    ):
+        session = store.db.execute(
+            "SELECT session_pk FROM sessions WHERE project_id=? ORDER BY session_pk LIMIT 1",
+            (owner,),
+        ).fetchone()[0]
+        for index, (stage, state, reason) in enumerate(values):
+            target_session = session if stage == "overview" else None
+            target = f"session:{session}" if target_session is not None else "project"
+            task = digest(dumps(["synthetic-browser-pipeline", owner, index]).encode())
+            ready = (
+                "2026-10-11T00:00:00+00:00"
+                if reason == "daily_budget"
+                else "2026-10-10T12:00:02+00:00"
+                if reason == "stage_busy"
+                else "2026-10-10T12:00:30+00:00"
+                if state == "paused"
+                else None
+            )
+            result = (
+                dumps({"synthetic_fixture": True, "claims": 0})
+                if state == "done" and stage == "link"
+                else dumps({"synthetic_fixture": True, "pages": 1})
+                if state == "done"
+                else None
+            )
+            queue_id = store.db.execute(
+                "INSERT INTO pipeline_queue(task_key,project_id,session_pk,stage,target_key,"
+                "config_key,input_key,state,attempts,result,error,defer_reason,next_attempt_at,"
+                "created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    task,
+                    owner,
+                    target_session,
+                    stage,
+                    target,
+                    task,
+                    task,
+                    state,
+                    0 if state == "queued" else 1,
+                    result,
+                    "ValueError" if state == "partial" else None,
+                    reason,
+                    ready,
+                    now(),
+                    now(),
+                ),
+            ).lastrowid
+            store.db.execute(
+                "INSERT INTO pipeline_queue_events(queue_id,kind,details,recorded_at) "
+                "VALUES (?,'synthetic_browser_boundary',?,?)",
+                (queue_id, dumps({"state": state, "synthetic_fixture": True}), now()),
+            )
 
 
 def seed_model_observations(store: Store, project: str) -> None:
