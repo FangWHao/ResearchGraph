@@ -120,16 +120,16 @@ class Store:
         finally:
             self.db.rollback()
 
-    def project(self, name: str, roots: list[Path]) -> str:
+    def project(self, name: str, roots: list[Path], *, aliases: list[Path] | None = None) -> str:
+        from rg.store.roots import insert, prepare
+
+        values = [prepare(self, path) for path in roots]
+        values += [prepare(self, path, "alias") for path in aliases or []]
         project_id = str(uuid.uuid4())
         with self.transaction() as db:
             db.execute("INSERT INTO projects VALUES (?, ?, 0, ?)", (project_id, name, now()))
-            for path in roots:
-                db.execute(
-                    "INSERT INTO source_roots "
-                    "(root_id, project_id, host_id, path, kind) VALUES (?, ?, ?, ?, ?)",
-                    (str(uuid.uuid4()), project_id, "local", str(path.resolve()), "repo"),
-                )
+            for value in values:
+                insert(db, project_id, value)
         return project_id
 
     def raw(self, event_id: int) -> bytes:

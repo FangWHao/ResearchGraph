@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 17
+LATEST_VERSION = 18
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -342,6 +342,9 @@ MIGRATIONS = {
         "EXISTS(SELECT 1 FROM edit_records)",
         "CREATE TRIGGER edit_record_revision AFTER INSERT ON edit_records BEGIN "
         "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
+    ),
+    18: (
+        "ALTER TABLE source_roots ADD COLUMN git_metadata TEXT NOT NULL DEFAULT '{}'",
     ),
 }
 

@@ -276,6 +276,10 @@ Codex 原生 `patch_apply_begin/end` 也可派生候选编辑；只按同会话�
 
 ## 影子快照与钩子示例
 
+已有项目追加根目录时，使用 `project root-add --project PROJECT_ID --path /workspace/another-worktree`；可明确指定 `--kind worktree|data|alias|repo`。`project roots --project PROJECT_ID` 只读列出登记路径、类型和登记时的 Git 身份，支持分页与修订核对。新登记保留 Git 共同目录及远端 URL 摘要，不保存原始 URL；相同摘要不合并项目，追加根目录不改变已有会话归属。显式 data 不探测 Git 或加入钩子快照清单，旧登记的未记录元数据不自动补造。详见[根目录登记验收](docs/acceptance/项目根目录与Git身份登记验收_20261010.md)。
+
+手机页面已恢复当前项目选择入口，可直接切换项目；各项目页面内草稿和迟到响应沿用原隔离规则。详见[移动端验收](docs/acceptance/移动端项目切换验收_20261010.md)。
+
 ```bash
 # 使用已经登记的项目和根目录；不会操作用户仓库的 index。
 uv run rg --data-dir /tmp/rg-demo snapshot --project PROJECT_ID --root /workspace/demo

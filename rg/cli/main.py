@@ -133,6 +133,17 @@ def parser() -> argparse.ArgumentParser:
     add.add_argument("name")
     add.add_argument("--root", type=Path, required=True)
     add.add_argument("--alias", type=Path, action="append", default=[])
+    root_add = project_sub.add_parser("root-add", help="给已有项目追加本机根目录，不改变会话归属")
+    root_add.add_argument("--project", required=True)
+    root_add.add_argument("--path", type=Path, required=True)
+    root_add.add_argument(
+        "--kind", choices=["auto", "repo", "worktree", "data", "alias"], default="auto"
+    )
+    roots = project_sub.add_parser("roots", help="只读查看本项目根目录与登记时的 Git 身份")
+    roots.add_argument("--project", required=True)
+    roots.add_argument("--limit", type=int, default=100)
+    roots.add_argument("--offset", type=int, default=0)
+    roots.add_argument("--expected-revision", type=int)
     allow = project_sub.add_parser("allow-remote", help="预览后明确允许该项目的远程计数与提取")
     allow.add_argument("project_id")
     allow.add_argument("--ack-preview", required=True, help="预览文件的 sha256")
@@ -516,9 +527,20 @@ def run(args: argparse.Namespace, store: Store) -> object:
         if args.project_command == "add":
             from rg.snapshot.config import export_registry
 
-            project_id = store.project(args.name, [args.root, *args.alias])
+            project_id = store.project(args.name, [args.root], aliases=args.alias)
             export_registry(store)
             return {"project_id": project_id}
+        if args.project_command == "root-add":
+            from rg.snapshot.config import export_registry
+            from rg.store.roots import register
+
+            result = register(store, args.project, args.path, args.kind)
+            export_registry(store)
+            return result
+        if args.project_command == "roots":
+            from rg.store.roots import listing
+
+            return listing(store, args.project, args.limit, args.offset, args.expected_revision)
         from rg.store.privacy import gate, read, update
 
         if args.project_command == "privacy":
@@ -876,6 +898,7 @@ def main() -> None:
                 "l1-graph",
             }
             or (args.command == "ask" and args.retrieve_only)
+            or (args.command == "project" and args.project_command == "roots")
             or (
                 args.command == "project"
                 and args.project_command == "privacy"
