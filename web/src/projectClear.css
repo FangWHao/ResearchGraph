@@ -1,0 +1,29 @@
+.project-clear { display: grid; gap: 22px; max-width: 1050px; }
+.project-clear h2 { font-size: 18px; margin: 0 0 12px; }
+.project-clear p { line-height: 1.7; }
+.clear-boundary, .clear-project-form, .clear-pending, .clear-complete { padding: 24px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); min-width: 0; }
+.clear-pending { border-color: #d5a473; background: #fffaf2; }
+.clear-complete { border-color: #8eb5a2; }
+.clear-state-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.clear-project-form > label { max-width: 580px; }
+.clear-preview { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 22px; }
+.clear-summary dl { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 18px 0; }
+.clear-summary dl div { background: #f2f4ed; padding: 14px; border-radius: 8px; }
+.clear-summary dt { font-size: 12px; color: var(--muted); }
+.clear-summary dd { font-size: 24px; margin: 6px 0 0; }
+.clear-summary details { border-top: 1px solid var(--line); padding-top: 12px; }
+.clear-summary summary { cursor: pointer; font-size: 13px; }
+.clear-summary ul { padding: 0; list-style: none; columns: 2; }
+.clear-summary li { display: flex; justify-content: space-between; gap: 15px; break-inside: avoid; font-size: 13px; padding: 5px 10px 5px 0; overflow-wrap: anywhere; }
+.project-clear code { overflow-wrap: anywhere; }
+.clear-preview form { display: grid; gap: 10px; margin-top: 22px; max-width: 580px; }
+.clear-preview form .button { justify-self: start; }
+.project-clear .button.danger { background: #a63c36; color: white; border: 1px solid #a63c36; }
+.project-clear .button.danger:disabled { opacity: .45; cursor: not-allowed; }
+.clear-error { overflow-wrap: anywhere; }
+@media (max-width: 650px) {
+  .clear-boundary, .clear-project-form, .clear-pending, .clear-complete { padding: 18px; }
+  .clear-summary dl { grid-template-columns: repeat(2, 1fr); }
+  .clear-summary ul { columns: 1; }
+  .project-clear .button { max-width: 100%; white-space: normal; }
+}

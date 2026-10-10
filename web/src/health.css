@@ -1,0 +1,50 @@
+.health-view .health-columns { align-items: stretch; }
+.health-view .panel { min-width: 0; }
+.health-view .panel h3 .eyebrow { margin-top: 7px; letter-spacing: .3px; }
+.health-metrics, .health-queue-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 20px 14px; margin: 24px 0 20px; }
+.health-metrics div, .health-queue-metrics div { min-width: 0; }
+.health-metrics dt, .health-queue-metrics dt { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.health-metrics dd, .health-queue-metrics dd { font-size: 27px; line-height: 1.4; margin: 7px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.health-explanation { margin: 13px 0 0; color: var(--muted); font-size: 13px; line-height: 1.8; }
+.health-details { margin-top: 14px; color: var(--muted); font-size: 13px; }
+.health-details summary { cursor: pointer; width: fit-content; line-height: 1.8; }
+.health-details p { font-size: 13px; margin: 9px 0 0; }
+.health-details summary:focus-visible { outline: 2px solid #53665a; outline-offset: 3px; }
+.health-view .table-scroll { max-width: 100%; overflow-x: auto; }
+.health-view .table-scroll table { min-width: 620px; }
+.health-view .table-scroll th[scope="row"] { text-align: left; font-weight: 500; }
+.health-view .table-scroll td small { display: block; color: var(--muted); margin-top: 5px; white-space: normal; }
+.health-view .usage-details { flex-wrap: wrap; }
+.health-retry { text-align: center; }
+.health-retry .empty-state { margin-bottom: 12px; }
+.extraction-tasks { list-style: none; padding: 0; margin: 22px 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-height: 560px; overflow-y: auto; align-content: start; }
+.extraction-tasks:focus-visible { outline: 2px solid #53665a; outline-offset: 3px; }
+.extraction-tasks > li { border: 1px solid var(--line); border-radius: 7px; padding: 14px; min-width: 0; }
+.queue-task-heading { display: flex; gap: 10px; justify-content: space-between; flex-wrap: wrap; font-size: 13px; }
+.queue-state { font-size: 12px; color: var(--muted); }
+.queue-state.partial, .queue-state.blocked { color: #90612f; }
+.queue-task-metadata { font-size: 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.queue-task-metadata > div { min-width: 0; }
+.queue-task-metadata dt { color: var(--muted); }
+.queue-task-metadata dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.queue-task-reason { font-size: 12px; line-height: 1.7; margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.extraction-queue-panel .pagination, .pipeline-queue-panel .pagination { flex-wrap: wrap; }
+.queue-result pre { font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.artifact-health-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 20px 14px; margin: 24px 0 20px; }
+.artifact-health-metrics div { min-width: 0; }
+.artifact-health-metrics dt { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.artifact-health-metrics dd { font-size: 27px; line-height: 1.4; margin: 7px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.artifact-health-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 25px; }
+.artifact-health-groups h4 { margin-top: 10px; font-size: 13px; }
+.artifact-health-panel > button { margin-top: 18px; }
+@media (max-width: 760px) {
+  .health-view .quality-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+  .health-view .health-metrics, .health-view .health-queue-metrics { gap: 18px 10px; }
+  .health-view .health-metrics dd, .health-view .health-queue-metrics dd { font-size: 25px; }
+  .health-view .panel h3 { display: block; line-height: 1.5; }
+  .health-view .panel h3 .eyebrow { display: block; }
+  .health-view .panel h3 > span:not(.eyebrow) { display: inline; margin-left: 8px; }
+  .extraction-tasks { grid-template-columns: 1fr; }
+  .artifact-health-groups { grid-template-columns: 1fr; gap: 5px; }
+  .artifact-health-metrics dd { font-size: 25px; }
+}

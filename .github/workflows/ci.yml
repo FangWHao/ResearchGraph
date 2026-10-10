@@ -1,0 +1,65 @@
+name: 开发验收
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: development-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: 取回代码
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: 安装固定版本 uv 与 Python
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: '0.12.24'
+          python-version: '3.12'
+          enable-cache: true
+      - name: 按锁文件安装依赖
+        run: uv sync --locked
+      - name: 全部离线测试
+        run: uv run --no-sync pytest -q
+      - name: 固定案例
+        run: uv run --no-sync pytest tests/golden -q
+      - name: 代码检查
+        run: uv run --no-sync ruff check rg tests scripts
+      - name: 类型检查
+        run: uv run --no-sync pyright rg
+      - name: 命令入口
+        run: uv run --no-sync rg --help
+      - name: 官方 MCP 客户端兼容性
+        run: PYTHONPATH=. uv run --no-sync --with 'mcp==2.3.0' python scripts/check_mcp_client.py
+      - name: 项目接入包 MCP 启动
+        run: PYTHONPATH=. uv run --no-sync --with 'mcp==2.3.0' python scripts/check_client_package.py
+      - name: 安装固定版本 Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24.21.0'
+      - name: 安装固定版本 pnpm
+        run: npm install --global pnpm@12.10.1
+      - name: 按前端锁文件安装依赖
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: 前端语义测试
+        working-directory: web
+        run: pnpm test
+      - name: 前端类型检查与构建
+        working-directory: web
+        run: pnpm build
+      - name: 安装浏览器验收环境
+        working-directory: web
+        run: pnpm exec playwright install --with-deps --only-shell chromium
+      - name: 浏览器与真实本地 API 验收
+        working-directory: web
+        run: pnpm test:browser

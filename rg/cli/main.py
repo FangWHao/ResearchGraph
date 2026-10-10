@@ -1,0 +1,981 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sqlite3
+import sys
+from pathlib import Path
+
+from rg.extract.provider import Provider, load_key
+from rg.extract.redact import redact
+from rg.extract.report import report
+from rg.extract.worker import Worker
+from rg.ingest.scanner import mark_deleted, scan_file
+from rg.store.backup import backup
+from rg.store.database import Store
+
+
+def model_connection_arguments(command: argparse.ArgumentParser) -> None:
+    command.add_argument("--base-url", default=os.environ.get("RG_BASE_URL"))
+    command.add_argument("--model", default=os.environ.get("RG_MODEL"))
+    command.add_argument("--key-file", type=Path)
+
+
+def model_arguments(command: argparse.ArgumentParser) -> None:
+    model_connection_arguments(command)
+    command.add_argument("--daily-budget", type=int, default=500000)
+    command.add_argument(
+        "--input-budget", type=int, default=128000, help="完整输入上限，默认 128000 token"
+    )
+    command.add_argument(
+        "--scope",
+        action="append",
+        default=[],
+        metavar="字段=值",
+        help="完整范围，可重复，不指定则不猜测范围",
+    )
+
+
+def parse_scope(fields: list[str]) -> dict[str, str] | None:
+    scope: dict[str, str] = {}
+    for field in fields:
+        key, separator, value = field.partition("=")
+        if not separator or not key or not value or key in scope:
+            raise ValueError("范围需为不重复的非空 字段=值")
+        scope[key] = value
+    return scope or None
+
+
+def parser() -> argparse.ArgumentParser:
+    cli = argparse.ArgumentParser(prog="rg", description="可查证的研究决定史（后端试验版）")
+    cli.add_argument(
+        "--data-dir",
+        type=Path,
+        default=Path(os.environ.get("RG_DATA_DIR", "~/.researchgraph")).expanduser(),
+    )
+    commands = cli.add_subparsers(dest="command", required=True)
+    commands.add_parser("init", help="建立数据库；不修改用户工具配置")
+    semantic = commands.add_parser("graph", help="只读完整 L2 语义图，分页保留所有版本和端口")
+    semantic.add_argument("--project", required=True)
+    semantic.add_argument(
+        "--collection",
+        choices=["nodes", "edges", "joins", "merges", "state_events", "unresolved", "claims"],
+        default="nodes",
+    )
+    semantic.add_argument("--limit", type=int, default=20)
+    semantic.add_argument("--offset", type=int, default=0)
+    semantic.add_argument("--known-until")
+    semantic.add_argument("--occurred-until")
+    semantic.add_argument("--scope", action="append", default=[])
+    semantic.add_argument("--expected-revision", type=int)
+    file_graph = commands.add_parser(
+        "l1-graph", help="只读完整 L1 文件与运行图，区分执行事实和候选报告"
+    )
+    file_graph.add_argument("--project", required=True)
+    file_graph.add_argument(
+        "--collection",
+        choices=["nodes", "edges", "observations", "evidence", "unresolved"],
+        default="nodes",
+    )
+    file_graph.add_argument("--limit", type=int, default=20)
+    file_graph.add_argument("--offset", type=int, default=0)
+    file_graph.add_argument("--known-until")
+    file_graph.add_argument("--occurred-until")
+    file_graph.add_argument("--scope", action="append", default=[])
+    file_graph.add_argument("--expected-revision", type=int)
+    exported = commands.add_parser("export", help="只读导出限定双时间和范围的历史 ZIP")
+    exported.add_argument("--project", required=True)
+    exported.add_argument("--output", type=Path, required=True, help="新 ZIP 文件，父目录需已存在")
+    exported.add_argument("--until", "--occurred-until", dest="occurred_until")
+    exported.add_argument("--known-until")
+    exported.add_argument("--scope", action="append", default=[])
+    exported.add_argument("--expected-revision", type=int)
+    exported.add_argument(
+        "--include-evidence", action="store_true", help="显式加入遮盖后的引用正文"
+    )
+    exported.add_argument("--redact-pattern", action="append", default=[])
+    verified = commands.add_parser("verify-export", help="离线校验历史 ZIP 成员摘要，无需数据库")
+    verified.add_argument("input", type=Path)
+    client_pack = commands.add_parser("client-pack", help="只读生成 Codex/Claude 项目接入包")
+    client_pack.add_argument("--project", required=True)
+    client_pack.add_argument("--output", type=Path, required=True)
+    client_pack.add_argument(
+        "--encoding", choices=["cl100k_base", "o200k_base"], default="cl100k_base"
+    )
+    client_record = commands.add_parser("client-record", help="明确调用的人工技能读取 JSON 原话")
+    client_record.add_argument("kind", choices=["question", "decide"])
+    client_record.add_argument("--project", required=True)
+    client_record.add_argument("--input", required=True, help="UTF8 JSON 文件路径，- 表示标准输入")
+    run_record = commands.add_parser("record-run", help="离线登记候选运行清单，不执行命令")
+    run_record.add_argument("--project", required=True)
+    run_record.add_argument("--input", required=True, help="UTF8 JSON 文件，- 表示标准输入")
+    run_evidence = commands.add_parser("run-evidence", help="只读运行事实与候选 I/O 清单")
+    run_evidence.add_argument("--project", required=True)
+    run_evidence.add_argument("--run", required=True)
+    run_evidence.add_argument("--limit", type=int, default=20)
+    run_evidence.add_argument("--offset", type=int, default=0)
+    run_evidence.add_argument("--io-offset", type=int, default=0)
+    run_evidence.add_argument("--manifest-id")
+    run_evidence.add_argument("--known-until")
+    run_evidence.add_argument("--occurred-until")
+    run_evidence.add_argument("--scope", action="append", default=[])
+    run_evidence.add_argument("--expected-revision", type=int)
+    hook_config = commands.add_parser("hook-config", help="生成钩子示例与根目录清单，不安装钩子")
+    hook_config.add_argument("--output", type=Path, required=True)
+    snapshot = commands.add_parser("snapshot", help="手工拍影子快照，或实测 p95 决定钩子模式")
+    snapshot.add_argument("--project", required=True)
+    snapshot.add_argument("--root", type=Path, required=True)
+    snapshot.add_argument("--benchmark", type=int, help="拍 5–100 次；p95 超过 300 ms 改为异步")
+    project = commands.add_parser("project", help="登记项目与根目录")
+    project_sub = project.add_subparsers(dest="project_command", required=True)
+    add = project_sub.add_parser("add")
+    add.add_argument("name")
+    add.add_argument("--root", type=Path, required=True)
+    add.add_argument("--alias", type=Path, action="append", default=[])
+    root_add = project_sub.add_parser("root-add", help="给已有项目追加本机根目录，不改变会话归属")
+    root_add.add_argument("--project", required=True)
+    root_add.add_argument("--path", type=Path, required=True)
+    root_add.add_argument(
+        "--kind", choices=["auto", "repo", "worktree", "data", "alias"], default="auto"
+    )
+    roots = project_sub.add_parser("roots", help="只读查看本项目根目录与登记时的 Git 身份")
+    roots.add_argument("--project", required=True)
+    roots.add_argument("--limit", type=int, default=100)
+    roots.add_argument("--offset", type=int, default=0)
+    roots.add_argument("--expected-revision", type=int)
+    allow = project_sub.add_parser("allow-remote", help="预览后明确允许该项目的远程计数与提取")
+    allow.add_argument("project_id")
+    allow.add_argument("--ack-preview", required=True, help="预览文件的 sha256")
+    privacy = project_sub.add_parser("privacy", help="读取或保存本项目的临床编号遮盖规则")
+    privacy.add_argument("project_id")
+    privacy.add_argument("--patterns-file", type=Path, help="UTF8 JSON 字符串数组；省略则只读")
+    privacy.add_argument("--actor", help="保存时使用 human:<姓名>")
+    privacy.add_argument("--expected-revision", type=int, help="保存时使用读取结果的 revision")
+    clear_preview = project_sub.add_parser("clear-preview", help="预览整项目清除，不删除资料")
+    clear_preview.add_argument("project_id")
+    clear = project_sub.add_parser("clear", help="按预览摘要清除本目录管理的整个项目")
+    clear.add_argument("project_id")
+    clear.add_argument("--request-id", required=True, help="规范 UUID；重复执行同一请求不重复删除")
+    clear.add_argument("--preview-sha256", required=True)
+    clear_resume = project_sub.add_parser("clear-resume", help="恢复中断的整项目清除")
+    clear_resume.add_argument("request_id")
+    clear_status = project_sub.add_parser("clear-status", help="读取清除状态，不打开项目数据库")
+    clear_status.add_argument("--request-id")
+    imported = commands.add_parser("import", help="按行导入指定文件或目录")
+    imported.add_argument("path", type=Path)
+    imported.add_argument("--tool", choices=["claude", "codex"], required=True)
+    imported.add_argument("--project")
+    scanned = commands.add_parser("scan", help="轮询显式来源与已导入路径，消费 spool；不调模型")
+    scanned.add_argument(
+        "--path", type=Path, action="append", default=[], help="登记持久扫描文件或目录"
+    )
+    scanned.add_argument("--tool", choices=["claude", "codex"])
+    scanned.add_argument("--project", help="登记来源的显式项目归属")
+    scanned.add_argument("--watch", action="store_true", help="持续扫描；Ctrl+C 停止")
+    scanned.add_argument("--interval", type=float, default=2, help="轮询间隔秒数，默认 2")
+    scanned.add_argument("--retry-failed", action="store_true", help="显式重试失败的 spool 提示")
+    health = commands.add_parser("health", help="本地查看覆盖缺口、模型用量与提取告警")
+    health.add_argument("--project", help="筛选项目任务与指标，日额度仍为全库")
+    health.add_argument("--day", help="模型用量日期 YYYY-MM-DD，默认当天 UTC")
+    health.add_argument("--daily-budget", type=int, default=500000, help="与 worker 使用同一日额度")
+    health.add_argument("--limit", type=int, default=50, help="各队列与覆盖缺口页长")
+    health.add_argument("--offset", type=int, default=0, help="提取任务与覆盖缺口偏移")
+    health.add_argument("--pipeline-offset", type=int, default=0, help="关联与概览队列独立偏移")
+    parsers = commands.add_parser("parser-health", help="只读查看解析类型、工具版本和未观测记录")
+    parsers.add_argument("--project")
+    parsers.add_argument("--limit", type=int, default=20)
+    parsers.add_argument("--offset", type=int, default=0)
+    parsers.add_argument("--snapshot", type=int, help="续页使用第一页面的 snapshot_id")
+    parsers.add_argument("--expected-scope-key", help="续页使用第一页面的 scope_key")
+    hook_errors = commands.add_parser("hook-errors", help="只读查看全库钩子失败报告与采集缺口")
+    hook_errors.add_argument("--project", help="验证项目存在，统计仍为全库")
+    hook_errors.add_argument("--limit", type=int, default=20)
+    hook_errors.add_argument("--offset", type=int, default=0)
+    hook_errors.add_argument("--snapshot", type=int, help="续页使用第一页面的 snapshot_id")
+    session_parent = commands.add_parser("session-parent", help="只读核对 Codex 父线程及头记录依据")
+    session_parent.add_argument("--session", type=int, required=True)
+    session_parent.add_argument("--project")
+    event_chain = commands.add_parser("event-chain", help="只读核对Claude父UUID及来源旁支")
+    event_chain.add_argument("--event", type=int, required=True)
+    event_chain.add_argument("--project")
+    versions = commands.add_parser("versions", help="分页读取文件版本与来源，不读取当前文件正文")
+    versions.add_argument("--project")
+    versions.add_argument("--path", help="精确匹配已记录的绝对路径")
+    versions.add_argument("--limit", type=int, default=50)
+    versions.add_argument("--offset", type=int, default=0)
+    version_diff = commands.add_parser(
+        "version-diff", help="只读比较同一文件两个已保存快照版本，不读取当前工作区"
+    )
+    version_diff.add_argument("before_version_id")
+    version_diff.add_argument("after_version_id")
+    version_diff.add_argument("--project", required=True)
+    version_diff.add_argument("--occurred-until", help="有效时间截止，带时区的ISO时间")
+    version_diff.add_argument("--known-until", help="当时已知截止，带时区的ISO时间")
+    version_diff.add_argument("--expected-revision", type=int)
+    hashed = commands.add_parser("hash-files", help="离线建立快照版本并计算大文件完整 SHA256")
+    hashed.add_argument("--project")
+    hashed.add_argument("--limit", type=int, default=20)
+    hashed.add_argument("--watch", action="store_true")
+    hashed.add_argument("--interval", type=float, default=2)
+    hashed.add_argument("--retry-failed", action="store_true")
+    search = commands.add_parser("search", help="原文检索，用户文本按字面量处理")
+    search.add_argument("text")
+    search.add_argument("--limit", type=int, default=20)
+    evidence = commands.add_parser("evidence", help="读取已复制进对象库的原文")
+    evidence.add_argument("event_id", type=int)
+    preview = commands.add_parser("preview", help="本地导出遮盖后的输入样例与字段，供外发授权")
+    preview.add_argument("session", type=int)
+    preview.add_argument("--output", type=Path, required=True)
+    extract = commands.add_parser("extract", help="实测计数并有界提取；需项目允许外发")
+    selection = extract.add_mutually_exclusive_group()
+    selection.add_argument("--session", type=int, help="显式处理一个会话；省略时使用持久队列")
+    selection.add_argument("--project", help="只自动处理这个项目；省略则处理所有已授权项目")
+    mode = extract.add_mutually_exclusive_group()
+    mode.add_argument("--estimate", action="store_true", help="仅实测计数和切片，不调用生成")
+    mode.add_argument(
+        "--watch", action="store_true", help="持续扫描、派生、提取、关联与概览；Ctrl+C 停止"
+    )
+    extract.add_argument("--interval", type=float, default=2, help="持续模式轮询间隔秒数")
+    extract.add_argument("--limit", type=int, default=20, help="每轮各阶段任务上限，1–200")
+    extract.add_argument(
+        "--link-limit", type=int, default=50, help="每项目每轮新关联尝试数，1–1000"
+    )
+    extract.add_argument(
+        "--extract-only", action="store_true", help="仅运行原提取队列，跳过关联和概览"
+    )
+    extract.add_argument(
+        "--retry-failed", action="store_true", help="显式重试人工失败片段，保留历史尝试"
+    )
+    extract.add_argument("--report", type=Path)
+    model_arguments(extract)
+    linked = commands.add_parser("link", help="逐对提出跨会话关系，保持候选")
+    linked.add_argument("--project", required=True)
+    linked.add_argument(
+        "--limit", type=int, default=50, help="本次新任务/重试上限，已完成缓存不占用"
+    )
+    linked.add_argument("--estimate", action="store_true", help="本地列候选对，不联网")
+    linked.add_argument(
+        "--retry-failed", action="store_true", help="本次重试已进入人工队列的失败对"
+    )
+    model_arguments(linked)
+    summarized = commands.add_parser("overview", help="从 claims 生成带标记的模型摘要")
+    summarized.add_argument("--project", required=True)
+    summarized.add_argument("--session", type=int)
+    summarized.add_argument("--output", type=Path, required=True)
+    model_arguments(summarized)
+    asked = commands.add_parser("ask", help="先检索有限原文，再生成带引用的模型解释")
+    asked.add_argument("question")
+    asked.add_argument("--project", required=True)
+    asked.add_argument("--k", type=int, default=12, help="最多读取证据条数，默认 12，1–100")
+    asked.add_argument("--max-bytes", type=int, default=4000, help="每条证据的 UTF8 字节窗口")
+    asked.add_argument("--occurred-until", help="发生截止，需明确时区")
+    asked.add_argument("--known-until", help="已知截止，需明确时区")
+    asked.add_argument("--expected-revision", type=int)
+    asked.add_argument(
+        "--retrieve-only", action="store_true", help="只读本地检索，不联网、不调用模型"
+    )
+    model_arguments(asked)
+    review = commands.add_parser("review", help="查看候选或人工确认/驳回（带乐观并发保护）")
+    review.add_argument("--claim", type=int)
+    review.add_argument("--action", choices=["confirm", "dismiss"])
+    review.add_argument("--actor")
+    review.add_argument("--expected-revision", type=int)
+    review.add_argument("--open", action="store_true", help="启动并打开本地复核界面")
+    review.add_argument("--port", type=int, default=8787)
+    review.add_argument("--web-dir", type=Path, default=Path("web/dist"))
+    served = commands.add_parser("serve", help="启动仅监听 127.0.0.1 的研究记录界面")
+    served.add_argument("--port", type=int, default=8787)
+    served.add_argument("--web-dir", type=Path, default=Path("web/dist"))
+    served.add_argument("--daily-budget", type=int, default=500000)
+    served.add_argument("--input-budget", type=int, default=128000)
+    model_connection_arguments(served)
+    served.add_argument("--open", action="store_true", help="自动打开浏览器")
+    backed = commands.add_parser("backup", help="使用 SQLite backup API 备份证据")
+    backed.add_argument("destination", type=Path)
+    derived = commands.add_parser("derive", help="从已复制的 L0 派生运行与编辑，不读当前文件")
+    derived.add_argument("--session", type=int)
+    derived.add_argument("--limit", type=int, default=100)
+    derived.add_argument("--retry-failed", action="store_true")
+    question = commands.add_parser("question", help="人工记录研究问题，保留原文；不调用模型")
+    question.add_argument("text")
+    question.add_argument("--project", required=True, help="明确项目 ID")
+    question.add_argument("--actor", default="human:本机用户", help="human:人工身份")
+    question.add_argument("--scope", nargs="+", action="extend", default=[], metavar="字段=值")
+    question.add_argument("--request-id", help="重试同一意图的 UUID；默认新建")
+    question.add_argument("--occurred-at", help="回填发生时间，需带明确时区")
+    question.add_argument("--expected-revision", type=int, help="读取版本后提交，冲突则不写入")
+    decided = commands.add_parser("decide", help="人工记录采用、暂缓、拒绝或撤回；歧义进复核")
+    decided.add_argument("action", choices=["accept", "defer", "reject", "withdraw"])
+    decided.add_argument("selector", help="现有对象的完整名称或 ID")
+    decided.add_argument("--why", required=True)
+    decided.add_argument("--project", required=True)
+    decided.add_argument("--actor", default="human:本机用户")
+    decided.add_argument("--scope", nargs="+", action="extend", default=[], metavar="字段=值")
+    decided.add_argument("--request-id")
+    decided.add_argument("--occurred-at")
+    decided.add_argument("--expected-revision", type=int)
+    choices = commands.add_parser("decision-targets", help="按字面量搜索当前项目可选对象，支持分页")
+    choices.add_argument("--project", required=True)
+    choices.add_argument("--query", default="")
+    choices.add_argument("--scope", nargs="+", action="extend", default=[], metavar="字段=值")
+    choices.add_argument("--limit", type=int, default=200)
+    choices.add_argument("--offset", type=int, default=0)
+    resolved = commands.add_parser(
+        "resolve-decision", help="人工为待复核决定选择对象，保留原动作及范围"
+    )
+    resolved.add_argument("claim", type=int)
+    resolved.add_argument("--target", required=True)
+    resolved.add_argument("--actor", default="human:本机用户")
+    resolved.add_argument("--request-id")
+    resolved.add_argument("--expected-revision", type=int, required=True)
+    contextual = commands.add_parser("context", help="读取项目状态卡；不调用模型、不修改记录")
+    contextual.add_argument("--project", required=True)
+    contextual.add_argument("--scope", nargs="+", action="extend", default=[], metavar="字段=值")
+    contextual.add_argument("--budget", type=int, default=2000)
+    contextual.add_argument("--limit", type=int, default=20)
+    contextual.add_argument("--offset", type=int, default=0)
+    contextual.add_argument("--occurred-until")
+    contextual.add_argument("--known-until")
+    mcp = commands.add_parser("mcp", help="启动指定项目的只读 stdio MCP，不打开网络端口")
+    mcp.add_argument("--project", required=True)
+    for command in (contextual, mcp):
+        command.add_argument(
+            "--encoding", choices=["cl100k_base", "o200k_base"], default="cl100k_base"
+        )
+        command.add_argument("--tokenizer-dir", type=Path)
+    return cli
+
+
+def run(args: argparse.Namespace, store: Store) -> object:
+    if args.command == "version-diff":
+        from rg.query.version_diff import query
+
+        return query(
+            store,
+            args.project,
+            {
+                key: getattr(args, key)
+                for key in (
+                    "before_version_id",
+                    "after_version_id",
+                    "occurred_until",
+                    "known_until",
+                    "expected_revision",
+                )
+                if getattr(args, key) is not None
+            },
+        )
+    if args.command in {"graph", "l1-graph"}:
+        if args.command == "l1-graph":
+            from rg.query.l1 import query
+        else:
+            from rg.query.graph import query
+
+        values = {
+            key: getattr(args, key)
+            for key in (
+                "collection",
+                "limit",
+                "offset",
+                "known_until",
+                "occurred_until",
+                "expected_revision",
+            )
+            if getattr(args, key) is not None
+        }
+        scope = parse_scope(args.scope)
+        if scope is not None:
+            values["scope"] = scope
+        return query(store, args.project, values)
+    if args.command == "export":
+        from rg.export.package import write
+
+        values = {
+            "project_id": args.project,
+            "include_evidence": args.include_evidence,
+            "redact_patterns": args.redact_pattern,
+        }
+        for key in ("occurred_until", "known_until", "expected_revision"):
+            if getattr(args, key) is not None:
+                values[key] = getattr(args, key)
+        scope = parse_scope(args.scope)
+        if scope is not None:
+            values["scope"] = scope
+        return write(store, values, args.output)
+    if args.command == "record-run":
+        from rg.record.manifest import record
+
+        return record(store, args.project, args.manifest_body)
+    if args.command == "run-evidence":
+        from rg.mcp.tools import ToolService
+
+        values = {
+            key: getattr(args, key)
+            for key in (
+                "limit",
+                "offset",
+                "io_offset",
+                "manifest_id",
+                "known_until",
+                "occurred_until",
+                "expected_revision",
+            )
+            if getattr(args, key) is not None
+        }
+        scope = parse_scope(args.scope)
+        if scope is not None:
+            values["scope"] = scope
+        return ToolService(store, args.project).call(
+            "research.evidence", values | {"run_id": args.run}
+        )["content"][0]["text"]
+    if args.command == "client-pack":
+        from rg.clients.package import package
+
+        return package(store, args.project, args.output, args.encoding)
+    if args.command == "client-record":
+        from rg.clients.record import record
+
+        return record(store, args.project, args.kind, args.client_body)
+    if args.command == "context":
+        from rg.mcp.tools import ToolService
+
+        values = {"budget": args.budget, "limit": args.limit, "offset": args.offset}
+        scope = parse_scope(args.scope)
+        if scope is not None:
+            values["scope"] = scope
+        for key in ("occurred_until", "known_until"):
+            if getattr(args, key) is not None:
+                values[key] = getattr(args, key)
+        service = ToolService(store, args.project, args.encoding, args.tokenizer_dir)
+        return service.call("research.context", values)["content"][0]["text"]
+    if args.command in {"decide", "resolve-decision"}:
+        import uuid
+
+        from rg.record.decide import decide
+        from rg.record.resolve import resolve
+
+        body = {
+            "actor": args.actor,
+            "request_id": args.request_id or str(uuid.uuid4()),
+            "expected_revision": args.expected_revision
+            if args.expected_revision is not None
+            else store.revision(),
+        }
+        if args.command == "resolve-decision":
+            return resolve(store, args.claim, body | {"target_id": args.target})
+        return decide(
+            store,
+            body
+            | {
+                "project_id": args.project,
+                "selector": args.selector,
+                "action": args.action,
+                "why": args.why,
+                "scope": parse_scope(args.scope),
+                "occurred_at": args.occurred_at,
+            },
+        )
+    if args.command == "decision-targets":
+        from rg.record.targets import targets
+        from rg.store.database import dumps
+
+        values = {
+            "project": args.project,
+            "q": args.query,
+            "limit": str(args.limit),
+            "offset": str(args.offset),
+        }
+        scope = parse_scope(args.scope)
+        if scope is not None:
+            values["scope"] = dumps(scope)
+        return targets(store, values)
+    if args.command == "question":
+        import uuid
+
+        from rg.record.question import question
+
+        return question(
+            store,
+            {
+                "project_id": args.project,
+                "text": args.text,
+                "actor": args.actor,
+                "scope": parse_scope(args.scope),
+                "request_id": args.request_id or str(uuid.uuid4()),
+                "occurred_at": args.occurred_at,
+                "expected_revision": (
+                    args.expected_revision
+                    if args.expected_revision is not None
+                    else store.revision()
+                ),
+            },
+        )
+    if args.command == "derive":
+        from rg.derive.worker import derive
+
+        return derive(store, args.limit, args.session, args.retry_failed)
+    if args.command == "serve" or (args.command == "review" and args.open):
+        data_root = store.root
+        store.close()
+        return _serve(args, data_root)
+    if args.command == "init":
+        from rg.snapshot.config import examples, export_registry
+
+        export_registry(store)
+        output = store.root / "hook-examples"
+        if not output.exists():
+            examples(store, output)
+        return {
+            "data_dir": str(store.root),
+            "schema_version": store.db.execute("PRAGMA user_version").fetchone()[0],
+            "hook_examples": str(output),
+            "hooks_installed": False,
+        }
+    if args.command == "hook-config":
+        from rg.snapshot.config import examples
+
+        return examples(store, args.output)
+    if args.command == "snapshot":
+        from rg.snapshot.cli import snapshot
+
+        return snapshot(store, args.project, args.root, args.benchmark)
+    if args.command == "project":
+        if args.project_command == "add":
+            from rg.snapshot.config import export_registry
+
+            project_id = store.project(args.name, [args.root], aliases=args.alias)
+            export_registry(store)
+            return {"project_id": project_id}
+        if args.project_command == "root-add":
+            from rg.snapshot.config import export_registry
+            from rg.store.roots import register
+
+            result = register(store, args.project, args.path, args.kind)
+            export_registry(store)
+            return result
+        if args.project_command == "roots":
+            from rg.store.roots import listing
+
+            return listing(store, args.project, args.limit, args.offset, args.expected_revision)
+        from rg.store.privacy import gate, read, update
+
+        if args.project_command == "privacy":
+            if args.patterns_file is None:
+                if args.actor is not None or args.expected_revision is not None:
+                    raise ValueError("保存参数需与 --patterns-file 一起使用")
+                with store.snapshot():
+                    return read(store, args.project_id).metadata(store)
+            return update(
+                store,
+                {
+                    "project_id": args.project_id,
+                    "patterns": json.loads(args.patterns_file.read_text(encoding="utf-8")),
+                    "actor": args.actor,
+                    "expected_revision": args.expected_revision,
+                },
+            )
+        with gate(store, args.project_id):
+            read(store, args.project_id)
+            preview = store.db.execute(
+                "SELECT 1 FROM remote_previews WHERE project_id = ? AND preview_sha256 = ?",
+                (args.project_id, args.ack_preview),
+            ).fetchone()
+            if not preview:
+                raise ValueError("必须先运行 preview，再用该预览的摘要明确授权")
+            store.db.execute(
+                "UPDATE projects SET remote_model_allowed = 1 WHERE project_id = ?",
+                (args.project_id,),
+            )
+        return {"project_id": args.project_id, "remote_model_allowed": True}
+    if args.command == "import":
+        paths = sorted(args.path.rglob("*.jsonl")) if args.path.is_dir() else [args.path]
+        results = [scan_file(store, path, args.tool, args.project) for path in paths]
+        return {"files": len(paths), "events": sum(x.get("events", 0) for x in results)}
+    if args.command == "scan":
+        from rg.ingest.sources import register
+        from rg.ingest.watch import cycle, watch
+        from rg.store.database import dumps
+
+        if args.path and not args.tool:
+            raise ValueError("登记扫描来源必须指定 --tool")
+        if not args.path and (args.tool or args.project):
+            raise ValueError("--tool/--project 必须与 --path 一起指定")
+        for path in args.path:
+            register(store, path, args.tool, args.project)
+        if args.watch:
+            try:
+                for result in watch(store, args.interval, args.retry_failed):
+                    print(dumps(result), flush=True)
+            except KeyboardInterrupt:
+                return {"watch": "stopped"}
+        return cycle(store, args.retry_failed)
+    if args.command == "health":
+        if not 0 <= args.pipeline_offset <= 2147483647:
+            raise ValueError("流水线偏移超出范围")
+        mark_deleted(store)
+        return store.health(
+            args.project, args.day, args.daily_budget, args.limit, args.offset, args.pipeline_offset
+        )
+    if args.command == "parser-health":
+        from rg.query.parsers import query
+
+        return query(store, {
+            key: str(getattr(args, key))
+            for key in ("project", "limit", "offset", "snapshot", "expected_scope_key")
+            if getattr(args, key) is not None
+        })
+    if args.command == "hook-errors":
+        from rg.query.hook_errors import query
+
+        return query(store, {
+            key: str(getattr(args, key))
+            for key in ("project", "limit", "offset", "snapshot")
+            if getattr(args, key) is not None
+        })
+    if args.command == "event-chain":
+        from rg.query.event_chain import query
+
+        return query(store, {"event": str(args.event)} | (
+            {"project": args.project} if args.project is not None else {}
+        ))
+    if args.command == "session-parent":
+        from rg.query.session_parent import query
+
+        return query(store, {"session": str(args.session)} | (
+            {"project": args.project} if args.project is not None else {}
+        ))
+    if args.command == "versions":
+        from rg.artifacts.views import versions
+
+        return versions(
+            store,
+            {
+                key: str(getattr(args, key))
+                for key in ("project", "path", "limit", "offset")
+                if getattr(args, key) is not None
+            },
+        )
+    if args.command == "hash-files":
+        import math
+        import time
+
+        from rg.api.views import project_exists
+        from rg.artifacts.worker import Worker as ArtifactWorker
+        from rg.store.database import dumps
+        from rg.store.locking import TaskBusy
+
+        project_exists(store, args.project)
+        if not math.isfinite(args.interval) or args.interval <= 0:
+            raise ValueError("完整摘要轮询间隔必须为有限正数")
+        worker = ArtifactWorker(store, args.project)
+        if not args.watch:
+            return worker.run(args.limit, args.retry_failed)
+        first = True
+        try:
+            while True:
+                try:
+                    result = worker.run(args.limit, args.retry_failed and first)
+                    first = False
+                except TaskBusy:
+                    result = {"busy": 1}
+                print(dumps(result), flush=True)
+                time.sleep(args.interval)
+        except KeyboardInterrupt:
+            return {"watch": "stopped"}
+    if args.command == "search":
+        return store.search(args.text, args.limit)
+    if args.command == "evidence":
+        return {"event_id": args.event_id, "raw": store.raw(args.event_id).decode("utf-8")}
+    if args.command == "preview":
+        from rg.store.database import dumps, now
+        from rg.store.objects import atomic_write, digest
+
+        session = store.db.execute(
+            "SELECT project_id FROM sessions WHERE session_pk = ?", (args.session,)
+        ).fetchone()
+        if not session or not session[0]:
+            raise ValueError("会话没有明确项目归属")
+        from rg.store.privacy import gate, read
+
+        policy = read(store, session[0])
+        rows = store.db.execute(
+            "SELECT event_id, kind FROM raw_events WHERE session_pk = ? "
+            "AND exclude_reason IS NULL ORDER BY seq LIMIT 3",
+            (args.session,),
+        ).fetchall()
+        data = dumps(
+            {
+                "project_id": session[0],
+                "privacy_policy_id": policy.identity,
+                "fields": [
+                    "event_id",
+                    "kind",
+                    "raw_windows",
+                    "byte_start",
+                    "byte_end",
+                    "slim",
+                    "working_set",
+                    "scope",
+                ],
+                "samples": [
+                    {
+                        "event_id": r[0],
+                        "kind": r[1],
+                        "redacted_raw": redact(store.raw(r[0]), policy.patterns).data.decode()[
+                            :1500
+                        ],
+                    }
+                    for r in rows
+                ],
+            }
+        ).encode()
+        with gate(store, policy.project), store.transaction():
+            policy.check(store)
+            atomic_write(args.output, data)
+            sha = digest(data)
+            store.db.execute(
+                "INSERT OR IGNORE INTO remote_previews VALUES (?, ?, ?)", (session[0], sha, now())
+            )
+        return {"preview": str(args.output), "preview_sha256": sha}
+    if args.command == "link" and args.estimate:
+        from rg.extract.linker import pairs
+
+        candidates = pairs(store, args.project, args.limit, parse_scope(args.scope))
+        return {
+            "pairs": [
+                {"pair_id": p.pair_id, "cards": p.cards, "basis": p.basis} for p in candidates
+            ],
+            "generation_calls": 0,
+        }
+    if args.command == "ask" and args.retrieve_only:
+        from rg.query.context import wrap
+        from rg.query.retrieval import retrieve
+
+        return wrap(
+            retrieve(store, args.project, args.question, args.k, _ask_values(args), args.max_bytes)
+        )
+    if args.command in {"extract", "link", "overview", "ask"}:
+        scope = parse_scope(args.scope)
+        if args.command == "ask" and args.daily_budget < 1:
+            raise ValueError("每日额度须为正整数")
+        if args.command == "extract":
+            from rg.extract.queue import Queue
+
+            Queue.validate_limit(args.limit)
+            if not 1 <= args.link_limit <= 1000:
+                raise ValueError("每项目新关联尝试数需为 1 到 1000")
+            if args.watch and args.session is not None:
+                raise ValueError("持续提取请按项目或全库运行，不能指定单个会话")
+            if args.report and args.session is None:
+                raise ValueError("报告必须指定单个会话")
+            if args.daily_budget < 1:
+                raise ValueError("每日额度须为正整数")
+            if args.watch:
+                import math
+
+                if not math.isfinite(args.interval) or args.interval <= 0:
+                    raise ValueError("轮询间隔必须为有限正数")
+        if not args.base_url or not args.model:
+            raise ValueError("必须提供 base URL 和模型名称")
+        provider = Provider(args.base_url, args.model, load_key(args.key_file))
+        try:
+            worker = Worker(
+                store, provider, input_budget=args.input_budget, daily_budget=args.daily_budget
+            )
+            if args.command == "ask":
+                from rg.extract.qa import ask
+
+                return ask(
+                    worker, args.project, args.question, args.k, _ask_values(args), args.max_bytes
+                )
+            if args.command == "link":
+                from rg.extract.linker import link
+
+                return link(worker, args.project, args.limit, scope, args.retry_failed)
+            if args.command == "overview":
+                from rg.extract.overview import overview
+
+                return overview(worker, args.project, args.output, args.session, scope)
+            if args.estimate:
+                from rg.extract.estimate import estimate_batch, estimate_session
+
+                if args.session is not None:
+                    return estimate_session(worker, args.session)
+                return estimate_batch(worker, args.project, args.limit)
+            if args.session is None:
+                from rg.extract.pipeline import Pipeline
+
+                queue = (
+                    Queue(worker, args.project, scope)
+                    if args.extract_only
+                    else Pipeline(worker, args.project, scope, args.link_limit)
+                )
+                if args.watch:
+                    from rg.store.database import dumps
+
+                    try:
+                        for result in queue.watch(args.interval, args.limit, args.retry_failed):
+                            print(dumps(result), flush=True)
+                    except KeyboardInterrupt:
+                        return {"watch": "stopped"}
+                return queue.run(args.limit, args.retry_failed)
+            result = worker.process(args.session, scope, args.retry_failed)
+            if args.report:
+                report(store, args.session, args.report)
+            return result
+        finally:
+            provider.close()
+    if args.command == "review":
+        if args.action:
+            if args.claim is None or args.expected_revision is None or not args.actor:
+                raise ValueError("复核必须提供 claim、actor 和 expected-revision")
+            return {
+                "revision": store.review(
+                    args.claim, args.action, args.actor, args.expected_revision
+                )
+            }
+        return {
+            "revision": store.revision(),
+            "claims": [
+                {**dict(r), "effective_state": store.claim_state(r["claim_id"])}
+                for r in store.db.execute("SELECT * FROM claims ORDER BY claim_id LIMIT 100")
+            ],
+        }
+    if args.command == "backup":
+        return backup(store, args.destination)
+    raise ValueError("未知命令")
+
+
+def _ask_values(args: argparse.Namespace) -> dict:
+    values = {
+        key: getattr(args, key) for key in ("occurred_until", "known_until", "expected_revision")
+    }
+    scope = parse_scope(args.scope)
+    return values | ({"scope": scope} if scope is not None else {})
+
+
+def _serve(args: argparse.Namespace, data_root: Path) -> dict:
+    from rg.api.qa import QAConfig
+    from rg.api.server import serve
+
+    base_url = getattr(args, "base_url", os.environ.get("RG_BASE_URL"))
+    model = getattr(args, "model", os.environ.get("RG_MODEL"))
+    key_file = getattr(args, "key_file", None)
+    config = None
+    if base_url or model or key_file:
+        if not base_url or not model:
+            raise ValueError("界面问答需同时配置 base URL 和模型名")
+        config = QAConfig(
+            base_url, model, load_key(key_file), getattr(args, "input_budget", 128000)
+        )
+    serve(
+        data_root,
+        args.web_dir,
+        args.port,
+        getattr(args, "daily_budget", 500000),
+        args.open,
+        initial_view="review" if args.command == "review" else "questions",
+        qa_config=config,
+    )
+    return {"server": "stopped"}
+
+
+def main() -> None:
+    cli = parser()
+    args = cli.parse_args()
+    store = None
+    try:
+        if args.command == "serve" or (args.command == "review" and args.open):
+            # 服务仅在请求期间打开数据库；启动时的连接不能永久占住清除。
+            if not (args.data_dir / ".clear-active.json").exists():
+                Store(args.data_dir).close()
+            print(json.dumps(_serve(args, args.data_dir), ensure_ascii=False))
+            return
+        if args.command == "project" and args.project_command.startswith("clear"):
+            from rg.store.clear import execute, preview, resume, status
+
+            if args.project_command == "clear-preview":
+                result = preview(args.data_dir, args.project_id)
+            elif args.project_command == "clear":
+                result = execute(
+                    args.data_dir, args.project_id, args.request_id, args.preview_sha256
+                )
+            elif args.project_command == "clear-resume":
+                result = resume(args.data_dir, args.request_id)
+            else:
+                result = status(args.data_dir, args.request_id)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return
+        if args.command == "verify-export":
+            from rg.export.package import verify
+
+            print(json.dumps(verify(args.input), ensure_ascii=False, indent=2))
+            return
+        if args.command == "record-run":
+            from rg.record.manifest_schema import read
+
+            if args.input == "-":
+                args.manifest_body = read(sys.stdin.buffer)
+            else:
+                with Path(args.input).open("rb") as stream:
+                    args.manifest_body = read(stream)
+        if args.command == "client-record":
+            from rg.clients.record import read_request
+
+            if args.input == "-":
+                args.client_body = read_request(sys.stdin.buffer, args.kind)
+            else:
+                with Path(args.input).open("rb") as stream:
+                    args.client_body = read_request(stream, args.kind)
+        store = Store(
+            args.data_dir,
+            readonly=args.command
+            in {
+                "mcp",
+                "parser-health",
+                "hook-errors",
+                "session-parent",
+                "event-chain",
+                "context",
+                "client-pack",
+                "versions",
+                "version-diff",
+                "run-evidence",
+                "export",
+                "graph",
+                "l1-graph",
+            }
+            or (args.command == "ask" and args.retrieve_only)
+            or (args.command == "project" and args.project_command == "roots")
+            or (
+                args.command == "project"
+                and args.project_command == "privacy"
+                and args.patterns_file is None
+            ),
+        )
+        if args.command == "mcp":
+            from rg.mcp.server import serve
+            from rg.mcp.tools import ToolService
+
+            # 项目校验在读取协议前完成；启动错误只写 stderr。
+            from rg.query.reader import Reader
+
+            Reader(store, args.project, {})
+            serve(
+                ToolService(store, args.project, args.encoding, args.tokenizer_dir),
+                sys.stdin.buffer,
+                sys.stdout.buffer,
+            )
+            return
+        result = run(args, store)
+        print(
+            result
+            if args.command in {"context", "ask", "run-evidence"}
+            else json.dumps(result, ensure_ascii=False, indent=2)
+        )
+    except (ValueError, RuntimeError, OSError, sqlite3.Error) as error:
+        cli.exit(1, f"错误：{error}\n")
+    finally:
+        if store is not None:
+            store.close()

@@ -1,0 +1,10 @@
+{"timestamp":"2026-10-01T00:00:00Z","type":"session_meta","payload":{"id":"synthetic-codex","cwd":"/workspace/demo","cli_version":"synthetic"}}
+{"type":"event_msg","payload":{"type":"user_message","message":"采用方法甲。"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"采用方法甲。"}]}}
+{"type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c1","arguments":"{\"cmd\":\"python analysis.py\"}"}}
+{"type":"response_item","payload":{"type":"function_call_output","call_id":"c1","output":"Process exited with code 0\n42"}}
+{"type":"compacted","payload":{"message":"","encrypted_content":"synthetic-opaque","replacement_history":[{"role":"user","content":"采用方法甲。"}]}}
+{"type":"response_item","payload":{"type":"reasoning","encrypted_content":"synthetic-opaque"}}
+{"type":"response_item","payload":{"type":"function_call","name":"research.context","call_id":"rg1","arguments":"{}"}}
+{"type":"response_item","payload":{"type":"function_call_output","call_id":"rg1","output":"这是 ResearchGraph 返回的候选，不作证据。"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<rg-context v=\"1\" id=\"demo\">当前采用方法乙</rg-context>先暂缓方法甲。"}]}}
