@@ -470,3 +470,17 @@
 - 前端实看后补小屏页面内项目选择；父 agent 再实看桌面默认/隐私、390 完整/隐私四图，没有横向溢出。最终 9 文件/4 图共 13 项冻结全部 OK，SHA256 900aa7483e10e874b62b056ad5f1ffe40ef1596e29900b0b13ca1eb7592d7056；子 agent 已停止编辑，再统一提交。
 - 下一步：只提交允许清单的公开源码/中文记录/合成测试，维护草稿 PR，核对新 HEAD 的推送/PR 两种 CI 和恢复包独立还原。后续继续完整语义图/影响传播、项目临床配置与隐私清除、实际 I/O/真实工具和规模验收；note 类型、Atlas 正式参考和完整 M0–M4 门槛保留。
 - 提交前允许清单：baseline_tracked_files=287、allowed_changed_files=21、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=13；git diff --cached --check 退出码 0。只提交公开源码、中文记录和合成案例；真实资料、密钥、原件、数据库、下载 ZIP、截图与缓存继续忽略。
+
+
+## 2026-10-10 · 完整 L2 语义图与折叠历史保留
+
+- 任务：继续 §2/5/9/10/15 A 与原设计 v1 §7。开始核对末尾进度、对应章节和决定；a6cc282 基线恢复包 SHA256 58116222b2d85eaabc8b7ecdd171bc62473ce14e2a1cce48ff918a1d79ce80c8，300 个跟踪文件独立恢复字节一致。按用户既有授权继续前端子 agent；整体 M0–M4 仍未标完成。
+- 改动的文件：新增 query/graph.py、api/graph.py、tests/golden/test_semantic_graph.py、tests/graph_browser.py 和两份中文验收。修改 CLI、API、export/build 与 privacy、浏览器合成入口、model/GraphView/styles/语义单测/新图浏览器专项，以及 README、需求落实、决定与本文件；未改源规格、解析器、库结构或钩子。
+- 行为：完整 L2 图共用 Reader 与读快照，保留全部内容版本、审核、更正、独立状态、循环、明确范围、原关系/端口及所有证据页。节点用规范身份/范围摘要；同范围版本缺失不借用其它条件/项目，异常方向和汇合保留并标无效，多版本不按 ID 宣称当前内容。六集合 CLI/HTTP 分页固定双截止/修订，改动返回409；历史 ZIP 同源记录 semantic。查询不读原件/当前文件、不联网或写缓存；L1完整性仍false。
+- 前端：比较未选只表示比较，主动显示内容版本不改变事实；过程组保留撤回/阴性/多scope/候选/全部内外关系与证据，展开恢复原ID和位置。旧更正退出有效版本/关系/汇合/采用/证据集合，历史与原文入口仍保留；partial/隐藏候选/缺端点继续拒绝折叠。
+- uv sync --locked：Resolved 28 packages in 12ms、Checked 27 packages in 60ms；rg --help 退出0。语义图与导出专项：59 passed in 20.62s；最终 uv run pytest -q：703 passed in 259.38s (0:04:19)；uv run pytest tests/golden -q：656 passed in 245.84s (0:04:05)。两者并行，不作性能基准；ruff：All checks passed!；pyright：0 errors, 0 warnings, 0 informations；git diff --check 无输出/退出0。
+- 初次失败与修复：测试空scope不合法、HTTP构造及静态页缺失修正；图seed补schema必填结构后真实人工更正通过，不放宽后端。初轮全部702通过/固定654通过1失败，暴露随机UUID数字尾段被误作手机号；只保护应用结构UUID，文字仍遮盖，自定义规则涉及UUID仍拒绝，临床字段不借例外。最终703/656替代早期结果。前端选择布局同步循环与新意图选择清空已修，虚拟fixture来源避免物理日志路径8误增9。
+- uv build --wheel：114文件/109源码资源全匹配，缺失/差异/实际密钥/私有文件均0。隔离安装109资源逐字节一致，模块来自site-packages；删除原库目录后仍读备份三节点/九断言的完整图，多个内容版本未选、循环和compare保留、accepted/refuted独立。真实CLI/HTTP同结果、401/409/export200通过，库不变/model_attempts=0；删除备份后离线ZIP校验十成员通过且不创建库。
+- 前端最终：pnpm test 9 files/79 passed/872ms；build 212 modules/1.15s；pnpm test:browser 74 passed/57.4s，原69保留；五专项14.2s，tsc退出0。父agent实看完整/聚焦桌面及390原边/重要历史四图，无横向溢出。六文件/四图共十项冻结全OK，SHA256 8a25bbfb86648d4d29f8e0ecdf88ea46d8861f746ac445931543c4fc3792ffd4；子agent已停止编辑。
+- 下一步：按允许清单提交、更新现有草稿PR，核对新HEAD的推送/PR两种CI及独立恢复包后结束本任务。影响传播未选比较合同已提问，尚无回复，不猜规则或写提醒；后续继续完整L1输入输出、项目临床配置/隐私清除、规模/真实工具与Atlas正式参考门槛，note/propose_note约定及完整M0–M4验收继续保留。
+- 提交前允许清单：baseline=a6cc282、staged_files=20、tracked_files=307、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=10；暂存差异检查退出0。只提交公开源码、中文说明和合成测试；凭据、真实资料、数据库、ZIP、截图及缓存不入仓库。

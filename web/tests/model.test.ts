@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adoption, entityVersions, evidenceState, foldGroup, graphNodeId, joinRecords, projectGraph, relatedChildren, scopeKey, timeline } from '../src/model';
+import { adoption, entityVersions, evidenceState, foldGroup, foldProjection, graphNodeId, isSemanticEdge, joinRecords, projectGraph, relatedChildren, scopeKey, timeline } from '../src/model';
 import type { SemanticEdge } from '../src/model';
 import type { Claim } from '../src/types';
 
@@ -81,24 +81,106 @@ describe('审核、采用、证据和范围独立', () => {
     expect(projected.unresolvedClaimIds).toEqual([8]);
     expect(() => foldGroup(projected.entities.map(graphNodeId), projected.edges, [a, b, relation], projected.unresolvedClaimIds.length === 0)).toThrow('完整研究图');
   });
+  it('图保留同范围所有有效内容版本，不按确认/入库顺序推定一个当前版本', () => {
+    const first = claim(1, { entity_id: 'shared', effective_state: 'confirmed' });
+    const second = claim(2, { entity_id: 'shared', effective_state: 'confirmed' });
+    const candidate = claim(3, { entity_id: 'shared' });
+    const graph = projectGraph([second, candidate, first]);
+    expect(graph.entities).toHaveLength(1);
+    expect(graph.versions.get(graphNodeId(first))?.map(item => item.claim_id)).toEqual([2, 3, 1]);
+    expect(projectGraph([second, candidate, first], false).versions.get(graphNodeId(first))?.map(item => item.claim_id)).toEqual([2, 1]);
+  });
+  it('已有替代版的旧确认不成为有效内容、关系、采用或汇合，原历史仍可查', () => {
+    const nodes = [claim(1, { effective_state: 'confirmed' }), claim(2, { effective_state: 'confirmed' })];
+    const oldEntity = { ...nodes[0], claim_id: 3, replacement_ids: [1] };
+    const relation = claim(10, { claim_type: 'relation', entity_id: null, effective_state: 'confirmed', replacement_ids: [11], payload: { claim_type: 'relation', source: 'e1', target: 'e2', relation: 'part_of' } });
+    const join = claim(12, { claim_type: 'join_ports', effective_state: 'confirmed', replacement_ids: [13], payload: { claim_type: 'join_ports', target: 'e2', semantics: 'all_required', inputs: [{ port: '旧端口', ref: 'e1' }] } });
+    const oldDecision = { ...decision(20, 'accepted'), replacement_ids: [21] };
+    const oldEvidence = claim(30, { claim_type: 'evidence_event', effective_state: 'confirmed', replacement_ids: [31], payload: { claim_type: 'evidence_event', target: 'e2', state: 'supported' } });
+    const history = [...nodes, oldEntity, relation, join, oldDecision, oldEvidence];
+    const original = JSON.stringify(history);
+    const graph = projectGraph(history);
+    expect(graph.versions.get(graphNodeId(nodes[0]))?.map(item => item.claim_id)).toEqual([1]);
+    expect(entityVersions(history).map(item => item.claim_id)).toEqual([1, 2]);
+    expect(graph.edges).toEqual([]);
+    expect(graph.unresolvedClaimIds).toEqual([]);
+    expect(joinRecords(history, 'e2', nodes[1].scope)).toEqual([]);
+    expect(relatedChildren(history, 'e2', nodes[1].scope)).toEqual([]);
+    expect(adoption(history, 'approach', nodes[0].scope)).toBe('unknown');
+    expect(evidenceState(history, 'e2', nodes[1].scope)).toBe('unassessed');
+    expect(timeline(history, 'approach').map(item => item.claim_id)).toEqual([20]);
+    expect(JSON.stringify(history)).toBe(original);
+  });
+  it('比较只把选中端口标成使用，共同输入和综合证据分别保留各端口', () => {
+    const nodes = [claim(1), claim(2), claim(3)];
+    const compare = claim(10, { claim_type: 'join_ports', entity_id: null, payload: { claim_type: 'join_ports', target: 'e3', semantics: 'compare_then_select', selected: 'e1', inputs: [{ port: '甲', ref: 'e1' }, { port: '乙', ref: 'e2' }] } });
+    const projected = projectGraph([...nodes, compare]);
+    expect(projected.edges.map(edge => [edge.role, edge.targetPort, isSemanticEdge(edge)])).toEqual([['selected_input', '甲', true], ['compared_input', '乙', false]]);
+    expect(projected.edges.every(edge => edge.claimId === 10 && edge.evidenceIds?.includes(10))).toBe(true);
+    for (const semantics of ['all_required', 'evidence_synthesis']) {
+      const graph = projectGraph([...nodes, { ...compare, payload: { ...compare.payload, semantics, selected: null } }]);
+      expect(graph.edges.filter(isSemanticEdge)).toHaveLength(2);
+      expect(graph.edges.map(edge => edge.joinSemantics)).toEqual([semantics, semantics]);
+    }
+    expect(projectGraph([...nodes, { ...compare, payload: { ...compare.payload, selected: 'missing' } }]).unresolvedClaimIds).toEqual([10]);
+  });
 });
 describe('纯视图过程组保持证据', () => {
   const nodes = [claim(1), claim(2), claim(3), claim(4)];
   const nodeIds = nodes.map(graphNodeId);
   const edges: SemanticEdge[] = [0, 1, 2].map(index => ({ id: `edge-${index}`, source: nodeIds[index], target: nodeIds[index + 1], claimId: index + 10, relation: 'supports' }));
-  const middleEvidence = claim(11, { claim_type: 'relation', entity_id: null });
-  it('单入口单出口组保留所有内部节点与关系 span IDs，原对象不变', () => {
+  const relations = [10, 11, 12, 20].map(id => claim(id, { claim_type: 'relation', entity_id: null }));
+  const records = [...nodes, ...relations];
+  it('单入口单出口组保留所有内部及边界原关系和证据，原对象不变', () => {
     const original = JSON.stringify({ nodes, edges });
-    expect(foldGroup([nodeIds[1], nodeIds[2]], edges, [...nodes, middleEvidence]).evidenceIds).toEqual([2, 3, 11]);
+    const folded = foldGroup([nodeIds[1], nodeIds[2]], edges, records);
+    expect(folded.evidenceIds).toEqual([2, 3, 10, 11, 12]);
+    expect(folded.internalEdges).toEqual([edges[1]]);
+    expect(folded.boundaryEdges).toEqual([edges[0], edges[2]]);
+    expect(foldProjection(edges, folded).map(edge => [edge.id, edge.claimId, edge.relation])).toEqual([['edge-0', 10, 'supports'], ['edge-2', 12, 'supports']]);
+    expect(foldProjection(edges, null)).toEqual(edges);
     expect(JSON.stringify({ nodes, edges })).toBe(original);
     expect(edges.filter(edge => ![nodeIds[1], nodeIds[2]].includes(edge.source) || ![nodeIds[1], nodeIds[2]].includes(edge.target)).map(edge => edge.claimId)).toEqual([10, 12]);
   });
   it('多入口、无出口、断开的组一律拒绝；same_topic 不成为语义入口', () => {
-    expect(() => foldGroup([nodeIds[1], nodeIds[2]], edges, nodes, false)).toThrow('完整研究图');
-    expect(() => foldGroup([nodeIds[1], nodeIds[2]], [...edges, { id: 'extra', source: nodeIds[0], target: nodeIds[2], claimId: 20, relation: 'supports' }], nodes)).toThrow('单入口单出口');
-    expect(() => foldGroup([nodeIds[1], nodeIds[2]], edges.slice(0, 2), nodes)).toThrow('单入口单出口');
-    expect(() => foldGroup([nodeIds[1], nodeIds[2]], edges.filter(edge => edge.claimId !== 11), nodes)).toThrow('连通');
+    expect(() => foldGroup([nodeIds[1], nodeIds[2]], edges, records, false)).toThrow('完整研究图');
+    expect(() => foldGroup([nodeIds[1], nodeIds[2]], [...edges, { id: 'extra', source: nodeIds[0], target: nodeIds[2], claimId: 20, relation: 'supports' }], records)).toThrow('单入口单出口');
+    expect(() => foldGroup([nodeIds[1], nodeIds[2]], edges.slice(0, 2), records)).toThrow('单入口单出口');
+    expect(() => foldGroup([nodeIds[1], nodeIds[2]], edges.filter(edge => edge.claimId !== 11), records)).toThrow('连通');
     const topic = { id: 'topic', source: nodeIds[0], target: nodeIds[2], claimId: 20, relation: 'same_topic' };
-    expect(foldGroup([nodeIds[1], nodeIds[2]], [...edges, topic], nodes).members).toEqual([nodeIds[1], nodeIds[2]]);
+    expect(foldGroup([nodeIds[1], nodeIds[2]], [...edges, topic], records).members).toEqual([nodeIds[1], nodeIds[2]]);
+  });
+  it('撤回、阴性证据、范围改变与未处理审核连同其原证据在组内保留', () => {
+    const withdrawal = { ...decision(30, 'withdrawn'), entity_id: 'e2', payload: { claim_type: 'decision_event', target: 'e2', action: 'withdrawn' } };
+    const negative = claim(31, { claim_type: 'evidence_event', entity_id: null, effective_state: 'confirmed', payload: { claim_type: 'evidence_event', target: 'e3', state: 'refuted' } });
+    const scopeChange = claim(32, { entity_id: 'e2', scope: { dataset: 'v2' } });
+    const history = [...records, withdrawal, negative, scopeChange];
+    const before = JSON.stringify(history);
+    const folded = foldGroup([nodeIds[1], nodeIds[2]], edges, history);
+    expect(folded.claimIds).toEqual(expect.arrayContaining([2, 3, 10, 11, 12, 30, 31, 32]));
+    expect(folded.evidenceIds).toEqual([2, 3, 10, 11, 12, 30, 31, 32]);
+    expect(adoption(history, 'e2', nodes[1].scope)).toBe('withdrawn');
+    expect(evidenceState(history, 'e3', nodes[2].scope)).toBe('refuted');
+    expect(JSON.stringify(history)).toBe(before);
+  });
+  it('比较和主题边跨边界仍保留原端点、端口、ID及证据，不计为共同使用', () => {
+    const compared: SemanticEdge = { id: 'compared', source: nodeIds[0], target: nodeIds[2], sourceEntity: 'e1', targetEntity: 'e3', targetPort: '备选', joinSemantics: 'compare_then_select', role: 'compared_input', semantic: false, claimId: 20, relation: 'input:备选', evidenceIds: [20] };
+    const withCompare = [...edges, compared];
+    const folded = foldGroup([nodeIds[1], nodeIds[2]], withCompare, records);
+    expect(folded.boundaryEdges).toContainEqual(compared);
+    expect(folded.evidenceIds).toContain(20);
+    const shown = foldProjection(withCompare, folded).find(edge => edge.id === 'compared')!;
+    expect(shown).toMatchObject({ sourceEntity: 'e1', targetEntity: 'e3', targetPort: '备选', claimId: 20, role: 'compared_input', evidenceIds: [20] });
+    expect(isSemanticEdge(shown)).toBe(false);
+    expect(foldProjection(withCompare, null)).toEqual(withCompare);
+  });
+  it('循环关系不删除；真实共同输入多入口与缺原记录仍拒绝折叠', () => {
+    const loop = { ...edges[1], id: 'loop', source: nodeIds[2], target: nodeIds[1], claimId: 20 };
+    expect(foldGroup([nodeIds[1], nodeIds[2]], [...edges, loop], records).internalEdges).toEqual([edges[1], loop]);
+    const secondInput = { ...loop, source: nodeIds[0], role: 'required_input' as const, semantic: true };
+    expect(() => foldGroup([nodeIds[1], nodeIds[2]], [...edges, secondInput], records)).toThrow('单入口单出口');
+    expect(() => foldGroup([nodeIds[1], nodeIds[2]], edges, nodes)).toThrow('原记录缺失');
+    const comparisonOnly = edges.map(edge => edge.claimId === 11 ? { ...edge, role: 'compared_input' as const, semantic: false } : edge);
+    expect(() => foldGroup([nodeIds[1], nodeIds[2]], comparisonOnly, records)).toThrow('连通');
   });
 });

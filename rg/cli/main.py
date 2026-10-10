@@ -56,6 +56,19 @@ def parser() -> argparse.ArgumentParser:
     )
     commands = cli.add_subparsers(dest="command", required=True)
     commands.add_parser("init", help="建立数据库；不修改用户工具配置")
+    semantic = commands.add_parser("graph", help="只读完整 L2 语义图，分页保留所有版本和端口")
+    semantic.add_argument("--project", required=True)
+    semantic.add_argument(
+        "--collection",
+        choices=["nodes", "edges", "joins", "merges", "state_events", "unresolved"],
+        default="nodes",
+    )
+    semantic.add_argument("--limit", type=int, default=20)
+    semantic.add_argument("--offset", type=int, default=0)
+    semantic.add_argument("--known-until")
+    semantic.add_argument("--occurred-until")
+    semantic.add_argument("--scope", action="append", default=[])
+    semantic.add_argument("--expected-revision", type=int)
     exported = commands.add_parser("export", help="只读导出限定双时间和范围的历史 ZIP")
     exported.add_argument("--project", required=True)
     exported.add_argument("--output", type=Path, required=True, help="新 ZIP 文件，父目录需已存在")
@@ -268,11 +281,33 @@ def parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace, store: Store) -> object:
+    if args.command == "graph":
+        from rg.query.graph import query
+
+        values = {
+            key: getattr(args, key)
+            for key in (
+                "collection",
+                "limit",
+                "offset",
+                "known_until",
+                "occurred_until",
+                "expected_revision",
+            )
+            if getattr(args, key) is not None
+        }
+        scope = parse_scope(args.scope)
+        if scope is not None:
+            values["scope"] = scope
+        return query(store, args.project, values)
     if args.command == "export":
         from rg.export.package import write
 
-        values = {"project_id": args.project, "include_evidence": args.include_evidence,
-                  "redact_patterns": args.redact_pattern}
+        values = {
+            "project_id": args.project,
+            "include_evidence": args.include_evidence,
+            "redact_patterns": args.redact_pattern,
+        }
         for key in ("occurred_until", "known_until", "expected_revision"):
             if getattr(args, key) is not None:
                 values[key] = getattr(args, key)
@@ -714,9 +749,8 @@ def main() -> None:
                     args.client_body = read_request(stream, args.kind)
         store = Store(
             args.data_dir,
-            readonly=args.command in {
-                "mcp", "context", "client-pack", "versions", "run-evidence", "export"
-            }
+            readonly=args.command
+            in {"mcp", "context", "client-pack", "versions", "run-evidence", "export", "graph"}
             or (args.command == "ask" and args.retrieve_only),
         )
         if args.command == "mcp":

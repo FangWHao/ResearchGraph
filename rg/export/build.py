@@ -6,6 +6,7 @@ from typing import Any
 
 from rg.export.privacy import Privacy
 from rg.query.artifacts import version_record
+from rg.query.graph import SemanticGraph
 from rg.query.reader import Reader, instant
 from rg.query.runs import manifests, native
 from rg.store.database import ConflictError, Store, dumps, now
@@ -214,6 +215,7 @@ def algorithms(store: Store, claims: list[dict[str, Any]], reader: Reader) -> di
                 "export/build.py",
                 "export/privacy.py",
                 "export/package.py",
+                "query/graph.py",
             )
         },
         "extraction_runs": runs,
@@ -284,6 +286,7 @@ def graph(reader: Reader, claims: list[dict[str, Any]]) -> dict[str, Any]:
         "unresolved_entity_ids": sorted(r for r in referenced if r and r not in nodes),
         "projection": False,
         "same_topic_propagates": False,
+        "semantic": SemanticGraph(reader).snapshot(),
     }
 
 

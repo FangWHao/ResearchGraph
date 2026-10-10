@@ -158,6 +158,10 @@ class Handler(BaseHTTPRequestHandler):
             return views.search(store, values)
         if path == "/api/graph":
             return views.graph(store, values.get("project", ""))
+        if path == "/api/semantic-graph":
+            from rg.api.graph import semantic
+
+            return semantic(store, values)
         if path == "/api/decision-targets":
             from rg.record.targets import targets
 

@@ -22,6 +22,14 @@ SENSITIVE = {
     "credentials",
 }
 IDENTITIES = {"source", "target", "ref", "temp_id", "selected", "replacement_ids"}
+APPLICATION_UUID_FIELDS = IDENTITIES | {
+    "project_id",
+    "entity_id",
+    "request_id",
+    "snapshot_id",
+    "run_id",
+    "manifest_id",
+}
 ASSIGNMENTS = (
     r'(?i)"(?:api[_-]?key|token|access_token|password|secret|authorization|private_key)"'
     r'\s*:\s*"(?:[^"\\]|\\.)*"',
@@ -54,6 +62,12 @@ class Privacy:
 
     def walk(self, value: Any, field: str = "") -> Any:
         if isinstance(value, str):
+            if field in APPLICATION_UUID_FIELDS and re.fullmatch(
+                r"[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}", value
+            ):
+                if any(re.search(pattern, value) for pattern in self.patterns):
+                    raise ValueError("自定义遮盖规则涉及应用 UUID 结构标识符，不能发布断裂的引用")
+                return value
             if (field.endswith("_id") or field in IDENTITIES) and re.fullmatch(
                 r"(?:(?:V:|R:))?(?:(?:l1|physical|physical-observation):)?[a-f0-9]{64}", value
             ):
