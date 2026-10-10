@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from rg.api import qa, views
 from rg.store.database import ConflictError, Store
+from rg.store.locking import TaskBusy
 
 MAX_BODY_BYTES = 65536
 
@@ -206,7 +207,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, result)
             except views.NotFound as error:
                 self._json(HTTPStatus.NOT_FOUND, {"error": str(error)})
-            except ConflictError as error:
+            except (ConflictError, TaskBusy) as error:
                 self._json(HTTPStatus.CONFLICT, {"error": str(error)})
             except (ValueError, UnicodeError) as error:
                 self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
@@ -313,7 +314,7 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 store.close()
             self._json(HTTPStatus.OK, result)
-        except ConflictError as error:
+        except (ConflictError, TaskBusy) as error:
             self._json(HTTPStatus.CONFLICT, {"error": str(error)})
         except PermissionError:
             if path == "/api/qa/answer":

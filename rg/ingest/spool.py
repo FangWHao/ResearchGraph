@@ -13,6 +13,7 @@ from typing import Any, BinaryIO
 from rg.ingest.scanner import scan_file
 from rg.ingest.sources import Source, authorized
 from rg.store.database import Store, dumps, now
+from rg.store.lease import lease
 from rg.store.locking import TaskBusy
 from rg.store.objects import atomic_stream, atomic_write, digest
 
@@ -34,7 +35,8 @@ def enqueue(root: Path, tool: str, raw: bytes) -> Path:
     if tool not in {"claude", "codex"}:
         raise ValueError("spool 来源必须为 claude 或 codex")
     path = root / "spool" / f"{time.time_ns()}-{os.getpid()}-{uuid.uuid4().hex}-{tool}.json"
-    atomic_write(path, raw)
+    with lease(root, writable=True):
+        atomic_write(path, raw)
     return path
 
 
@@ -42,7 +44,8 @@ def enqueue_stream(root: Path, tool: str, stream: BinaryIO, prefix: bytes) -> Pa
     if tool not in {"claude", "codex"}:
         raise ValueError("spool 来源必须为 claude 或 codex")
     path = root / "spool" / f"{time.time_ns()}-{os.getpid()}-{uuid.uuid4().hex}-{tool}.json"
-    atomic_stream(path, stream, prefix)
+    with lease(root, writable=True):
+        atomic_stream(path, stream, prefix)
     return path
 
 

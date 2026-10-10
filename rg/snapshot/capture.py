@@ -11,6 +11,7 @@ from typing import Any
 
 from rg.snapshot.files import WorkspaceFiles
 from rg.snapshot.git import Deadline, Git
+from rg.store.lease import lease
 from rg.store.locking import TaskBusy, exclusive
 from rg.store.objects import atomic_write
 
@@ -133,6 +134,38 @@ def capture(
     requested_at: str | None = None,
     seconds: float = 2,
 ) -> dict[str, Any]:
+    with lease(data_root, writable=True):
+        return _capture(
+            data_root,
+            project_id,
+            root_id,
+            worktree,
+            tool=tool,
+            trigger=trigger,
+            source_sha256=source_sha256,
+            native_session_id=native_session_id,
+            prompt_id=prompt_id,
+            asynchronous=asynchronous,
+            requested_at=requested_at,
+            seconds=seconds,
+        )
+
+
+def _capture(
+    data_root: Path,
+    project_id: str,
+    root_id: str,
+    worktree: Path,
+    *,
+    tool: str,
+    trigger: str,
+    source_sha256: str | None,
+    native_session_id: str | None,
+    prompt_id: str | None,
+    asynchronous: bool,
+    requested_at: str | None,
+    seconds: float,
+) -> dict[str, Any]:
     from datetime import UTC, datetime
 
     project_id, root_id = identifier(project_id), identifier(root_id)
@@ -215,5 +248,6 @@ def publish(data_root: Path, tool: str, record: dict[str, Any]) -> Path:
     # 独立待登记记录，避免原始 hook 提示被消费者确认后才拍完快照的竞态。
     filename = f"{time.time_ns()}-{os.getpid()}-{record['snapshot_key']}-{tool}.json"
     path = data_root / "snapshots" / "pending" / filename
-    atomic_write(path, json.dumps(record, ensure_ascii=True, sort_keys=True).encode())
+    with lease(data_root, writable=True):
+        atomic_write(path, json.dumps(record, ensure_ascii=True, sort_keys=True).encode())
     return path

@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from rg.store.lease import lease
 from rg.store.migrations import LATEST_VERSION, migrate
 from rg.store.objects import ObjectStore
 
@@ -27,6 +28,25 @@ class ConflictError(ValueError):
 
 class Store:
     def __init__(self, root: Path, *, readonly: bool = False):
+        self._lease = None
+        # 缺失的只读目录仍交给 SQLite 报错，不能创建路径或占用锁文件。
+        if not readonly or root.is_dir():
+            self._lease = lease(root, writable=not readonly)
+            self._lease.__enter__()
+        try:
+            self._open(root, readonly=readonly)
+        except BaseException:
+            if hasattr(self, "db"):
+                self.db.close()
+            self._release()
+            raise
+
+    def _release(self) -> None:
+        if self._lease is not None:
+            self._lease.__exit__(None, None, None)
+            self._lease = None
+
+    def _open(self, root: Path, *, readonly: bool) -> None:
         self.root = root
         self.readonly = readonly
         if readonly:
@@ -70,7 +90,10 @@ class Store:
         migrate(self.db)
 
     def close(self) -> None:
-        self.db.close()
+        try:
+            self.db.close()
+        finally:
+            self._release()
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

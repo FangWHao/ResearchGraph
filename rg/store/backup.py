@@ -9,6 +9,7 @@ from pathlib import Path
 from rg.snapshot.capture import identifier
 from rg.snapshot.git import Git
 from rg.store.database import Store, dumps
+from rg.store.lease import lease
 from rg.store.locking import exclusive
 from rg.store.objects import atomic_write, digest
 
@@ -42,6 +43,11 @@ def backup(store: Store, destination: Path) -> dict[str, int]:
 
 def _backup(store: Store, destination: Path) -> dict[str, int]:
     destination.mkdir(parents=True)
+    with lease(destination, writable=True):
+        return _copy_backup(store, destination)
+
+
+def _copy_backup(store: Store, destination: Path) -> dict[str, int]:
     target = sqlite3.connect(destination / "rg.db")
     try:
         store.db.backup(target)

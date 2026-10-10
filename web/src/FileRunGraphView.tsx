@@ -99,13 +99,23 @@ function EdgeDetail({ edge, onEvidence }: { edge: L1Edge; onEvidence: (id: numbe
 }
 export function FileRunGraphView({ project, projects, onProject, workspace: w }: { project: Project | undefined; projects: Project[]; onProject: (id: string) => void; workspace: ReturnType<typeof useFileRunGraph> }) {
   const [focused, setFocused] = useState<{ type: 'node' | 'edge'; id: string } | null>(null);
+  const container = useRef<HTMLDivElement>(null);
   const data = w.data; const projection = useMemo(() => data ? drawableL1Edges(data) : null, [data]);
   useEffect(() => { setFocused(null); }, [project?.project_id]);
-  useEffect(() => { if (w.event != null) requestAnimationFrame(() => document.querySelector('.file-run-source')?.scrollIntoView({ behavior: 'smooth', block: 'start' })); }, [w.event]);
+  useEffect(() => {
+    if (w.event == null) return;
+    const frame = requestAnimationFrame(() => container.current?.querySelector('.file-run-source')?.scrollIntoView({ behavior: 'instant', block: 'start' }));
+    return () => cancelAnimationFrame(frame);
+  }, [project?.project_id, w.event]);
   const selectedNode = focused?.type === 'node' ? data?.nodes.find(node => node.node_id === focused.id) : undefined;
   const selectedEdge = focused?.type === 'edge' ? data?.edges.find(edge => edge.edge_id === focused.id) : undefined;
-  function select(type: 'node' | 'edge', id: string) { setFocused({ type, id }); requestAnimationFrame(() => document.querySelector('.file-run-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' })); }
-  return <div className="file-run-workspace">
+  useEffect(() => {
+    if (!selectedNode && !selectedEdge) return;
+    const frame = requestAnimationFrame(() => container.current?.querySelector('.file-run-detail')?.scrollIntoView({ behavior: 'instant', block: 'start' }));
+    return () => cancelAnimationFrame(frame);
+  }, [project?.project_id, focused]);
+  function select(type: 'node' | 'edge', id: string) { setFocused({ type, id }); }
+  return <div ref={container} className="file-run-workspace">
     <form className="file-run-filters" onSubmit={event => { event.preventDefault(); void w.load(); }}><h2>文件版本与运行记录</h2><p>本地读取全部登记页，无需先人工复核。命令和参数仅供阅读，页面不会执行。</p>
       <label>项目<select aria-label="文件运行图项目" value={project?.project_id ?? ''} onChange={event => onProject(event.target.value)}>{projects.map(item => <option key={item.project_id} value={item.project_id}>{item.name}</option>)}</select></label>
       <div className="file-run-filter-grid"><label>发生截止（含时区）<input aria-label="文件运行图发生截止" value={w.draft.occurredUntil} onChange={event => w.change({ ...w.draft, occurredUntil: event.target.value })} placeholder="2026-10-09T09:01:00+00:00" /></label><label>获知截止（含时区）<input aria-label="文件运行图获知截止" value={w.draft.knownUntil} onChange={event => w.change({ ...w.draft, knownUntil: event.target.value })} placeholder="留空：当前已知" /></label></div>

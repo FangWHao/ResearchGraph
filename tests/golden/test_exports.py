@@ -301,6 +301,116 @@ def test_all_report_pages_and_io_entries_are_exported_even_without_native_run(st
     assert not report["io"]["partial"] and run["actual_io_completeness"] == "unknown"
 
 
+def test_application_request_uuid_with_phone_digits_exports_without_relaxing_native_ids(
+    store,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr("rg.record.manifest.now", lambda: T2)
+    project = store.project("合成请求标识", [])
+    request = "10727c32-1be9-4abe-a584-14468334521a"
+    report = record(store, project, body(request_id=request, scope=SCOPE))
+    before = unchanged(store)
+    _, data = archive(store, options(project, scope=SCOPE))
+    event = next(
+        row
+        for row in unpack(data)["sources.json"]
+        if row["event_id"] == report["evidence_event_id"]
+    )
+    assert event["native_id"] == request
+    assert unchanged(store) == before
+    with pytest.raises(ValueError, match="应用 UUID"):
+        write(
+            store,
+            options(project, scope=SCOPE, redact_patterns=[request]),
+            tmp_path / "rejected.zip",
+        )
+    assert not (tmp_path / "rejected.zip").exists()
+    # 缺乏明确回执的外部标识，即使形式相同也不能取得例外。
+    from rg.export.build import masked_sources
+    from rg.export.privacy import Privacy
+    from rg.query.reader import Reader
+
+    reader = Reader(store, project, {})
+    with pytest.raises(ValueError, match="结构标识符"):
+        masked_sources(Reader(store, project, {"known_until": T1}), [event], Privacy())
+    for tool, parser, kind, identity in [
+        ("codex", "codex", "run_manifest", report["evidence_event_id"]),
+        ("rg", "rg", "run_manifest", report["evidence_event_id"] + 100),
+        ("rg", "rg", "user_text", report["evidence_event_id"]),
+    ]:
+        with pytest.raises(ValueError, match="结构标识符"):
+            masked_sources(
+                reader,
+                [
+                    event
+                    | {"source_tool": tool, "parser": parser, "kind": kind, "event_id": identity}
+                ],
+                Privacy(),
+            )
+    with pytest.raises(ValueError, match="结构标识符"):
+        Privacy().walk({"native_id": request})
+    assert Privacy().walk({"clinical_identifier": request})["clinical_identifier"] != request
+
+
+@pytest.mark.parametrize("kind", ["question", "decide", "resolve"])
+def test_manual_request_native_uuid_uses_matching_receipt_only(store, monkeypatch, kind):
+    from rg.record.decide import decide
+    from rg.record.question import question
+    from rg.record.resolve import resolve
+
+    for module in ("question", "decide", "resolve"):
+        monkeypatch.setattr(f"rg.record.{module}.now", lambda: T2)
+    project = store.project("合成人工请求标识", [])
+    request = "10727c32-1be9-4abe-a584-14468334521a"
+    data = {
+        "project_id": project,
+        "request_id": request,
+        "expected_revision": store.revision(),
+        "actor": "human:合成",
+        "scope": SCOPE,
+    }
+    if kind == "question":
+        receipt = question(store, data | {"text": "合成问题"})
+    else:
+        target, _ = original(store, project)
+        data["expected_revision"] = store.revision()
+        if kind == "decide":
+            receipt = decide(
+                store, data | {"selector": target, "why": "合成理由", "action": "accept"}
+            )
+        else:
+            pending = decide(
+                store,
+                data
+                | {
+                    "request_id": str(uuid4()),
+                    "selector": "合成未知对象",
+                    "why": "合成理由",
+                    "action": "accept",
+                },
+            )
+            receipt = resolve(
+                store,
+                pending["claim_id"],
+                {
+                    "request_id": request,
+                    "target_id": target,
+                    "actor": "human:合成",
+                    "expected_revision": store.revision(),
+                },
+            )
+    before = unchanged(store)
+    _, archive_data = archive(store, options(project))
+    event = next(
+        row
+        for row in unpack(archive_data)["sources.json"]
+        if row["event_id"] == receipt["event_id"]
+    )
+    assert event["native_id"] == request
+    assert unchanged(store) == before
+
+
 def test_native_state_does_not_borrow_late_exit_and_scoped_export_needs_report(
     store, tmp_path, monkeypatch
 ):

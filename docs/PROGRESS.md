@@ -521,3 +521,17 @@
 - 前端最终：pnpm test 11 files/92 passed/655ms；build 220 modules/1.02s；tsc 退出0；七个真实 HTTP 专项 20.1s；全量浏览器89 passed/1.3m，原83单测/82浏览器案例保留。手机切回项目的空白是真实视图拟合问题，修正受控节点测量回写及布局/尺寸后适配，保留节点与画布/屏幕实际相交断言，没有把 DOM 数量当可见证明。初验新增测试的文本换行和项目名称误判修正，物理观察按实际根/双截止保留未知，不修改数据或放宽校验。
 - 父任务实看最终桌面画布、清单详情、物理观察及390手机画布/摘要、详情五图，无横向溢出；14项冻结全OK，SHA256 10f05a9e25440bd5e847ad92c9c3ee83f72c17e75d35239723599947239b42c9；前端子 agent 已停止编辑。下一步按允许清单提交与维护草稿PR，核对当前HEAD推送/PR两种CI和独立恢复包后结束本任务，再推进整项目隐私清除。
 - 提交前允许清单：baseline=230c16a、staged_files=26、tracked_files=331、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=14；git diff --cached --check 退出0。只提交公开源码、中文记录和合成案例；凭据、真实资料、数据库、ZIP、截图与缓存仍忽略。
+
+## 2026-10-10 · 整项目清除占用保护与导出、滚动回归
+
+- 任务：按用户已确认的整项目粒度继续 §2/6.8/11/15。开始核对进度末尾、对应章节和决定；faaface 基线恢复包 SHA256 ab75c01e448ceb97bac60f06fd07dfcda45f6c9790342160524d6a245e8f37d4，独立恢复的331个基线文件再次核对字节一致。整体 M0–M4 保持未完成。
+- 改动的文件：新增 store/lease.py、golden/test_store_lease.py、整项目清除占用保护和前端L1滚动竞态两份中文验收。修改 store/database.py、backup.py、ingest/spool.py、hooks/entry.py、snapshot/capture.py、api/server.py、export/build.py、golden/test_exports.py、前端 FileRunGraphView.tsx 与其浏览器专项，以及决定、需求落实和本文件；原规格、L0、模型流水线和包格式未改。
+- 行为：Store 存活期间、钩子/spool、影子快照及备份目标写入共享占用锁；独占操作排除仍在读写的进程，普通连接与嵌套共享调用继续并行。构造失败和进程退出释放锁，目录别名同锁；HTTP 占用返回409，真实钩子始终exit0且不发布正文/快照，只记非正文错误类型。POSIX真实进程验收通过；原生Windows接口实现但未运行验收，旧数据目录先经写入口初始化锁文件。
+- 初轮全量759通过、1失败；golden713通过。合法软件请求UUID恰有手机号样式数字导致来源导出被拒绝，补明确回执/rg来源及解析器/同事件与请求/已知截止核对，只对这些应用请求使用已有UUID规则。四类本软件记录和临床/外部/缺回执/后来回执/自定义规则固定验证，原件与引用保持；新测试Reader参数装配错误修正，不通过随机重试或放宽遮盖掩盖。
+- uv sync --locked：Resolved28/11ms、Checked27/57ms。占用专项8 passed in2.69s，导出/占用最终46 passed in14.80s；最终 uv run pytest -q：764 passed in293.38s (0:04:53)，uv run pytest tests/golden -q：717 passed in278.61s (0:04:38)。两组全量并行，不作性能基准。ruff check rg tests scripts：All checks passed!；pyright：0 errors,0 warnings,0 informations；rg --help、git diff --check退出0。
+- 隔离wheel：119成员/114运行资源与源码及隔离安装逐字一致，缺失/差异/实际密钥/私有文件均0。安装后的独立进程/真实钩子/127.0.0.1 HTTP占用案例8 passed in3.68s；实际CLI导出固定请求UUID、十成员摘要/字节数、SQLite备份读取通过，schema17、原件和修订不变、model_attempts=0、清单candidate。只使用临时合成项目，没有清除真实项目或发送真实资料。
+- 前端按用户既有subagent授权处理真实回归：首轮全量88通过、1失败，画布已拟合但整体y=-487.59在屏外；旧平滑滚动和未取消RAF跨项目移动页面。定位限制本组件、项目/目标变化取消旧帧、即时滚动；保留真实可视相交断言及原89用例。专项7 passed/14.9s，迟到回包与延迟RAF用例连续10次10 passed/34.0s；pnpm test 92 passed/11files/717ms，build220modules/1.10s，tsc退出0。父任务最终pnpm test:browser：89 passed (1.1m)，父任务实看桌面画布/详情/观察和390手机摘要/详情五图，无横向溢出。
+- 边界：本任务落实清除前占用保护，未提供删除入口。清除清单、共享对象归属、数据库/索引/缓存/快照/导出副本清理、无原文清除记录与中断恢复仍需实现。外部副本和Claude/Codex原始日志范围已提问尚无答复，不删除真实资料、不自动清理研究工作区。影响传播合同、note类型、实际I/O、真实工具/规模与Atlas正式参考及完整M0–M4门槛继续保留。
+- 下一步：冻结前端证据、按允许清单提交、维护现有草稿PR，核对当前HEAD两种CI和独立恢复包后结束本任务。下个任务继续整项目清除的只读归属清单及执行恢复，不把系统锁或项目遮盖配置当作隐私清除完成。
+- 前端最终冻结17项全OK，清单SHA256 59a0d1a7cf7a6a34edbe8802f2d3fe7c4d24bc770778c5903c70de13f40f1636；子agent已停止编辑。隔离Vite只加载HEAD旧组件，在9791运行加强案例，切项目后待滚动帧预期0实际1，准确失败；没有回退共享源码或覆盖web/dist。父任务全量89成功使用最终新组件，旧行为反证不计入成功测试数量。
+- 提交前允许清单：baseline=faaface、staged_files=17、tracked_files=335、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=17；暂存差异检查退出0。只提交公开源码、中文说明和合成案例，凭据、原会话、数据库、ZIP、截图和缓存不入仓库。

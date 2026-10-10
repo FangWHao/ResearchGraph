@@ -46,6 +46,21 @@ async function expectVisibleCanvas(page: Page) {
     console.log('手机画布几何', JSON.stringify(geometry)); throw error;
   }
 }
+async function holdSourceScroll(page: Page) {
+  await page.evaluate(() => {
+    const request = window.requestAnimationFrame.bind(window), cancel = window.cancelAnimationFrame.bind(window); const held = new Map<number, FrameRequestCallback>();
+    window.requestAnimationFrame = callback => {
+      if (!String(callback).includes('.file-run-source')) return request(callback);
+      const id = request(() => {}); held.set(id, callback); return id;
+    };
+    window.cancelAnimationFrame = id => { held.delete(id); cancel(id); };
+    (window as typeof window & { l1ScrollTest: { pending: () => number; restore: () => void } }).l1ScrollTest = {
+      pending: () => held.size,
+      restore: () => { window.requestAnimationFrame = request; window.cancelAnimationFrame = cancel; for (const callback of held.values()) callback(performance.now()); held.clear(); },
+    };
+  });
+}
+async function pendingSourceScroll(page: Page) { return page.evaluate(() => (window as typeof window & { l1ScrollTest: { pending: () => number } }).l1ScrollTest.pending()); }
 
 test('真实完整五集合分页固定双时间/修订，报告IO连清单，冲突/未知/所有尝试版本可读', async ({ page, request }) => {
   const pages: L1Page[] = []; const queries: URLSearchParams[] = [];
@@ -160,10 +175,12 @@ test('迟到真实图页/原文不进入修改后的条件或其他项目，390�
   await page.getByLabel('文件运行图获知截止', { exact: true }).fill(''); await reread(page);
   const project = await page.getByLabel('文件运行图项目', { exact: true }).inputValue(); const current = await nodes(request, project); const native = current.items.find(n => n.kind === 'native_run')!;
   ready = false; const next = new Promise<void>(resolve => { release = resolve; });
+  await holdSourceScroll(page);
   await page.route('**/api/l1-evidence?*', async route => { const response = await route.fetch(); ready = true; await next; try { await route.fulfill({ response }); } catch { /* 项目切换停止旧页面等待。 */ } });
-  await (await choose(page, native)).getByRole('button', { name: `打开历史原文 E${native.record.request_event_id}`, exact: true }).click(); await expect.poll(() => ready).toBe(true);
+  await (await choose(page, native)).getByRole('button', { name: `打开历史原文 E${native.record.request_event_id}`, exact: true }).click(); await expect.poll(() => ready).toBe(true); await expect.poll(() => pendingSourceScroll(page)).toBe(1);
   await page.getByLabel('文件运行图项目', { exact: true }).selectOption({ label: '合成空项目' }); release(); await expect(page.getByRole('dialog', { name: '文件运行图历史原文' })).toHaveCount(0);
   const otherProject = await page.getByLabel('文件运行图项目', { exact: true }).inputValue(); const other = await nodes(request, otherProject);
+  await expect.poll(() => pendingSourceScroll(page)).toBe(0); await page.evaluate(() => (window as typeof window & { l1ScrollTest: { restore: () => void } }).l1ScrollTest.restore());
   await expect(page.getByRole('region', { name: '文件运行图完整性' })).toContainText(`节点 ${other.total}/${other.total}`); await expect(page.locator(`[data-l1-node-id="${native.node_id}"]`)).toHaveCount(0);
   await page.unroute('**/api/l1-evidence?*'); await page.getByLabel('文件运行图项目', { exact: true }).selectOption({ label: primary }); await expect(page.getByRole('region', { name: '文件运行图完整性' })).toContainText('节点 8/8');
   await page.setViewportSize({ width: 390, height: 844 }); await page.locator('.file-run-summary').evaluate(node => node.scrollIntoView({ block: 'start' })); await expectVisibleCanvas(page); await page.screenshot({ path: '../.cache/frontend-l1-graph-summary-mobile.png' });

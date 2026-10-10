@@ -12,6 +12,7 @@ from typing import Any
 from rg.ingest.spool import EVENTS, MAX_BYTES, enqueue, enqueue_stream
 from rg.snapshot.capture import capture
 from rg.snapshot.config import choose
+from rg.store.lease import lease
 from rg.store.objects import digest
 
 
@@ -41,6 +42,28 @@ def process(
     detached: bool = False,
     source_sha256: str | None = None,
     requested_at: str | None = None,
+) -> None:
+    with lease(root, writable=True):
+        _process(
+            root,
+            tool,
+            event,
+            raw,
+            detached=detached,
+            source_sha256=source_sha256,
+            requested_at=requested_at,
+        )
+
+
+def _process(
+    root: Path,
+    tool: str,
+    event: str,
+    raw: bytes,
+    *,
+    detached: bool,
+    source_sha256: str | None,
+    requested_at: str | None,
 ) -> None:
     if not detached:
         enqueue(root, tool, raw)

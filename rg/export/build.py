@@ -89,6 +89,40 @@ def sources(reader: Reader, events: set[int]) -> list[dict[str, Any]]:
     return result
 
 
+def masked_sources(reader: Reader, records: list[dict[str, Any]], privacy: Privacy) -> list[Any]:
+    """只对本软件明确记录的请求 UUID 使用应用标识规则。"""
+    receipts = {
+        "run_manifest": ("run_manifests", "evidence_event_id"),
+        "explicit_question": ("explicit_records", "event_id"),
+        "explicit_decide": ("decision_requests", "event_id"),
+        "explicit_resolve": ("decision_resolutions", "event_id"),
+    }
+    result = []
+    for record in records:
+        receipt = receipts.get(record["kind"])
+        application = False
+        if receipt and record["source_tool"] == "rg" and record["parser"] == "rg":
+            table, column = receipt
+            origin = reader.store.db.execute(
+                f"SELECT recorded_at FROM {table} WHERE {column}=? AND request_id=?",
+                (record["event_id"], record["native_id"]),
+            ).fetchone()
+            recorded = instant(origin["recorded_at"]) if origin is not None else None
+            application = recorded is not None and recorded <= reader.known_cutoff
+        if application:
+            # 不扩大 native_id 的通用例外，不对正文或临床字段应用此处理。
+            fields = {key: value for key, value in record.items() if key != "native_id"}
+            result.append(
+                privacy.walk(fields)
+                | {
+                    "native_id": privacy.walk(record["native_id"], "request_id"),
+                }
+            )
+        else:
+            result.append(privacy.walk(record))
+    return result
+
+
 def algorithms(store: Store, claims: list[dict[str, Any]], reader: Reader) -> dict[str, Any]:
     runs = []
     identities = {r["extraction_run_id"] for r in claims if r["extraction_run_id"] is not None}
@@ -246,7 +280,17 @@ def build(store: Store, body: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
             "runs.json": runs,
             "algorithms.json": algorithms(store, claims, reader),
         }
-        files = {name: (dumps(privacy.walk(value)) + "\n").encode() for name, value in data.items()}
+        files = {
+            name: (
+                dumps(
+                    masked_sources(reader, value, privacy)
+                    if name == "sources.json"
+                    else privacy.walk(value)
+                )
+                + "\n"
+            ).encode()
+            for name, value in data.items()
+        }
         # 阅读条件的选择在原值上执行；分享副本中的隐私字段可以遮盖。
         conditions = privacy.walk(reader.metadata())
         manifest = {
