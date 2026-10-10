@@ -14,6 +14,7 @@ from rg.record.schema import validate_scope
 from rg.store.database import Store, dumps, now
 from rg.store.locking import TaskBusy, exclusive
 from rg.store.objects import digest
+from rg.store.privacy import read as privacy_policy
 
 STATES = ("queued", "running", "done", "partial", "paused", "blocked", "cancelled")
 
@@ -102,19 +103,23 @@ class Queue:
                 )
         return len(rows)
 
+    def _input(self, project: str, session: int, maximum: int) -> str:
+        snapshot = self.store.db.execute(
+            "SELECT r.event_id,r.object_sha256,r.exclude_reason,r.seq,r.kind,r.call_id,"
+            "d.alias_id FROM raw_events r LEFT JOIN dedupe_links d ON d.alias_id=r.event_id "
+            "WHERE r.session_pk=? AND r.event_id<=? ORDER BY r.seq",
+            (session, maximum),
+        ).fetchall()
+        identity = digest(dumps([list(value) for value in snapshot]).encode())
+        policy = privacy_policy(self.store, project)
+        return digest(dumps([identity, policy.identity]).encode()) if policy.rule_id else identity
+
     def _discover(self, retry_failed: bool) -> dict[str, int]:
         rows, skipped = sessions(self.worker, self.project)
         created = 0
         with self.store.transaction() as db:
             for row in rows:
-                snapshot = db.execute(
-                    "SELECT r.event_id,r.object_sha256,r.exclude_reason,r.seq,r.kind,r.call_id,"
-                    "d.alias_id FROM raw_events r LEFT JOIN dedupe_links d ON "
-                    "d.alias_id=r.event_id "
-                    "WHERE r.session_pk=? AND r.event_id<=? ORDER BY r.seq",
-                    (row["session_pk"], row["max_event_id"]),
-                ).fetchall()
-                input_key = digest(dumps([list(value) for value in snapshot]).encode())
+                input_key = self._input(row["project_id"], row["session_pk"], row["max_event_id"])
                 task_key = digest(
                     dumps([self.config, row["project_id"], row["session_pk"], input_key]).encode()
                 )
@@ -235,6 +240,17 @@ class Queue:
                 )
                 journal(self.store, queue_id, "blocked", None, {"reason": "remote_disabled"})
                 return None
+            if (
+                self._input(row["project_id"], row["session_pk"], row["max_event_id"])
+                != row["input_key"]
+            ):
+                db.execute(
+                    "UPDATE extraction_queue SET state='cancelled',defer_reason='input_changed',"
+                    "updated_at=? WHERE queue_id=?",
+                    (now(), queue_id),
+                )
+                journal(self.store, queue_id, "cancelled", None, {"reason": "input_changed"})
+                return None
             owner = str(uuid.uuid4())
             db.execute(
                 "UPDATE extraction_queue SET "
@@ -301,13 +317,23 @@ class Queue:
             (self.config, self.project, self.project, now(), limit),
         ).fetchall()
         for row in rows:
+            policy = privacy_policy(
+                self.store,
+                self.store.db.execute(
+                    "SELECT project_id FROM extraction_queue WHERE queue_id=?", (row[0],)
+                ).fetchone()[0],
+            )
             claimed = self._claim(row[0])
             if claimed is None:
                 continue
             task, owner = claimed
             try:
                 result = self.worker.process(
-                    task["session_pk"], self.scope, retry_failed, max_event_id=task["max_event_id"]
+                    task["session_pk"],
+                    self.scope,
+                    retry_failed,
+                    max_event_id=task["max_event_id"],
+                    expected_privacy=policy.identity,
                 )
                 state = (
                     "paused"

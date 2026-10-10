@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from rg.extract.budgets import Budgets
+from rg.extract.privacy import ProjectCounter
 from rg.slim.tokens import TokenCounter
 from rg.store.database import dumps
 from rg.store.objects import digest
@@ -59,6 +60,14 @@ def segment(
     if budget < 1:
         raise ValueError("片段预算必须为正整数")
     prepared = []
+
+    def count_slice(text: str, start: int, end: int) -> int:
+        return (
+            counter.count_slice(text, start, end)
+            if isinstance(counter, ProjectCounter)
+            else counter.count_text(text[start:end])
+        )
+
     for event in events:
         source = event.get("raw_text", event["text"])
         if event["kind"] not in {"user_msg", "assistant_msg"} or counter.count_text(source) <= 2000:
@@ -70,7 +79,7 @@ def segment(
             lo, hi = position, len(source)
             while lo < hi:
                 middle = (lo + hi + 1) // 2
-                if counter.count_text(source[position:middle]) <= 2000:
+                if count_slice(source, position, middle) <= 2000:
                     lo = middle
                 else:
                     hi = middle - 1
@@ -81,7 +90,9 @@ def segment(
             prepared.append(
                 {
                     **event,
-                    "text": part,
+                    "text": counter.safe_slice(source, position, lo)
+                    if isinstance(counter, ProjectCounter)
+                    else part,
                     "raw_start": base + consumed,
                     "raw_end": base + consumed + len(part.encode()),
                     "raw_text": part,

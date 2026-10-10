@@ -16,6 +16,7 @@ from rg.slim.tokens import DailyBudgetExceeded
 from rg.store.database import dumps, now
 from rg.store.locking import TaskBusy, exclusive
 from rg.store.objects import digest
+from rg.store.privacy import read as privacy_policy
 
 
 class Stages:
@@ -106,7 +107,8 @@ class Stages:
                     ).fetchall()
                 ],
             ]
-        return digest(dumps(source).encode())
+        policy = privacy_policy(self.store, project)
+        return digest(dumps(source if not policy.rule_id else [source, policy.identity]).encode())
 
     def _retry_plan(self, project: str) -> dict[str, int]:
         return dict(

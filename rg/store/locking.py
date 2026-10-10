@@ -12,7 +12,10 @@ class TaskBusy(RuntimeError):
 
 @contextmanager
 def exclusive(
-    path: Path, message: str = "该项目的链接 worker 正在运行，请稍后重试"
+    path: Path,
+    message: str = "该项目的链接 worker 正在运行，请稍后重试",
+    *,
+    shared: bool = False,
 ) -> Iterator[None]:
     """非阻塞进程锁；进程退出后由系统释放，不持有 SQLite 写事务。"""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -29,7 +32,9 @@ def exclusive(
             else:
                 import fcntl
 
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(
+                    handle.fileno(), (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB
+                )
         except OSError:
             raise TaskBusy(message) from None
         try:

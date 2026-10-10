@@ -17,6 +17,7 @@ from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
 from tests.golden.test_ingestion import lines, record
 from tests.graph_browser import seed_graph
+from tests.privacy_browser import seed_privacy
 from tests.qa_browser import seed_qa
 
 
@@ -960,6 +961,7 @@ def main() -> None:
         qa_config = seed_qa(store, directory)
         seed_run_manifests(store, directory)
         seed_graph(store)
+        seed_privacy(store)
         store.close()
         server = LocalServer(
             directory / "store",

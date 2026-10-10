@@ -15,6 +15,7 @@ from rg.extract.schemas import PASS2_SCHEMA
 from rg.ingest.common import RG_BLOCK
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
+from rg.store.privacy import read as privacy_policy
 
 
 class InvalidClaim(ValueError):
@@ -39,6 +40,7 @@ def validate(
     errors = list(Draft202012Validator(PASS2_SCHEMA).iter_errors(output))
     if errors:
         raise InvalidClaim("结构化输出不符合本地 schema")
+    custom = privacy_policy(store, project_id).patterns
     if output["segment_id"] != segment_id:
         raise InvalidClaim("片段 ID 不匹配")
     kinds: dict[str, str] = {}
@@ -110,7 +112,7 @@ def validate(
             raw = store.raw(event_id)
             start, end = evidence["byte_start"], evidence["byte_end"]
             try:
-                redact(raw).original_span(start, end)
+                redact(raw, custom).original_span(start, end)
             except (ValueError, UnicodeError):
                 raise InvalidCitation("引用越界、切断 UTF-8 或落在遮盖区域") from None
             if windows and not any(a <= start < end <= b for a, b in windows.get(event_id, [])):

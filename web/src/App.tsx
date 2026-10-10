@@ -14,6 +14,8 @@ import { useQaWorkspace } from './useQaWorkspace';
 import { VersionsView } from './VersionsView';
 import { HistoryExportView } from './HistoryExportView';
 import { useHistoryExport } from './useHistoryExport';
+import { ProjectPrivacyPanel } from './ProjectPrivacyPanel';
+import { useProjectPrivacy } from './useProjectPrivacy';
 
 const GraphView = lazy(() => import('./GraphView').then(module => ({ default: module.GraphView })));
 
@@ -166,6 +168,8 @@ export function App() {
   const project = projects.find(item => item.project_id === projectId);
   const qa = useQaWorkspace({ project: projectId, active: view === 'qa', authorized, epoch, onError, onPermissionChange: () => setEpoch(previous => previous + 1) });
   const historyExport = useHistoryExport({ project: projectId, active: view === 'exports', authorized, revision: graph?.revision ?? null, epoch, onError, onRefresh: refresh });
+  const privacy = useProjectPrivacy({ project: projectId, actor, active: view === 'qa' || view === 'exports', authorized, epoch, onError,
+    onPolicyChange: changedProject => { qa.invalidatePolicy(changedProject); historyExport.invalidatePolicy(changedProject); refresh(); } });
   const decisions = useManualDecisions({ project, actor, authorized, revision: graph?.revision ?? null, epoch, onError, onRefresh: refresh,
     onDataChanged: () => setEpoch(previous => previous + 1),
     onSaved: (claim, revision, text) => { setConflict(false); setSelectedEvidence(null); setSelectedClaim(claim); setMessage(`${text}，记录 #${claim} · 当前版本 ${revision}`); }, onClaim });
@@ -185,6 +189,7 @@ export function App() {
         }} />}
         {view === 'timeline' && graph && <TimelineView data={graph} onClaim={onClaim} onEvidence={onEvidence} onCreateDecision={decisions.openCreate} onResolve={decisions.openResolve} />}
         {view === 'review' && <ReviewQueue onResolve={decisions.openResolve} project={projectId} epoch={epoch} actor={actor} onWrite={onWrite} onError={onError} onEdit={onEdit} onEvidence={onEvidence} onClaim={onClaim} />}
+        {(view === 'qa' || view === 'exports') && <ProjectPrivacyPanel project={project} projects={projects} onProject={setProjectId} workspace={privacy} />}
         {view === 'qa' && <QaView workspace={qa} onEvidence={onEvidence} />}
         {view === 'health' && <HealthView project={projectId} epoch={epoch} onEvidence={onEvidence} onError={onError} onVersions={() => { setView('versions'); setSelectedClaim(null); setSelectedEvidence(null); }} />}
         {view === 'versions' && <VersionsView project={projectId} epoch={epoch} onError={onError} />}

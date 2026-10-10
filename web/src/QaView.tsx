@@ -47,6 +47,7 @@ export function QaView({ workspace: w, onEvidence }: { workspace: ReturnType<typ
       <label className="qa-checkbox"><input type="checkbox" checked={w.consent} onChange={event => w.consentChange(event.target.checked)} disabled={!!w.busy} /><span>我已查看此预览，允许本项目及其后续新增资料按上述范围外发到服务端已配置的远程模型。</span></label><button className="button primary" onClick={() => { void w.allow(); }} disabled={!!w.busy || !w.consent || !w.preview.source_count || w.preview.remote !== true}>开启项目外发并回答</button>
     </section>}
     {w.result && <div className="qa-results">
+      {w.policyStale && <p className="notice">下方结果使用此前的项目遮盖规则，保留供追溯；请重新查询以使用当前规则。</p>}
       {w.stale && <p className="notice">下方结果来自此前输入；当前问题、范围或截止已变化，请重新查询。</p>}
       <p className="small muted">检索版本 {w.result.revision} · {w.result.scope_filter ? `完整范围：${scopeText(w.result.scope)}` : '所有范围（未限定）'} · 发生截止 {w.result.occurred_until ? <DateText value={w.result.occurred_until} /> : '未限定'} · 获知截止 {w.result.known_until ? <DateText value={w.result.known_until} /> : '当前已知'}</p>
       {w.result.status && <section className="qa-answer" aria-label="模型解释"><span className="eyebrow">模型解释 · 不是已确认事实</span><h2>{w.result.status === 'answered' ? '根据这些来源' : w.result.status === 'insufficient' ? '现有证据不足以判断' : '模型暂时无法回答'}</h2>

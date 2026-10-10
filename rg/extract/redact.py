@@ -65,7 +65,7 @@ def redact(raw: bytes, custom: tuple[str, ...] = ()) -> Redacted:
     return Redacted(bytes(data), raw, tuple(sorted(set(ranges))))
 
 
-def model_input(content: str, stage: str) -> str:
+def model_input(content: str, stage: str, custom: tuple[str, ...] = ()) -> str:
     """按程序输入层次保留生成的标识符；原文和自由文本不享有此例外。"""
     from rg.store.database import dumps
 
@@ -85,19 +85,22 @@ def model_input(content: str, stage: str) -> str:
                 return value
             # pass2 的 slim 是程序生成的 JSON 字符串，按 pass1 层次处理其中的正文。
             if stage == "pass2" and path == ("slim",):
-                return model_input(value, "pass1")
-            return redact(value.encode()).data.decode()
+                return model_input(value, "pass1", custom)
+            return redact(value.encode(), custom).data.decode()
         if isinstance(value, list):
             return [walk(item, (*path, "*")) for item in value]
         if isinstance(value, dict):
-            return {
-                redact(key.encode()).data.decode(): walk(item, (*path, key))
-                for key, item in value.items()
-            }
+            result = {}
+            for key, item in value.items():
+                masked = redact(key.encode(), custom).data.decode()
+                if masked in result:
+                    raise ValueError("遮盖后字段名称碰撞，不能发送丢失字段的输入")
+                result[masked] = walk(item, (*path, key))
+            return result
         return value
 
     try:
         parsed = json.loads(content)
     except ValueError:
-        return redact(content.encode()).data.decode()
+        return redact(content.encode(), custom).data.decode()
     return dumps(walk(parsed, ()))

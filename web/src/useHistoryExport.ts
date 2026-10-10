@@ -44,6 +44,7 @@ export function useHistoryExport({ project, active, authorized, revision, epoch,
     } finally { if (controller != null && pending.current === controller) { pending.current = null; setBusy(false); } }
   }
   return { draft, change, busy, failure, status, needsRefresh, revision, download,
+    invalidatePolicy: (changedProject: string) => { if (current.current.project === changedProject) { cancel(); releaseDownload.current?.(); releaseDownload.current = null; setNeedsRefresh(true); setStatus('项目遮盖规则已变化，请等待最新版本读取后主动下载。'); } },
     cancel: () => { cancel(); setStatus('已停止本页等待。服务端生成可能仍完成，迟到响应不会自动下载。'); },
     refresh: onRefresh };
 }

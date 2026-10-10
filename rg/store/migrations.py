@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 15
+LATEST_VERSION = 16
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -325,6 +325,17 @@ MIGRATIONS = {
         "CREATE TRIGGER manifest_io_no_delete BEFORE DELETE ON run_io "
         "WHEN OLD.manifest_id IS NOT NULL BEGIN "
         "SELECT RAISE(ABORT,'manifest IO is append-only'); END",
+    ),
+    16: (
+        "CREATE TABLE project_privacy(rule_id INTEGER PRIMARY KEY,project_id TEXT NOT NULL "
+        "REFERENCES projects,patterns TEXT NOT NULL,actor TEXT NOT NULL,recorded_at TEXT NOT NULL)",
+        "CREATE INDEX project_privacy_latest ON project_privacy(project_id,rule_id)",
+        "CREATE TRIGGER project_privacy_no_update BEFORE UPDATE ON project_privacy BEGIN "
+        "SELECT RAISE(ABORT,'project privacy is append-only'); END",
+        "CREATE TRIGGER project_privacy_no_delete BEFORE DELETE ON project_privacy BEGIN "
+        "SELECT RAISE(ABORT,'project privacy is append-only'); END",
+        "CREATE TRIGGER project_privacy_revision AFTER INSERT ON project_privacy BEGIN "
+        "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
     ),
 }
 

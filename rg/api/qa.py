@@ -17,6 +17,8 @@ from rg.query.reader import Reader
 from rg.query.retrieval import retrieve
 from rg.store.database import ConflictError, Store, dumps, now
 from rg.store.objects import digest
+from rg.store.privacy import gate
+from rg.store.privacy import read as privacy_policy
 
 
 class ModelUnavailable(RuntimeError):
@@ -114,9 +116,22 @@ def preview(
     *,
     granting: bool = False,
 ) -> dict[str, Any]:
+    with store.snapshot():
+        return _preview(store, body, config, granting=granting)
+
+
+def _preview(
+    store: Store,
+    body: dict[str, Any],
+    config: QAConfig | None,
+    *,
+    granting: bool = False,
+) -> dict[str, Any]:
     data = packet(store, body, {"allow", "preview_sha"} if granting else None)
     _, values = request(body, {"allow", "preview_sha"} if granting else None)
-    sent = prepare_input(data, values)
+    policy = privacy_policy(store, data["project_id"])
+    sent = prepare_input(data, values, policy.patterns, store)
+    sent["privacy_policy_id"] = policy.identity
     identity = digest(dumps(["qa-preview1", config.identity() if config else None, sent]).encode())
     return {
         "project_id": data["project_id"],
@@ -141,7 +156,8 @@ def allow(store: Store, body: dict[str, Any], config: QAConfig | None) -> dict[s
     acknowledgement = body.get("preview_sha")
     if not isinstance(acknowledgement, str) or not re.fullmatch("[0-9a-f]{64}", acknowledgement):
         raise ValueError("请先查看本次发送预览")
-    with store.transaction():
+    project, _ = request(body, {"allow", "preview_sha"})
+    with gate(store, project), store.transaction():
         sample = preview(store, body, config, granting=True)
         if not sample["source_count"]:
             raise ValueError("没有有效原文样例；先完成本地检索")
@@ -169,7 +185,7 @@ def disable(store: Store, body: dict[str, Any]) -> dict[str, Any]:
     expected = values["expected_revision"]
     if type(expected) is not int or expected < 0:
         raise ValueError("撤回许可需提供记录版本")
-    with store.transaction():
+    with gate(store, project), store.transaction():
         Reader(store, project, {})
         if store.revision() != expected:
             raise ConflictError("研究记录已变化，请刷新后撤回许可")

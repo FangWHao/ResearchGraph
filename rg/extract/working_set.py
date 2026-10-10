@@ -7,6 +7,7 @@ from contextlib import closing
 from typing import Any
 
 from rg.extract.paths import file_paths
+from rg.extract.privacy import ProjectCounter
 from rg.slim.tokens import TokenCounter
 from rg.store.database import Store, dumps
 from rg.store.scopes import known_scope
@@ -123,7 +124,9 @@ def working_set(
                 {
                     "id": entity_id,
                     "kind": row["kind"],
-                    "label": label[:30],
+                    "label": counter.safe_slice(label, 0, 30)
+                    if isinstance(counter, ProjectCounter)
+                    else label[:30],
                     "state": state,
                     "scope": row_scope,
                 },

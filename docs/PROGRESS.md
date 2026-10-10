@@ -484,3 +484,18 @@
 - 前端最终：pnpm test 9 files/79 passed/872ms；build 212 modules/1.15s；pnpm test:browser 74 passed/57.4s，原69保留；五专项14.2s，tsc退出0。父agent实看完整/聚焦桌面及390原边/重要历史四图，无横向溢出。六文件/四图共十项冻结全OK，SHA256 8a25bbfb86648d4d29f8e0ecdf88ea46d8861f746ac445931543c4fc3792ffd4；子agent已停止编辑。
 - 下一步：按允许清单提交、更新现有草稿PR，核对新HEAD的推送/PR两种CI及独立恢复包后结束本任务。影响传播未选比较合同已提问，尚无回复，不猜规则或写提醒；后续继续完整L1输入输出、项目临床配置/隐私清除、规模/真实工具与Atlas正式参考门槛，note/propose_note约定及完整M0–M4验收继续保留。
 - 提交前允许清单：baseline=a6cc282、staged_files=20、tracked_files=307、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=10；暂存差异检查退出0。只提交公开源码、中文说明和合成测试；凭据、真实资料、数据库、ZIP、截图及缓存不入仓库。
+
+
+## 2026-10-10 · 项目临床编号遮盖配置
+
+- 任务：继续 §2/7.2/7.3/11。开始核对进度末尾、对应章节与决定；aa3569a 恢复包 SHA256 f42810e79f9d3dea744919fe6d9bc267168267a08b02ed2a5be5cd2e962e0731，独立恢复的 307 个基线跟踪文件再次核对字节一致。按用户既有授权继续前端子 agent，整体 M0–M4 保持未完成。
+- 改动的文件：新增 store/privacy.py、extract/privacy.py、golden/test_project_privacy.py、privacy_browser.py 和两份中文验收。修改版本迁移/系统锁、瘦身/切片/工作集/定位校验/worker/关联/概览/问答/队列、CLI/HTTP/导出、合成浏览器入口、前端共用配置面板及 QA/导出失效合同、README/需求落实/决定与本文件；原规格、解析器、L0 和钩子未改。
+- 行为：版本 16 按项目只追加规则，限制 32 条/1000 字符，明确人工入口及修订冲突；内置遮盖始终生效，规则不改原件或已有许可。所有模型阶段的计数/生成、预览及导出共用规则，先在完整原文/工具输出/规范记录中遮盖再截窗，引用跨敏感区拒绝；旧样例回执、缓存、调度身份失效，无新增原文也可重新调度。导出用当前项目规则叠加本次规则，只带规则摘要。
+- 并发：POSIX 发送共享系统锁、配置写入独占，前后核对固定配置和许可；未生成不标已发送，网络期间不持数据库写事务。首轮全量 728 通过/2 失败、golden 681 通过/2 失败，独占发送误阻塞其它会话；修成共享发送、保留旧案例并补独立进程验证。原生 Windows 仍保守串行分支，本次只验证 WSL/Linux，不宣称原生并发兼容。
+- uv sync --locked：Resolved 28 packages in 1ms、Checked 27 packages in 61ms。最终 uv run pytest -q：731 passed in 276.96s (0:04:36)；uv run pytest tests/golden -q：684 passed in 261.90s (0:04:21)；项目规则/旧并发/监控专项：52 passed in 19.70s。两组全量并行，不作性能基准。ruff：All checks passed!；pyright：0 errors, 0 warnings, 0 informations；rg --help、project privacy --help 与 git diff --check 退出 0。
+- 验收装配修正：初次专项的一个片段包含多窗口、无匹配关键词、空 scope 和 preview 位置参数修正；工具 helper 改用 text 关键字。早期回归命令两次含不存在的测试文件，未执行测试；改用实际 auto_queue 路径后 165 项通过，最终全量/固定成功替代早期结果。
+- 独立 wheel：116 文件/111 源码资源全匹配，缺失/差异/实际密钥/私有资料均 0。隔离安装 111 资源再次逐字相同；实际 CLI 保存、真实本机 HTTP 401/409/问答 200/导出 200，显式本地模拟协议生成 1 次，预览等于生成输入，计数期间设置返回 409，原文不变、claim 保持 candidate。删原库后 SQLite API 备份仍读规则及只读导出，删备份后离线十成员 ZIP 校验通过，不重建数据目录；schema=16。没有发送真实临床或 Atlas 会话。
+- 前端最终：pnpm test 10 files/83 passed/831ms；build 216 modules/994ms；tsc 退出 0；8 真实 HTTP 专项 11.4s、全量浏览器 82 passed/1.0m，原 74 项保留。修姓名变化导致旧读取被忽略却不重读的等待边界并重跑；旧预览/授权勾选及迟到响应隔离、保存后新输入、原文保留、许可保留、导出叠加及手机操作通过。父 agent 实看桌面规则/导出与 390 手机规则/保存/预览五图，16 项冻结全 OK，SHA256 0f6120044d55ed76d98c3141352d3e1a24fe062c700f8b3ab13d13f51329ea59；子 agent 已停止编辑。
+- 边界：配置不清除旧原件/索引/缓存/快照，也不收回远端已发送资料和用户分享副本；完整隐私清除仍待实现。影响传播未选比较合同仍无用户回复，不猜规则；完整 L1、实际 I/O、规模/真实工具验收、note/propose_note 与 Atlas 正式参考和完整 M0–M4 门槛保留。
+- 下一步：按允许清单提交、维护现有草稿 PR，核对新 HEAD 的推送/PR 两种 CI 与恢复包独立还原后结束本任务。后续继续完整隐私清除及 L1 实际输入输出，待传播合同答案再实现提醒。
+- 提交前允许清单：baseline=aa3569a、staged_files=41、tracked_files=319、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=16；暂存差异检查退出 0。只提交公开源码、中文说明和合成案例；凭据、真实资料、数据库、ZIP、截图与缓存仍忽略。

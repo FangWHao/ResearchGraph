@@ -10,7 +10,7 @@ from rg.slim.tokens import TokenCounter
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
 
-SLIM_VERSION = "2"
+SLIM_VERSION = "3"
 
 
 def summarize(kind: str, text: str, tool: str | None, call_id: str | None) -> str:
@@ -57,13 +57,18 @@ def cache_count(store: Store, counter: TokenCounter, text: str) -> int:
 def slim_session(
     store: Store, session_id: int, counter: TokenCounter, event_ids: set[int] | None = None
 ) -> list[dict[str, Any]]:
+    from rg.extract.privacy import ProjectCounter
+
     permission = store.db.execute(
-        "SELECT p.remote_model_allowed FROM sessions s JOIN projects p "
+        "SELECT p.remote_model_allowed,p.project_id FROM sessions s JOIN projects p "
         "USING(project_id) WHERE session_pk = ?",
         (session_id,),
     ).fetchone()
     if getattr(counter, "remote", False) and (not permission or not permission[0]):
         raise PermissionError("本项目禁止远程模型计数和生成；请先预览遮盖后的片段并明确启用")
+    if permission:
+        if not isinstance(counter, ProjectCounter):
+            counter = ProjectCounter(store, permission[1], counter)
     rows = store.db.execute(
         "SELECT r.*, f.parser FROM raw_events r JOIN source_files f "
         "USING(file_instance_id) WHERE r.session_pk = ? ORDER BY r.seq",
@@ -90,12 +95,25 @@ def slim_session(
             "SELECT slim_version FROM slim_events WHERE event_id = ?", (row["event_id"],)
         ).fetchone()
         counter_version = counter.provider + ":" + counter.model + ":" + SLIM_VERSION
+        policy = getattr(counter, "policy", None)
+        if policy and policy.rule_id:
+            counter_version += ":" + policy.identity
         if existing and existing[0] == counter_version:
             continue
         raw = store.raw(row["event_id"])
         event = parse(row["parser"], json.loads(raw))[row["record_index"]]
         text = summarize(row["kind"], event.text, row["tool_name"], row["call_id"])
-        tokens = cache_count(store, counter, text)
+        safe_text = text
+        if isinstance(counter, ProjectCounter):
+            from rg.extract.redact import redact
+
+            safe_text = summarize(
+                row["kind"],
+                redact(event.text.encode(), counter.policy.patterns).data.decode(),
+                row["tool_name"],
+                row["call_id"],
+            )
+        tokens = cache_count(store, counter, safe_text)
         with store.transaction() as db:
             db.execute(
                 "INSERT INTO slim_events VALUES (?, ?, ?, ?, ?) "
@@ -129,6 +147,16 @@ def slim_session(
             (event["event_id"],),
         ).fetchone()
         raw = store.raw(event["event_id"])
+        if isinstance(counter, ProjectCounter):
+            from rg.extract.redact import redact
+
+            parsed = parse(row["parser"], json.loads(raw))[row["record_index"]]
+            event["text"] = summarize(
+                event["kind"],
+                redact(parsed.text.encode(), counter.policy.patterns).data.decode(),
+                parsed.tool_name,
+                event["call_id"],
+            )
         bounds = event_span(raw, row["parser"], row["record_index"])
         if bounds:
             event["raw_start"], event["raw_end"], event["raw_is_string"] = bounds

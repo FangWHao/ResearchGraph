@@ -134,6 +134,13 @@ class Handler(BaseHTTPRequestHandler):
     def _dispatch(self, path: str, values: dict[str, str], store: Store) -> Any:
         if path == "/api/projects":
             return views.projects(store)
+        if path == "/api/privacy":
+            from rg.store.privacy import read
+
+            if set(values) != {"project"}:
+                raise ValueError("遮盖配置仅需明确项目")
+            with store.snapshot():
+                return read(store, values["project"]).metadata(store)
         if path == "/api/qa/options":
             if set(values) != {"project"}:
                 raise ValueError("问答配置仅需明确项目")
@@ -238,7 +245,7 @@ class Handler(BaseHTTPRequestHandler):
             raw = self.rfile.read(length)
             self._unread_body = False
             path = urlsplit(self.path).path
-            if path == "/api/exports":
+            if path in {"/api/exports", "/api/privacy"}:
                 from rg.clients.record import unique_pairs
 
                 body = json.loads(raw, object_pairs_hook=unique_pairs)
@@ -251,7 +258,11 @@ class Handler(BaseHTTPRequestHandler):
                 readonly=path in {"/api/qa/retrieve", "/api/qa/preview", "/api/exports"},
             )
             try:
-                if path == "/api/exports":
+                if path == "/api/privacy":
+                    from rg.store.privacy import update
+
+                    result = update(store, body)
+                elif path == "/api/exports":
                     from rg.export.package import archive
 
                     _, data = archive(store, body)

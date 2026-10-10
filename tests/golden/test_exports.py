@@ -19,6 +19,7 @@ from rg.derive.worker import derive
 from rg.export.package import archive, verify, write
 from rg.record.manifest import record
 from rg.store.database import ConflictError, Store, dumps
+from rg.store.migrations import LATEST_VERSION
 from rg.store.objects import digest
 from tests.golden.test_l1 import claude_call, claude_result, ingest, runs
 from tests.golden.test_read_tools import SCOPE, T1, T2, T3, T4, append, decision, original, review
@@ -100,7 +101,7 @@ def test_default_export_is_complete_readonly_and_has_no_raw_binary_or_future_met
         assert raw not in joined and b"private-user" not in joined
         assert b"future-workspace" not in joined and b"deleted_at_source" not in joined
     assert manifest["conditions"]["revision"] == store.revision()
-    assert manifest["schema_version"] == 15
+    assert manifest["schema_version"] == LATEST_VERSION
     assert verify(io.BytesIO(zipped))["verified_files"] == 10
     assert unchanged(store) == before
 

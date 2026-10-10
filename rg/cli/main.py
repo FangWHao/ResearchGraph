@@ -121,6 +121,11 @@ def parser() -> argparse.ArgumentParser:
     allow = project_sub.add_parser("allow-remote", help="预览后明确允许该项目的远程计数与提取")
     allow.add_argument("project_id")
     allow.add_argument("--ack-preview", required=True, help="预览文件的 sha256")
+    privacy = project_sub.add_parser("privacy", help="读取或保存本项目的临床编号遮盖规则")
+    privacy.add_argument("project_id")
+    privacy.add_argument("--patterns-file", type=Path, help="UTF8 JSON 字符串数组；省略则只读")
+    privacy.add_argument("--actor", help="保存时使用 human:<姓名>")
+    privacy.add_argument("--expected-revision", type=int, help="保存时使用读取结果的 revision")
     imported = commands.add_parser("import", help="按行导入指定文件或目录")
     imported.add_argument("path", type=Path)
     imported.add_argument("--tool", choices=["claude", "codex"], required=True)
@@ -480,15 +485,35 @@ def run(args: argparse.Namespace, store: Store) -> object:
             project_id = store.project(args.name, [args.root, *args.alias])
             export_registry(store)
             return {"project_id": project_id}
-        preview = store.db.execute(
-            "SELECT 1 FROM remote_previews WHERE project_id = ? AND preview_sha256 = ?",
-            (args.project_id, args.ack_preview),
-        ).fetchone()
-        if not preview:
-            raise ValueError("必须先运行 preview，再用该预览的摘要明确授权")
-        store.db.execute(
-            "UPDATE projects SET remote_model_allowed = 1 WHERE project_id = ?", (args.project_id,)
-        )
+        from rg.store.privacy import gate, read, update
+
+        if args.project_command == "privacy":
+            if args.patterns_file is None:
+                if args.actor is not None or args.expected_revision is not None:
+                    raise ValueError("保存参数需与 --patterns-file 一起使用")
+                with store.snapshot():
+                    return read(store, args.project_id).metadata(store)
+            return update(
+                store,
+                {
+                    "project_id": args.project_id,
+                    "patterns": json.loads(args.patterns_file.read_text(encoding="utf-8")),
+                    "actor": args.actor,
+                    "expected_revision": args.expected_revision,
+                },
+            )
+        with gate(store, args.project_id):
+            read(store, args.project_id)
+            preview = store.db.execute(
+                "SELECT 1 FROM remote_previews WHERE project_id = ? AND preview_sha256 = ?",
+                (args.project_id, args.ack_preview),
+            ).fetchone()
+            if not preview:
+                raise ValueError("必须先运行 preview，再用该预览的摘要明确授权")
+            store.db.execute(
+                "UPDATE projects SET remote_model_allowed = 1 WHERE project_id = ?",
+                (args.project_id,),
+            )
         return {"project_id": args.project_id, "remote_model_allowed": True}
     if args.command == "import":
         paths = sorted(args.path.rglob("*.jsonl")) if args.path.is_dir() else [args.path]
@@ -570,6 +595,9 @@ def run(args: argparse.Namespace, store: Store) -> object:
         ).fetchone()
         if not session or not session[0]:
             raise ValueError("会话没有明确项目归属")
+        from rg.store.privacy import gate, read
+
+        policy = read(store, session[0])
         rows = store.db.execute(
             "SELECT event_id, kind FROM raw_events WHERE session_pk = ? "
             "AND exclude_reason IS NULL ORDER BY seq LIMIT 3",
@@ -578,6 +606,7 @@ def run(args: argparse.Namespace, store: Store) -> object:
         data = dumps(
             {
                 "project_id": session[0],
+                "privacy_policy_id": policy.identity,
                 "fields": [
                     "event_id",
                     "kind",
@@ -592,17 +621,21 @@ def run(args: argparse.Namespace, store: Store) -> object:
                     {
                         "event_id": r[0],
                         "kind": r[1],
-                        "redacted_raw": redact(store.raw(r[0])).data.decode()[:1500],
+                        "redacted_raw": redact(store.raw(r[0]), policy.patterns).data.decode()[
+                            :1500
+                        ],
                     }
                     for r in rows
                 ],
             }
         ).encode()
-        atomic_write(args.output, data)
-        sha = digest(data)
-        store.db.execute(
-            "INSERT OR IGNORE INTO remote_previews VALUES (?, ?, ?)", (session[0], sha, now())
-        )
+        with gate(store, policy.project), store.transaction():
+            policy.check(store)
+            atomic_write(args.output, data)
+            sha = digest(data)
+            store.db.execute(
+                "INSERT OR IGNORE INTO remote_previews VALUES (?, ?, ?)", (session[0], sha, now())
+            )
         return {"preview": str(args.output), "preview_sha256": sha}
     if args.command == "link" and args.estimate:
         from rg.extract.linker import pairs
@@ -751,7 +784,12 @@ def main() -> None:
             args.data_dir,
             readonly=args.command
             in {"mcp", "context", "client-pack", "versions", "run-evidence", "export", "graph"}
-            or (args.command == "ask" and args.retrieve_only),
+            or (args.command == "ask" and args.retrieve_only)
+            or (
+                args.command == "project"
+                and args.project_command == "privacy"
+                and args.patterns_file is None
+            ),
         )
         if args.command == "mcp":
             from rg.mcp.server import serve

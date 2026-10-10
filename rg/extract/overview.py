@@ -14,6 +14,7 @@ from rg.slim.tokens import BudgetExceeded
 from rg.store.database import Store, dumps, now
 from rg.store.locking import exclusive
 from rg.store.objects import atomic_write, digest
+from rg.store.privacy import read as privacy_policy
 
 OVERVIEW_SCHEMA = obj(
     {
@@ -88,9 +89,12 @@ def overview(
     *,
     expected_input: str | None = None,
 ) -> dict[str, Any]:
-    with exclusive(
-        worker.store.root / "locks" / "overviews" / (digest(project.encode()) + ".lock"),
-        "该项目的概览 worker 正在运行，请稍后重试",
+    with (
+        exclusive(
+            worker.store.root / "locks" / "overviews" / (digest(project.encode()) + ".lock"),
+            "该项目的概览 worker 正在运行，请稍后重试",
+        ),
+        worker.project_context(project),
     ):
         return _overview(worker, project, destination, session, scope, expected_input)
 
@@ -106,7 +110,8 @@ def _overview(
     store = worker.store
     _permission(store, project, worker.provider)
     source = records(store, project, session, scope)
-    input_key = digest(dumps(source).encode())
+    policy = privacy_policy(store, project)
+    input_key = digest(dumps(source if not policy.rule_id else [source, policy.identity]).encode())
     if expected_input is not None and expected_input != input_key:
         raise ChangedInput("概览输入已变化")
     # 每页直接读 claims，不把任何已生成的概览作为下一页或其他阶段的输入。
@@ -177,6 +182,7 @@ def _overview(
     # 短写事务只核对并发布；整个计数/生成阶段都不占数据库写事务。
     with store.transaction():
         _permission(store, project, worker.provider)
+        policy.check(store, worker.provider.remote)
         if digest(dumps(records(store, project, session, scope)).encode()) != input_key:
             raise ChangedInput("生成期间概览输入已变化，未发布")
         atomic_write(destination, published)

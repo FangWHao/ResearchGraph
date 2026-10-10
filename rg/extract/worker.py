@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -12,6 +14,7 @@ from rg.extract.budgets import Budgets
 from rg.extract.locator import CUE_PATTERNS, positions, units, windows
 from rg.extract.monitor import set_status
 from rg.extract.paths import file_paths
+from rg.extract.privacy import ProjectCounter
 from rg.extract.progress import (
     adopt_legacy,
     cache_key,
@@ -32,7 +35,7 @@ from rg.extract.working_set import working_set
 from rg.ingest.common import parse
 from rg.slim.cached import CachedCounter
 from rg.slim.tokens import BudgetExceeded, CountingUnavailable, DailyBudgetExceeded
-from rg.store.database import Store, dumps, now
+from rg.store.database import ConflictError, Store, dumps, now
 from rg.store.locking import TaskBusy, exclusive
 from rg.store.objects import digest
 
@@ -65,7 +68,22 @@ class Worker:
         self.attempt_ids: dict[int, int] = {}
         self.config_key: str | None = None
         self.max_event_id: int | None = None
-        self.counter = CachedCounter(store, provider)
+        self.counter: CachedCounter | ProjectCounter = CachedCounter(store, provider)
+
+    def project_counter(self, project: str) -> ProjectCounter:
+        if isinstance(self.counter, ProjectCounter) and self.counter.policy.project == project:
+            self.counter.policy.check(self.store, self.provider.remote)
+            return self.counter
+        return ProjectCounter(self.store, project, self.provider)
+
+    @contextmanager
+    def project_context(self, project: str) -> Iterator[None]:
+        previous = self.counter
+        self.counter = self.project_counter(project)
+        try:
+            yield
+        finally:
+            self.counter = previous
 
     def invoke(
         self,
@@ -87,8 +105,10 @@ class Worker:
             self.output_budget, output_limit if output_limit is not None else self.output_budget
         )
         _permission(self.store, project_id, self.provider)
+        counter = self.project_counter(project_id)
+        policy = counter.policy
         prompt = Path(__file__).with_name("prompts").joinpath(stage + ".txt").read_text()
-        content = model_input(content, stage)
+        content = model_input(content, stage, policy.patterns)
         request = self.provider.request(prompt, content, schema, output_budget)
         prompt_version = digest(prompt.encode())
         schema_version = 2 if stage == "pass1" else 1
@@ -106,6 +126,7 @@ class Worker:
                     schema_version,
                     asdict(self.budgets),
                     limit,
+                    policy.identity,
                 ]
             ).encode()
         )
@@ -129,7 +150,8 @@ class Worker:
                 if attempt:
                     self.attempt_ids[cached["extraction_run_id"]] = attempt[0]
                 return cached["extraction_run_id"], json.loads(cached["output_json"])
-            self._check_model_limits()
+            with policy.sending(self.store, self.provider.remote):
+                self._check_model_limits()
             # 相同失败输入的重试使用同一 run，并保留失败状态供监控。
             if cached:
                 run_id = cached["extraction_run_id"]
@@ -182,7 +204,7 @@ class Worker:
                     raise RuntimeError("无法登记调用尝试")
                 self.attempt_ids[run_id] = attempt
             try:
-                count = self.provider.count_request(request)
+                count = counter.count_request(request)
                 self.store.db.execute(
                     "UPDATE model_attempts SET measured_input_tokens=? WHERE attempt_id=?",
                     (count, attempt),
@@ -204,7 +226,7 @@ class Worker:
                 header_row = self.store.db.execute(
                     "SELECT tokens FROM token_cache WHERE cache_key = ?", (header_key,)
                 ).fetchone()
-                header_tokens = header_row[0] if header_row else self.provider.count_request(header)
+                header_tokens = header_row[0] if header_row else counter.count_request(header)
                 if not header_row:
                     self.store.db.execute(
                         "INSERT OR IGNORE INTO token_cache VALUES (?, ?, ?, ?, ?)",
@@ -217,8 +239,7 @@ class Worker:
                         ),
                     )
                 if header_tokens > self.budgets.header_tokens or (
-                    stage == "pass1"
-                    and self.provider.count_text(content) > self.budgets.content_tokens
+                    stage == "pass1" and counter.count_text(content) > self.budgets.content_tokens
                 ):
                     self._status(
                         run_id, "over_budget", "指令/schema 或片段内容超过分配预算，未发送"
@@ -241,10 +262,11 @@ class Worker:
                         "WHERE day = ?",
                         (reserve, day),
                     )
-                self.store.db.execute(
-                    "UPDATE model_attempts SET sent=1 WHERE attempt_id=?", (attempt,)
-                )
-                result = self.provider.generate(request)
+                with policy.sending(self.store, self.provider.remote):
+                    self.store.db.execute(
+                        "UPDATE model_attempts SET sent=1 WHERE attempt_id=?", (attempt,)
+                    )
+                    result = self.provider.generate(request)
                 self.store.db.execute(
                     "UPDATE model_attempts SET input_tokens=?, output_tokens=?, stop_reason=? "
                     "WHERE attempt_id=?",
@@ -294,6 +316,9 @@ class Worker:
                     )
                     set_status(self.store, run_id, "validated", attempt_id=attempt)
                 return run_id, output
+            except (ConflictError, PermissionError):
+                self._status(run_id, "invalid", "遮盖配置或许可已变化，结果作废", "validation")
+                raise
             except CountingUnavailable:
                 self._status(run_id, "failed", "计数不可用，未发送生成请求", "counting")
                 raise
@@ -352,6 +377,7 @@ class Worker:
         retry_failed: bool = False,
         *,
         max_event_id: int | None = None,
+        expected_privacy: str | None = None,
     ) -> dict[str, int]:
         if type(session_id) is not int or session_id < 1:
             raise ValueError("会话 ID 必须为正整数")
@@ -370,7 +396,17 @@ class Worker:
         ):
             self.max_event_id = max_event_id
             try:
-                return self._process(session_id, scope, retry_failed)
+                row = self.store.db.execute(
+                    "SELECT project_id FROM sessions WHERE session_pk=?", (session_id,)
+                ).fetchone()
+                if not row or not row[0]:
+                    raise ValueError("会话未归属项目，不能猜测归属")
+                with self.project_context(row[0]):
+                    if expected_privacy is not None and (
+                        self.project_counter(row[0]).policy.identity != expected_privacy
+                    ):
+                        raise InvalidClaim("项目遮盖配置已变化，本次旧任务未执行")
+                    return self._process(session_id, scope, retry_failed)
             finally:
                 self.max_event_id = None
 
@@ -429,7 +465,7 @@ class Worker:
             return {"segments": previous[0], "claims": 0, "manual": 0}
         reserved = {event for plan in plans for event in json.loads(plan["event_ids"])}
         items = prepare(
-            self.store, session_id, snapshot, reserved, self.provider, self.budgets.content_tokens
+            self.store, session_id, snapshot, reserved, self.counter, self.budgets.content_tokens
         )
         with self.store.transaction():
             register(self.store, self.config_key, session_id, items)
@@ -486,7 +522,7 @@ class Worker:
             Path(__file__).with_name("prompts").joinpath(stage + ".txt").read_text()
             for stage in ["pass1", "pass2"]
         ]
-        return [
+        result = [
             self.provider.provider,
             self.provider.model,
             prompts,
@@ -498,6 +534,9 @@ class Worker:
             RULE_VERSION,
             scope,
         ]
+        if isinstance(self.counter, ProjectCounter) and self.counter.policy.rule_id:
+            result.append(self.counter.policy.identity)
+        return result
 
     def _pending(self, session_id: int) -> int:
         return self.store.db.execute(
@@ -546,10 +585,17 @@ class Worker:
                 )
         run_id: int | None = None
         try:
-            input_units = units(self.store, item, self.counter)
+            counter = self.project_counter(project_id)
+            custom = counter.policy.patterns
+            input_units = units(self.store, item, counter, custom)
             content = dumps(input_units)
             pass1_run, locations = self.invoke(
-                "pass1", item, project_id, redact(content.encode()).data.decode(), PASS1_SCHEMA, []
+                "pass1",
+                item,
+                project_id,
+                redact(content.encode(), custom).data.decode(),
+                PASS1_SCHEMA,
+                [],
             )
             try:
                 located = positions(input_units, locations["candidates"])
@@ -575,7 +621,7 @@ class Worker:
             if not located:
                 self._coverage(item, "pass2", "excluded:no_candidate")
                 return
-            content = redact(dumps(input_units).encode()).data.decode()
+            content = redact(dumps(input_units).encode(), custom).data.decode()
             working = working_set(
                 self.store,
                 project_id,
@@ -589,7 +635,7 @@ class Worker:
             raw_input, ranges, owned_ranges = windows(self.store, item, input_units, located)
             content_windows = {
                 "raw_windows": raw_input,
-                "slim": json.loads(redact(content.encode()).data.decode()),
+                "slim": json.loads(redact(content.encode(), custom).data.decode()),
             }
             if self.counter.count_text(dumps(content_windows)) > self.budgets.content_tokens:
                 raise BudgetExceeded("pass2 原文与瘦身窗口超过片段分配预算")
@@ -597,7 +643,7 @@ class Worker:
                 input_data = {
                     "segment_id": item.segment_id,
                     "raw_windows": raw_input,
-                    "slim": json.loads(redact(content.encode()).data.decode()),
+                    "slim": json.loads(redact(content.encode(), custom).data.decode()),
                     "working_set": working,
                     "context_gaps": item.context_gaps,
                     "scope_filter": scope,

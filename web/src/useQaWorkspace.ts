@@ -6,9 +6,9 @@ import type { QaDraft, QaOptions, QaPacket, QaPreview } from './qa';
 interface Workspace {
   draft: QaDraft; options: QaOptions | null; result: QaPacket | null; resultIntent: string | null;
   preview: QaPreview | null; previewIntent: string | null; consent: boolean;
-  busy: string | null; error: string; info: string; conflict: boolean;
+  busy: string | null; error: string; info: string; conflict: boolean; policyStale: boolean;
 }
-function empty(): Workspace { return { draft: emptyQaDraft(), options: null, result: null, resultIntent: null, preview: null, previewIntent: null, consent: false, busy: null, error: '', info: '', conflict: false }; }
+function empty(): Workspace { return { draft: emptyQaDraft(), options: null, result: null, resultIntent: null, preview: null, previewIntent: null, consent: false, busy: null, error: '', info: '', conflict: false, policyStale: false }; }
 function optionsFor(value: QaOptions, project: string): QaOptions {
   if (value.project_id !== project || !Number.isInteger(value.revision) || typeof value.configured !== 'boolean'
     || typeof value.remote_allowed !== 'boolean' || ![true, false, null].includes(value.remote)) throw new Error('模型配置状态未知；可以刷新后进行本地检索。');
@@ -39,7 +39,10 @@ export function useQaWorkspace({ project, active, authorized, epoch, onError, on
     if (!project || !authorized || !active) return;
     const controller = new AbortController(); const auth = context.current.generation;
     api<QaOptions>(`/qa/options?${query({ project })}`, undefined, controller.signal).then(value => {
-      if (!controller.signal.aborted && context.current.project === project && context.current.generation === auth) update(project, { options: optionsFor(value, project) });
+      if (!controller.signal.aborted && context.current.project === project && context.current.generation === auth) {
+        const options = optionsFor(value, project); const previous = values.current[project];
+        update(project, { options, ...(previous?.preview && previous.preview.revision !== options.revision ? { preview: null, previewIntent: null, consent: false } : {}) });
+      }
     }).catch(error => {
       if (!controller.signal.aborted && context.current.project === project && context.current.generation === auth) {
         update(project, { error: error instanceof Error ? error.message : '读取配置失败' });
@@ -89,7 +92,7 @@ export function useQaWorkspace({ project, active, authorized, epoch, onError, on
         if (!current(pending)) return;
         const result = parseQaPacket(local.context_text, project, body.question);
         revision = result.revision;
-        update(project, { result, resultIntent: pending.intent, preview: null, previewIntent: null, consent: false });
+        update(project, { result, resultIntent: pending.intent, preview: null, previewIntent: null, consent: false, policyStale: false });
         if (!result.sources.length) { update(project, { info: '没有找到有效来源，无法据此判断。可调整问题、范围或截止时间。' }); return; }
         if (mode === 'retrieve') { update(project, { info: '已完成本地有界检索，此次未调用模型。' }); return; }
         if (!options?.configured) { update(project, { info: options ? '尚未配置模型，已显示本地检索来源。' : '模型配置状态未知，已显示本地检索来源；刷新后可核对配置。' }); return; }
@@ -107,7 +110,7 @@ export function useQaWorkspace({ project, active, authorized, epoch, onError, on
       const response = await api<{ context_text: string }>('/qa/answer', { ...body, expected_revision: revision }, pending.controller.signal);
       if (!current(pending)) return;
       const result = parseQaPacket(response.context_text, project, body.question, true);
-      update(project, { result, resultIntent: pending.intent, info: '' });
+      update(project, { result, resultIntent: pending.intent, info: '', policyStale: false });
     } catch (error) {
       if (current(pending)) {
         update(project, { error: error instanceof Error ? error.message : '问答请求失败', conflict: error instanceof ApiError && error.status === 409 });
@@ -128,5 +131,9 @@ export function useQaWorkspace({ project, active, authorized, epoch, onError, on
     changeDraft, consentChange: (consent: boolean) => update(project, { consent }),
     submit: () => run('query'), retrieve: () => run('retrieve'), allow: () => run('allow'), disable: () => run('disable'), cancel,
     refresh: () => { update(project, { conflict: false, error: '', preview: null, previewIntent: null, consent: false }); onPermissionChange(); },
+    invalidatePolicy: (changedProject: string) => {
+      if (request.current?.project === changedProject) { request.current.controller.abort(); request.current = null; }
+      update(changedProject, { options: null, busy: null, preview: null, previewIntent: null, consent: false, policyStale: true, info: '项目遮盖规则已变化，旧发送预览已失效；请主动重新查询。此前已发送的请求可能仍在处理。' });
+    },
   };
 }

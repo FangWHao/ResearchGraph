@@ -151,7 +151,10 @@ def link(
     if not 1 <= limit <= 1000:
         raise ValueError("候选对页长必须为 1 到 1000")
     _permission(worker.store, project, worker.provider)
-    with exclusive(worker.store.root / "locks" / (digest(project.encode()) + ".link")):
+    with (
+        exclusive(worker.store.root / "locks" / (digest(project.encode()) + ".link")),
+        worker.project_context(project),
+    ):
         return _schedule(worker, project, limit, scope, retry_failed, retry_attempts)
 
 
@@ -167,6 +170,9 @@ def _schedule(
     prompt = Path(__file__).with_name("prompts").joinpath("link.txt").read_text()
     header = worker.provider.request(prompt, "", LINK_SCHEMA, min(worker.output_budget, 1000))
     processing = [worker.provider.provider, worker.provider.model, header, 3000, "link-scheduler1"]
+    counter = worker.project_counter(project)
+    if counter.policy.rule_id:
+        processing.append(counter.policy.identity)
     stats: dict[str, Any] = {
         "pairs": 0,
         "claims": 0,
@@ -241,10 +247,10 @@ def _schedule(
                 raise InvalidClaim("链接对象缺少原文引用")
             raw = store.raw(span["event_id"])
             a, b = span["byte_start"], span["byte_end"]
-            redact(raw).original_span(a, b)
+            redact(raw, counter.policy.patterns).original_span(a, b)
             if digest(raw[a:b]) != span["quote_sha256"]:
                 raise InvalidClaim("既有引用摘要不一致")
-            a, b = _bounded_prefix(raw, a, b, worker.provider)
+            a, b = _bounded_prefix(raw, a, b, counter)
             evidence = {
                 "event_id": span["event_id"],
                 "byte_start": a,

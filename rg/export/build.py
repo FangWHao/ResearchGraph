@@ -216,6 +216,8 @@ def algorithms(store: Store, claims: list[dict[str, Any]], reader: Reader) -> di
                 "export/privacy.py",
                 "export/package.py",
                 "query/graph.py",
+                "extract/redact.py",
+                "store/privacy.py",
             )
         },
         "extraction_runs": runs,
@@ -299,9 +301,12 @@ def build(store: Store, body: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
     expected = body.get("expected_revision")
     if expected is not None and (type(expected) is not int or expected < 0):
         raise ValueError("expected_revision 需为非负整数")
-    privacy = Privacy(body.get("redact_patterns"))
     with store.snapshot():
         reader = Reader(store, body["project_id"], body)
+        from rg.store.privacy import read
+
+        policy = read(store, reader.project)
+        privacy = Privacy(body.get("redact_patterns"), policy.patterns)
         if expected is not None and expected != store.revision():
             raise ConflictError("图已变化，请重新选择导出条件")
         claims = [dict(c) for c in reader.scoped(reader.claims())]
@@ -353,7 +358,8 @@ def build(store: Store, body: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
             },
             "selection": "all_visible_assertions_in_exact_scope",
             "include_evidence": include,
-            "privacy": privacy.metadata(),
+            "privacy": privacy.metadata()
+            | {"project_policy_id": policy.identity, "project_rule_id": policy.rule_id},
             "complete_raw_sessions": False,
             "binary_data": False,
             "is_backup": False,

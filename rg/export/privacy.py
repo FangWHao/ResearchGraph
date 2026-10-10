@@ -5,6 +5,7 @@ from typing import Any
 
 from rg.extract.redact import Redacted, redact
 from rg.store.objects import digest
+from rg.store.privacy import patterns as validate_patterns
 
 SENSITIVE = {
     "api_key",
@@ -39,21 +40,8 @@ ASSIGNMENTS = (
 
 
 class Privacy:
-    def __init__(self, patterns: Any = None):
-        if patterns is None:
-            patterns = []
-        if (
-            not isinstance(patterns, list)
-            or len(patterns) > 32
-            or any(not isinstance(p, str) or not p or len(p) > 1000 for p in patterns)
-        ):
-            raise ValueError("遮盖正则需为最多 32 项非空字符串，每项不超过 1000 字符")
-        try:
-            for pattern in patterns:
-                re.compile(pattern)
-        except re.error as error:
-            raise ValueError("遮盖正则无效") from error
-        self.patterns = tuple(patterns)
+    def __init__(self, patterns: Any = None, project_patterns: tuple[str, ...] = ()):
+        self.patterns = project_patterns + validate_patterns([] if patterns is None else patterns)
         self.changed_strings = 0
         self.credential_fields = 0
 

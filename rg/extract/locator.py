@@ -76,7 +76,9 @@ def _display(raw: bytes, start: int, end: int, is_string: bool) -> str:
     return text
 
 
-def units(store: Store, item: Segment, counter: TokenCounter) -> list[dict[str, Any]]:
+def units(
+    store: Store, item: Segment, counter: TokenCounter, custom: tuple[str, ...] = ()
+) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     raw_cache: dict[int, bytes] = {}
     private_cache: dict[int, tuple[tuple[int, int], ...]] = {}
@@ -84,7 +86,7 @@ def units(store: Store, item: Segment, counter: TokenCounter) -> list[dict[str, 
         event_id = event["event_id"]
         if event_id not in raw_cache:
             raw_cache[event_id] = store.raw(event_id)
-            private_cache[event_id] = redact(raw_cache[event_id]).private_ranges
+            private_cache[event_id] = redact(raw_cache[event_id], custom).private_ranges
         raw = raw_cache[event_id]
         private = private_cache[event_id]
         start, end = event.get("raw_start", 0), event.get("raw_end", len(raw))
