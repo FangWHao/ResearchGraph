@@ -123,6 +123,18 @@ def parser() -> argparse.ArgumentParser:
     summarized.add_argument("--session", type=int)
     summarized.add_argument("--output", type=Path, required=True)
     model_arguments(summarized)
+    asked = commands.add_parser("ask", help="先检索有限原文，再生成带引用的模型解释")
+    asked.add_argument("question")
+    asked.add_argument("--project", required=True)
+    asked.add_argument("--k", type=int, default=12, help="最多读取证据条数，默认 12，1–100")
+    asked.add_argument("--max-bytes", type=int, default=4000, help="每条证据的 UTF8 字节窗口")
+    asked.add_argument("--occurred-until", help="发生截止，需明确时区")
+    asked.add_argument("--known-until", help="已知截止，需明确时区")
+    asked.add_argument("--expected-revision", type=int)
+    asked.add_argument(
+        "--retrieve-only", action="store_true", help="只读本地检索，不联网、不调用模型"
+    )
+    model_arguments(asked)
     review = commands.add_parser("review", help="查看候选或人工确认/驳回（带乐观并发保护）")
     review.add_argument("--claim", type=int)
     review.add_argument("--action", choices=["confirm", "dismiss"])
@@ -403,8 +415,17 @@ def run(args: argparse.Namespace, store: Store) -> object:
             ],
             "generation_calls": 0,
         }
-    if args.command in {"extract", "link", "overview"}:
+    if args.command == "ask" and args.retrieve_only:
+        from rg.query.context import wrap
+        from rg.query.retrieval import retrieve
+
+        return wrap(
+            retrieve(store, args.project, args.question, args.k, _ask_values(args), args.max_bytes)
+        )
+    if args.command in {"extract", "link", "overview", "ask"}:
         scope = parse_scope(args.scope)
+        if args.command == "ask" and args.daily_budget < 1:
+            raise ValueError("每日额度须为正整数")
         if args.command == "extract":
             from rg.extract.queue import Queue
 
@@ -427,6 +448,12 @@ def run(args: argparse.Namespace, store: Store) -> object:
             worker = Worker(
                 store, provider, input_budget=args.input_budget, daily_budget=args.daily_budget
             )
+            if args.command == "ask":
+                from rg.extract.qa import ask
+
+                return ask(
+                    worker, args.project, args.question, args.k, _ask_values(args), args.max_bytes
+                )
             if args.command == "link":
                 from rg.extract.linker import link
 
@@ -479,12 +506,24 @@ def run(args: argparse.Namespace, store: Store) -> object:
     raise ValueError("未知命令")
 
 
+def _ask_values(args: argparse.Namespace) -> dict:
+    values = {
+        key: getattr(args, key) for key in ("occurred_until", "known_until", "expected_revision")
+    }
+    scope = parse_scope(args.scope)
+    return values | ({"scope": scope} if scope is not None else {})
+
+
 def main() -> None:
     cli = parser()
     args = cli.parse_args()
     store = None
     try:
-        store = Store(args.data_dir, readonly=args.command in {"mcp", "context"})
+        store = Store(
+            args.data_dir,
+            readonly=args.command in {"mcp", "context"}
+            or (args.command == "ask" and args.retrieve_only),
+        )
         if args.command == "mcp":
             from rg.mcp.server import serve
             from rg.mcp.tools import ToolService
@@ -502,7 +541,7 @@ def main() -> None:
         result = run(args, store)
         print(
             result
-            if args.command == "context"
+            if args.command in {"context", "ask"}
             else json.dumps(result, ensure_ascii=False, indent=2)
         )
     except (ValueError, RuntimeError, OSError, sqlite3.Error) as error:

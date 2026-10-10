@@ -344,3 +344,17 @@
 - cd web && pnpm test:browser：33 passed (28.0s)。HTTP GET 改只读后原人工写入与界面仍通过；前端八文件冻结清单全部 OK。本轮未改前端源码、不调提取模型、不读真实完整会话、不装钩子、不改个人客户端设置；公开词表与私有材料分开。
 - 下一步：允许清单提交后更新现有草稿 PR，按新 HEAD 检查推送/PR 两种 CI并独立恢复代码包，再结束本任务。后续继续客户端包装、自动关联与有界问答、后台大文件摘要、完整运行 I/O 及全图语义；note/propose_note 类型待答复，大库性能/取消/吞吐仍待验收，正式参考和真实 M1–M4 门槛保留，整个目标不标完成。
 - 提交前允许清单检查：tracked_files=229 staged_files=26 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True；git diff --cached --check 退出码 0。仅公开源码、正式词表/许可证、中文文档和合成测试；前端冻结源码恒等。远端结果与独立恢复按本轮新 HEAD 验收，不用旧提交成功替代。
+
+## 2026-10-10 · 有界问答与本地检索后备
+
+- 任务：落实 §2、§7.2/7.7/7.10/7.11、§10/11 与 M4 的 ask；开始读进度末尾、相关章节和决定，de7b0ed 基线恢复包独立还原，229 跟踪文件与 SHA256 已核对。完整 M0–M4 尚未验收。
+- 改动的文件：新增 rg/query/retrieval.py、rg/extract/qa.py、rg/extract/prompts/qa.txt、tests/golden/test_qa.py、中文有界问答验收；修改 CLI、README、需求落实、决定、PR 草稿与本文件。前端源码未改。
+- 行为：默认最多 12 条校验原文、每窗口 4000 UTF8 字节，K 与窗口可调；有限字面量匹配记录/对象相关决定及无结构化记录的原件后备。完整范围、发生/已知截止、历史审核和完整状态计算继续保留。范围下不猜原件归属，缺失/损坏/达到上限明确列出；没有有效证据零调用并回答无法判断。
+- 生成：既有 qa 执行器实际完整请求计数、权限、128k/4k、日额度、锁和缓存；逐条来源 ID/逐字引文校验，遮盖状态由程序给出。截断、污染、超预算及坏回答作废，保留检索结果。模型解释仅缓存，不写研究 claims；标记防回流，引用有效不证明语义正确，生成中记录版本变化显式报告。
+- uv sync --locked：Resolved 28 packages in 14ms、Checked 27 packages in 49ms；uv run rg --help、ask --help 退出码均 0。真实已安装 CLI 的 retrieve-only 使用只读库，含命令替换、反引号和分号的参数不会执行，逻辑库不变。
+- uv run pytest tests/golden/test_qa.py tests/golden/test_read_tools.py tests/test_worker.py -q：84 passed in 15.38s；uv run pytest -q：504 passed in 161.63s；uv run pytest tests/golden -q：457 passed in 147.77s。全量与固定案例并行，不作性能基准；31 项新增案例不替代真实 M4 找答案时间。
+- uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；wheel_files=93 source_resources=88 missing=0 mismatches=0 actual_secret_matches=0 private_or_static_files=0，问答提示词已包含。隔离环境重新安装、真实 CLI 连明确本机模拟服务，计数 2/生成 1、重问复用、L0 不变、claims=0；不冒充提供方计数。
+- 合成 DeepSeek 最终实测：只发送脚本内一条合成消息，实测输入/报告输入/输出 1336/1316/428、状态 ok；生成 1、重问新增 0、同一 run、原件不变、claims=0。本轮两次独立实测共生成 2；首次附注误述遮盖后增加程序字段与提示，最终正确说明未遮盖。实际引文可核对，自由解释仍不宣称已证明正确。密钥、私有材料及证明留忽略目录。
+- 验收修复：测试 fixture 误走含隐私原文的模型入库路径、误用 Parsed/CLI 接口及未剥除输出末尾换行已改正；坏引用与压缩对象分别列缺口，不回显模型失败原件。最终输出按 84/504/457 核对，早期失败不当作通过。未读完整真实会话、不发送 Atlas 材料、不改个人设置。
+- 下一步：本轮允许清单提交、更新既有草稿 PR，按新 HEAD 核对两种远端 CI并独立还原代码包后结束本任务。后续继续问答界面、客户端包装、自动关联串联、完整运行 I/O、后台摘要和全图语义；note 类型待答复，正式参考与真实 M1–M4 门槛保留，整个目标仍未标完成。
+- 提交前允许清单检查：tracked_files=234 staged_files=11 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True；git diff --cached --check 退出码 0。前端八文件冻结清单全部 OK，源规格保留原文。仅公开源码、中文文档和合成测试提交；凭据、真实材料、截图、数据库、缓存和产物保留在忽略目录。
