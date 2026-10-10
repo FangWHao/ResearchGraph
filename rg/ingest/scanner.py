@@ -345,6 +345,10 @@ def _scan_file(
                     from rg.ingest.parents import observe
 
                     observe(db, session, event_ids[0], record)
+                    if db.execute("PRAGMA user_version").fetchone()[0] >= 23:
+                        from rg.ingest.parents import checkpoint
+
+                        checkpoint(db, event_ids[0])
                 if fault:
                     fault()
                 prefix_length = min(end, 4096)

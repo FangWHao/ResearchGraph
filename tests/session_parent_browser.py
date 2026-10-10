@@ -11,6 +11,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from rg.api.server import Handler, LocalServer
 from rg.ingest.scanner import scan_file
+from rg.ingest.watch import cycle
 from rg.store import migrations
 from rg.store.database import Store
 
@@ -154,7 +155,11 @@ def main() -> None:
                     self._json(200, {"project": project, "cases": cases})
 
             def do_POST(self):
-                if urlsplit(self.path).path != "/synthetic-parent-fixture/append-parent":
+                path = urlsplit(self.path).path
+                if path not in (
+                    "/synthetic-parent-fixture/append-parent",
+                    "/synthetic-parent-fixture/cycle",
+                ):
                     return super().do_POST()
                 self._unread_body = True
                 if not self._authorized():
@@ -169,14 +174,17 @@ def main() -> None:
                     return
                 store = Store(root)
                 try:
-                    result = add(
-                        store,
-                        directory,
-                        project,
-                        "late-parent",
-                        [header("late-parent")],
-                        "迟到父头原文",
-                    )
+                    if path == "/synthetic-parent-fixture/cycle":
+                        result = cycle(store)
+                    else:
+                        result = add(
+                            store,
+                            directory,
+                            project,
+                            "late-parent",
+                            [header("late-parent")],
+                            "迟到父头原文",
+                        )
                 finally:
                     store.close()
                 self._json(200, result)

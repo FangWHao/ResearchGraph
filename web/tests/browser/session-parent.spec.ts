@@ -76,9 +76,22 @@ async function rawProof(request: APIRequestContext, id: number) {
 }
 
 test('真实两处头声明与关联分别显示，导航只用事件ID且原文摘要不变，HTML不执行', async ({ page, request }) => {
-  const { cases } = await fixture(request); const data = await evidence(request, cases.linked.event_id);
+  const { cases } = await fixture(request);
+  const legacyBefore = await rawProof(request, cases.unobserved.head_events[0]);
+  expect(legacyBefore.session_parent).toMatchObject({ state: 'metadata_incomplete', observations_total: 0,
+    source_metadata_complete: false, identity_metadata_complete: false,
+    parent_session_pk: null, parent_native_id: null, parent_event_id: null });
+  const completed = await request.post(`${origin}/synthetic-parent-fixture/cycle`, { headers, data: {} });
+  expect(completed.status()).toBe(200);
+  const legacyAfter = await rawProof(request, cases.unobserved.head_events[0]);
+  expect(legacyAfter.session_parent).toMatchObject({ state: 'no_parent_declared', observations_total: 1,
+    source_metadata_complete: true, identity_metadata_complete: true });
+  expect(legacyAfter.event.quote_sha256).toBe(legacyBefore.event.quote_sha256);
+  expect(legacyAfter.event.recorded_at).toBe(legacyBefore.event.recorded_at);
+  const data = await evidence(request, cases.linked.event_id);
   expect(data.session_parent).toMatchObject({ state: 'linked', session_pk: cases.linked.session_pk,
-    parent_session_pk: cases.parent.session_pk, parent_event_id: cases.parent.head_events[0] });
+    parent_session_pk: cases.parent.session_pk, parent_event_id: cases.parent.head_events[0],
+    source_metadata_complete: true, identity_metadata_complete: true });
   expect(data.session_parent!.observations[0].basis).toBe('both');
   const raw = await rawProof(request, cases.linked.event_id);
   expect(raw.event.quote).toContain('<script>window.parentInjected=true</script>');
@@ -142,14 +155,14 @@ test('真实迟到父头只更新关联，全部历史冲突不会被最近20条
 
 test('真实未知与异常关系不猜根线程，跨项目不公开父引用，坏会话身份不提供导航', async ({ page, request }) => {
   const { cases } = await fixture(request);
-  for (const [name, state] of Object.entries({ unobserved: 'unobserved', none: 'no_parent_declared',
+  for (const [name, state] of Object.entries({ unobserved: 'no_parent_declared', none: 'no_parent_declared',
     invalid: 'invalid', cycle: 'cycle', ambiguous: 'ambiguous_parent', outside: 'outside_project' })) {
     const data = (await evidence(request, cases[name].event_id)).session_parent!;
     expect(data.state).toBe(state);
     expect(data.parent_session_pk).toBeNull(); expect(data.parent_native_id).toBeNull(); expect(data.parent_event_id).toBeNull();
   }
   await open(page);
-  for (const [name, state] of [['unobserved', 'unobserved'], ['none', 'no_parent_declared'], ['outside', 'outside_project']]) {
+  for (const [name, state] of [['unobserved', 'no_parent_declared'], ['none', 'no_parent_declared'], ['outside', 'outside_project']]) {
     const panel = await openEvent(page, cases[name].event_id);
     await expect(panel.locator(`[data-parent-state="${state}"]`)).toHaveCount(1);
     await expect(panel.getByRole('button', { name: /^打开父线程头原文/ })).toHaveCount(0);

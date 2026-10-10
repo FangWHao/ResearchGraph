@@ -42,6 +42,9 @@ def cycle(
         from rg.ingest.hook_errors import collect
 
         counts.update(backfill_saved(store, skip_files=scanned_files))
+        from rg.ingest.parents import backfill_saved as backfill_parents
+
+        counts.update(backfill_parents(store, skip_files=scanned_files))
         counts.update(collect(store))
         counts.update(register(store))
         counts.update(consume(store, sources(store), retry_failed, fault=fault))

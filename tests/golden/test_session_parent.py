@@ -276,7 +276,7 @@ def test_atomic_upgrade_and_old_header_recovery(tmp_path, monkeypatch):
             == 0
         )
     with closing(Store(root)) as current:
-        assert view(current, 1)["state"] == "unobserved"
+        assert view(current, 1)["state"] == "metadata_incomplete"
         assert scan_file(current, path, "codex") == {}
         assert view(current, 1)["state"] == "missing_parent"
         assert current.db.execute("SELECT count(*) FROM raw_events").fetchone()[0] == 1
@@ -444,7 +444,7 @@ def test_legacy_catalog_backfill_keeps_all_header_conflicts_and_old_evidence(tmp
             scan_file(old, path, "codex")
             event_times = [r[0] for r in old.db.execute("SELECT recorded_at FROM raw_events")]
     with closing(Store(root)) as store:
-        assert view(store, 1)["state"] == "unobserved"
+        assert view(store, 1)["state"] == "metadata_incomplete"
         assert scan_file(store, path, "codex") == {}
         result = view(store, 1)
         assert result["state"] == "conflicting" and result["observations_total"] == 2

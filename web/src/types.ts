@@ -199,7 +199,7 @@ export interface EventChainData {
   source_metadata_complete: boolean; scope_metadata_incomplete: boolean;
 }
 export type SessionParentState = 'unobserved' | 'no_parent_declared' | 'invalid' | 'conflicting'
-  | 'missing_parent' | 'ambiguous_parent' | 'cycle' | 'linked' | 'outside_project' | 'unsupported';
+  | 'missing_parent' | 'ambiguous_parent' | 'cycle' | 'linked' | 'outside_project' | 'unsupported' | 'metadata_incomplete';
 export interface SessionParentObservation {
   event_id: number; state: 'invalid' | 'conflict' | 'declared' | 'not_declared';
   basis: 'none' | 'top_level' | 'thread_spawn' | 'both'; reason: string;
@@ -210,6 +210,7 @@ export interface SessionParentData {
   parent_session_pk: number | null; parent_native_id: string | null; parent_event_id: number | null;
   observations: SessionParentObservation[]; observations_total: number;
   observations_partial: boolean; observation_highwater: number;
+  source_metadata_complete?: boolean | null; identity_metadata_complete?: boolean | null;
 }
 export interface SearchPage {
   results: { event_id: number; session_pk: number; text: string; occurred_at: string | null }[];

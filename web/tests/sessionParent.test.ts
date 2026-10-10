@@ -12,7 +12,8 @@ function observation(event = 3): SessionParentObservation {
 function view(): SessionParentData {
   return { session_pk: 2, tool: 'codex', native_id: child, state: 'linked', parent_session_pk: 1,
     parent_native_id: parent, parent_event_id: 1, observations: [observation()], observations_total: 1,
-    observations_partial: false, observation_highwater: 3 };
+    observations_partial: false, observation_highwater: 3,
+    source_metadata_complete: true, identity_metadata_complete: true };
 }
 
 describe('父线程源声明与当前关联分别保存', () => {
@@ -76,5 +77,44 @@ describe('父线程源声明与当前关联分别保存', () => {
       { parent_event_id: -1 }, { observation_highwater: 4 }, { observations_total: 2 },
       { observations: [observation(), observation()] }, { observations: [{ ...observation(), event_id: 0 }] }])
       expect(() => parseSessionParent({ ...view(), ...patch }, 2)).toThrow();
+  });
+  it('积压状态可有零条或多条观测，父导航为空；不能把零条当完整无父', () => {
+    for (const observed of [false, true]) {
+      const input: SessionParentData = { ...view(), state: 'metadata_incomplete', parent_session_pk: null,
+        parent_native_id: null, parent_event_id: null, observations: observed ? [observation()] : [],
+        observations_total: observed ? 1 : 0, observation_highwater: observed ? 3 : 0,
+        source_metadata_complete: false, identity_metadata_complete: false };
+      const result = parseSessionParent(input, 2)!;
+      expect(result.state).toBe('metadata_incomplete'); expect(result.observations.length).toBe(observed ? 1 : 0);
+      expect(result.source_metadata_complete).toBe(false); expect(parentEvidenceTarget(result)).toBeNull();
+      expect(() => parseSessionParent({ ...input, parent_event_id: 1 }, 2)).toThrow();
+    }
+  });
+  it('来源或全库身份补记未齐时，即使响应报告linked也不能生成唯一父导航', () => {
+    for (const patch of [{ source_metadata_complete: false }, { identity_metadata_complete: false }]) {
+      const result = parseSessionParent({ ...view(), ...patch }, 2)!;
+      expect(result).toMatchObject(patch); expect(result.observations).toEqual(view().observations);
+      expect(parentEvidenceTarget(result)).toBeNull();
+    }
+    expect(parentEvidenceTarget(parseSessionParent(view(), 2)!)).toEqual({ event_id: 1 });
+  });
+  it('缺少或null的旧覆盖字段保持未知，不臆造完整身份，不开放父导航', () => {
+    const old = { ...view() }; delete old.source_metadata_complete; delete old.identity_metadata_complete;
+    for (const input of [old, { ...view(), source_metadata_complete: null, identity_metadata_complete: null },
+      { ...view(), identity_metadata_complete: null }]) {
+      const result = parseSessionParent(input, 2)!;
+      expect(parentEvidenceTarget(result)).toBeNull();
+      expect(result.identity_metadata_complete).toBeNull();
+    }
+    expect(() => parseSessionParent({ ...view(), source_metadata_complete: 'true' }, 2)).toThrow();
+  });
+  it('已观察冲突或无效在积压中仍保留，不提升为覆盖完整或清掉原声明', () => {
+    for (const state of ['conflicting', 'invalid', 'no_parent_declared'] as const) {
+      const input: SessionParentData = { ...view(), state, parent_session_pk: null, parent_native_id: null,
+        parent_event_id: null, source_metadata_complete: false, identity_metadata_complete: false };
+      const result = parseSessionParent(input, 2)!;
+      expect(result.state).toBe(state); expect(result.source_metadata_complete).toBe(false);
+      expect(result.observations).toEqual(input.observations); expect(parentEvidenceTarget(result)).toBeNull();
+    }
   });
 });

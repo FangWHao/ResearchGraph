@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 22
+LATEST_VERSION = 23
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -423,6 +423,10 @@ MIGRATIONS = {
         "SELECT RAISE(ABORT,'Claude chain record is append-only'); END",
         "CREATE TRIGGER claude_chain_no_delete BEFORE DELETE ON claude_chain_records BEGIN "
         "SELECT RAISE(ABORT,'Claude chain record is append-only'); END",
+    ),
+    23: (
+        "ALTER TABLE source_files ADD COLUMN parent_observed_offset INTEGER NOT NULL DEFAULT 0 "
+        "CHECK(parent_observed_offset>=0)",
     ),
 }
 

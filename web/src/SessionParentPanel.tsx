@@ -1,5 +1,5 @@
 import { DateText } from './DateText';
-import { parentBasisNames, parentEvidenceTarget, parentObservationNames, parentReasonNames,
+import { parentBasisNames, parentCoverageComplete, parentCoverageText, parentEvidenceTarget, parentObservationNames, parentReasonNames,
   parseSessionParent, sessionParentDescriptions, sessionParentNames } from './sessionParent';
 import type { EvidenceTarget } from './types';
 import './sessionParent.css';
@@ -16,13 +16,20 @@ export function SessionParentPanel({ value, session, responseEvent, expectedEven
   } catch (failure) { error = failure instanceof Error ? failure.message : '父线程关系暂不可判断。'; }
   if (data?.state === 'unsupported') return null;
   const parent = data ? parentEvidenceTarget(data) : null;
+  const complete = data ? parentCoverageComplete(data) : false;
   return <section className="session-parent" aria-label="Codex 父线程依据">
     <header><h3>父线程依据</h3><span className="eyebrow">会话头源声明 · 当前关联单独核对</span></header>
     {error ? <p className="error-message" role="alert">{error}</p>
       : !data ? <p className="missing-note">接口未提供父线程观测，关系未知；不能据此判断为根线程。</p>
-      : <><p className="session-parent-state" data-parent-state={data.state}><strong>{sessionParentNames[data.state]}</strong></p>
-        <p className="small muted">{sessionParentDescriptions[data.state]}</p>
-        {data.state === 'linked' && <div className="session-parent-linked"><span>同项目父会话 #{data.parent_session_pk}</span>
+      : <><p className="session-parent-state" data-parent-state={data.state}><strong>{data.state === 'linked' && !complete
+          ? '接口报告父关联 · 唯一身份核对尚未完整' : sessionParentNames[data.state]}</strong></p>
+        <p className="small muted">{data.state === 'linked' && !complete
+          ? '当前接口报告了父关联，但补记覆盖或身份核对完整度尚未成立，暂不公开父编号及导航；头记录源声明仍可核对。'
+          : sessionParentDescriptions[data.state]}</p>
+        <p className="small" data-parent-coverage="true">本会话已存来源补记：<strong data-parent-source-coverage>{parentCoverageText(data.source_metadata_complete)}</strong><br />
+          全管理库 Codex 已存身份核对：<strong data-parent-identity-coverage>{parentCoverageText(data.identity_metadata_complete)}</strong></p>
+        {!complete && <p className="missing-note" data-parent-incomplete="true">元数据覆盖未齐或未知，不能把未声明当作无父，也不证明完整历史。已观察到的冲突或无效声明仍保留；覆盖字段不表示科学确认或全部原始日志都已收齐。</p>}
+        {data.state === 'linked' && complete && <div className="session-parent-linked"><span>同项目父会话 #{data.parent_session_pk}</span>
           <code>{data.parent_native_id}</code>
           {parent && onOpen ? <button className="text-button" onClick={() => onOpen(parent)}>打开父线程头原文 #{parent.event_id}</button>
             : <span className="small muted">父头原文导航暂不可用。</span>}</div>}

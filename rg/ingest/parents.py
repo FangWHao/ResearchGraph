@@ -5,11 +5,17 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from collections import Counter
 from typing import Any
 
+import zstandard
+
 from rg.store.database import Store, now
+from rg.store.locking import TaskBusy, exclusive
+from rg.store.objects import digest
 
 UUID = re.compile(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}")
+BACKFILL_BATCH = 256
 
 
 def native_id(value: Any) -> str | None:
@@ -91,7 +97,19 @@ def observe(db: sqlite3.Connection, session: int, event: int, record: dict[str, 
     )
 
 
-def backfill_file(store: Store, file_id: int) -> None:
+def checkpoint(db: sqlite3.Connection, event: int) -> bool:
+    """只有连续已观察的新记录才能推进；新尾部不会跨过旧来源缺口。"""
+    result = db.execute(
+        "UPDATE source_files SET parent_observed_offset=(SELECT byte_end FROM raw_events "
+        "WHERE event_id=?) WHERE file_instance_id=(SELECT file_instance_id FROM raw_events "
+        "WHERE event_id=?) AND parent_observed_offset=(SELECT byte_start FROM raw_events "
+        "WHERE event_id=?)",
+        (event, event, event),
+    )
+    return result.rowcount == 1
+
+
+def _legacy_backfill(store: Store, file_id: int) -> None:
     """扫描旧来源时只读取已存 L0 中可识别的头记录，新增观测时间使用当前时间。"""
     rows = store.db.execute(
         "SELECT r.event_id,r.session_pk FROM raw_events r WHERE r.file_instance_id=? "
@@ -109,9 +127,88 @@ def backfill_file(store: Store, file_id: int) -> None:
                 observe(db, row["session_pk"], row["event_id"], record)
 
 
+def backfill_file(store: Store, file_id: int) -> int:
+    """每批核对至多256条已存物理记录；不读取原路径、不补造L0时间。"""
+    if store.db.execute("PRAGMA user_version").fetchone()[0] < 23:
+        _legacy_backfill(store, file_id)
+        return 0
+    rows = store.db.execute(
+        "SELECT r.event_id,r.session_pk,r.byte_start,r.byte_end,"
+        "(r.kind='meta' AND (r.byte_start=0 OR EXISTS "
+        "(SELECT 1 FROM parser_records p,json_each(p.types) t WHERE p.event_id=r.event_id "
+        "AND json_extract(t.value,'$.category')='record' "
+        "AND json_extract(t.value,'$.type_name')='session_meta'))) AS eligible,"
+        "EXISTS(SELECT 1 FROM session_parent_observations o WHERE o.event_id=r.event_id) "
+        "AS observed FROM raw_events r JOIN source_files f USING(file_instance_id) "
+        "WHERE f.file_instance_id=? AND f.parser='codex' AND r.record_index=0 "
+        "AND r.byte_start>=f.parent_observed_offset AND r.byte_end<=f.committed_offset "
+        "ORDER BY r.byte_start LIMIT ?",
+        (file_id, BACKFILL_BATCH),
+    ).fetchall()
+    if not rows:
+        return 0
+    with store.transaction() as db:
+        offset = db.execute(
+            "SELECT parent_observed_offset FROM source_files WHERE file_instance_id=?", (file_id,)
+        ).fetchone()[0]
+        for row in rows:
+            if row["byte_start"] != offset:
+                raise ValueError("已存原文记录不连续，父线程补记保留缺口")
+            if row["eligible"] and not row["observed"]:
+                try:
+                    raw = store.raw(row["event_id"])
+                except zstandard.ZstdError as exc:
+                    raise ValueError("已存原文对象损坏，父线程补记保留缺口") from exc
+                try:
+                    record = json.loads(raw)
+                except (ValueError, UnicodeError):
+                    record = {}
+                if isinstance(record, dict):
+                    observe(db, row["session_pk"], row["event_id"], record)
+            if not checkpoint(db, row["event_id"]):
+                raise RuntimeError("父线程补记游标变化，保留原批次")
+            offset = row["byte_end"]
+    return len(rows)
+
+
+def backfill_saved(store: Store, *, skip_files: set[int] | None = None) -> dict[str, int]:
+    """逐来源恢复已存头；损坏、被锁或原件消失的来源不会阻塞其它来源。"""
+    if store.db.execute("PRAGMA user_version").fetchone()[0] < 23:
+        return {}
+    counts: Counter[str] = Counter()
+    rows = store.db.execute(
+        "SELECT file_instance_id,path FROM source_files WHERE parser='codex' "
+        "AND parent_observed_offset<committed_offset ORDER BY file_instance_id"
+    ).fetchall()
+    for row in rows:
+        if row["file_instance_id"] in (skip_files or set()):
+            continue
+        try:
+            key = digest(row["path"].encode())
+            with exclusive(store.root / "locks" / "sources" / (key + ".lock"), "来源正在扫描"):
+                counts["parent_backfilled"] += backfill_file(store, row["file_instance_id"])
+        except TaskBusy:
+            counts["parent_busy"] += 1
+        except (OSError, ValueError, RuntimeError, zstandard.ZstdError):
+            counts["parent_errors"] += 1
+    refresh(store)
+    return dict(counts)
+
+
+def metadata_status(db: sqlite3.Connection) -> tuple[dict[int, bool], bool]:
+    rows = db.execute(
+        "SELECT session_pk,min(parent_observed_offset>=committed_offset) AS complete "
+        "FROM source_files WHERE parser='codex' GROUP BY session_pk"
+    ).fetchall()
+    status = {row["session_pk"]: bool(row["complete"]) for row in rows}
+    return status, all(status.values())
+
+
 def resolve(db: sqlite3.Connection) -> tuple[dict[int, dict[str, Any]], dict[int, sqlite3.Row]]:
     """在调用方的快照内解读全部声明；不依赖可能尚未恢复的关系投影。"""
     sessions = {r["session_pk"]: r for r in db.execute("SELECT * FROM sessions WHERE tool='codex'")}
+    modern = db.execute("PRAGMA user_version").fetchone()[0] >= 23
+    complete, catalog_complete = metadata_status(db) if modern else ({}, None)
     facts: dict[int, list[sqlite3.Row]] = {pk: [] for pk in sessions}
     identities: dict[str, set[int]] = {}
     for row in db.execute("SELECT * FROM session_parent_observations ORDER BY event_id"):
@@ -127,6 +224,8 @@ def resolve(db: sqlite3.Connection) -> tuple[dict[int, dict[str, Any]], dict[int
             state = "conflicting"
         elif any(r["state"] == "invalid" for r in rows):
             state = "invalid"
+        elif modern and (not complete.get(pk, True) or (parents and not catalog_complete)):
+            state = "metadata_incomplete"
         elif parents:
             matches = identities.get(next(iter(parents)), set())
             if len(matches) == 1:
@@ -136,7 +235,13 @@ def resolve(db: sqlite3.Connection) -> tuple[dict[int, dict[str, Any]], dict[int
                 state = "ambiguous_parent" if matches else "missing_parent"
         elif rows:
             state = "no_parent_declared"
-        result[pk] = {"state": state, "parent_session_pk": parent_pk, "rows": rows}
+        result[pk] = {
+            "state": state,
+            "parent_session_pk": parent_pk,
+            "rows": rows,
+            "source_metadata_complete": complete.get(pk, True) if modern else None,
+            "identity_metadata_complete": catalog_complete,
+        }
     edges = {pk: v["parent_session_pk"] for pk, v in result.items() if v["state"] == "linked"}
     visited: set[int] = set()
     for first in edges:

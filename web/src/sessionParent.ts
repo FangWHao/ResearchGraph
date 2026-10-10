@@ -5,6 +5,7 @@ export const sessionParentNames: Record<SessionParentState, string> = {
   conflicting: '父线程声明冲突', missing_parent: '声明的父线程尚未找到',
   ambiguous_parent: '父线程身份不唯一', cycle: '父线程关联存在循环',
   linked: '同项目父线程已关联', outside_project: '父线程属于其他项目', unsupported: '不支持父线程判定',
+  metadata_incomplete: '父线程元数据补记未齐',
 };
 export const sessionParentDescriptions: Record<SessionParentState, string> = {
   unobserved: '尚未登记可用的头记录观测，不能据此判断为根线程。',
@@ -17,6 +18,7 @@ export const sessionParentDescriptions: Record<SessionParentState, string> = {
   linked: '当前本地头声明指向同项目内唯一父线程；这不代表研究内容的采用、使用或科学确认。',
   outside_project: '当前关联跨项目，不公开父会话编号或原文引用；源声明仍可从本会话头记录核对。',
   unsupported: '该工具不使用此 Codex 父线程判定。',
+  metadata_incomplete: '已存来源或全库身份元数据仍有补记缺口，当前不能确定唯一父线程，也不能判断根线程；正常后续扫描会继续补记。',
 };
 export const parentObservationNames: Record<SessionParentObservation['state'], string> = {
   declared: '已声明父线程', not_declared: '未声明父线程', invalid: '声明无效', conflict: '同一头记录声明冲突',
@@ -51,6 +53,17 @@ function uuid(value: unknown): string | null {
     || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(value)) throw invalid();
   return value;
 }
+function coverage(value: unknown): boolean | null {
+  if (value == null) return null;
+  if (typeof value !== 'boolean') throw invalid();
+  return value;
+}
+export function parentCoverageComplete(data: SessionParentData): boolean {
+  return data.source_metadata_complete === true && data.identity_metadata_complete === true;
+}
+export function parentCoverageText(value: boolean | null | undefined): string {
+  return value === true ? '已齐（仅限已存来源）' : value === false ? '未齐' : '未知（旧响应未提供）';
+}
 
 export function parseSessionParent(value: unknown, session: number): SessionParentData | null {
   if (value == null) return null;
@@ -81,13 +94,15 @@ export function parseSessionParent(value: unknown, session: number): SessionPare
   if (observations.some((row, index) => index > 0 && row.event_id <= observations[index - 1].event_id)
     || (observations.at(-1)?.event_id ?? 0) !== highwater
     || ((state === 'unobserved' || state === 'unsupported') && total !== 0)
-    || (!['unobserved', 'unsupported'].includes(state) && total === 0)) throw invalid();
+    || (!['unobserved', 'unsupported', 'metadata_incomplete'].includes(state) && total === 0)) throw invalid();
   return { session_pk: session, tool, native_id: uuid(data.native_id), state: state as SessionParentState,
     parent_session_pk: parent, parent_native_id: parentNative, parent_event_id: parentEvent,
     observations, observations_total: total, observations_partial: data.observations_partial,
-    observation_highwater: highwater };
+    observation_highwater: highwater, source_metadata_complete: coverage(data.source_metadata_complete),
+    identity_metadata_complete: coverage(data.identity_metadata_complete) };
 }
 
 export function parentEvidenceTarget(data: SessionParentData): EvidenceTarget | null {
-  return data.state === 'linked' && data.parent_event_id !== null ? { event_id: data.parent_event_id } : null;
+  return data.state === 'linked' && parentCoverageComplete(data) && data.parent_event_id !== null
+    ? { event_id: data.parent_event_id } : null;
 }

@@ -33,6 +33,8 @@ def query(store: Store, values: dict[str, str]) -> dict[str, Any]:
             "observations_total": 0,
             "observations_partial": False,
             "observation_highwater": 0,
+            "source_metadata_complete": None,
+            "identity_metadata_complete": None,
         }
         if session["tool"] != "codex":
             return view
@@ -44,6 +46,8 @@ def query(store: Store, values: dict[str, str]) -> dict[str, Any]:
             observations_total=len(rows),
             observations_partial=len(rows) > 20,
             observation_highwater=max((r["event_id"] for r in rows), default=0),
+            source_metadata_complete=relation["source_metadata_complete"],
+            identity_metadata_complete=relation["identity_metadata_complete"],
         )
         view["observations"] = [
             {
