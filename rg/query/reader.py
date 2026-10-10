@@ -1,24 +1,15 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from rg.api.views import NotFound, _utf8_window
+from rg.query.time import canonical_times, instant
 from rg.record.schema import validate_scope
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
 from rg.store.scopes import known_scope
-
-
-def instant(value: Any) -> datetime | None:
-    if not isinstance(value, str) or len(value) > 80:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value)
-        return parsed.astimezone(UTC) if parsed.tzinfo is not None else None
-    except ValueError:
-        return None
 
 
 def cutoff(value: Any, default: str) -> str:
@@ -152,6 +143,7 @@ class Reader:
             )
             item["review"] = review
             item["occurred_time_unknown"] = instant(row["occurred_at"]) is None
+            item.update(canonical_times(row["occurred_at"], row["recorded_at"]))
             result.append(item)
         replacements: dict[int, list[int]] = {}
         for item in result:

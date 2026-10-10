@@ -4,7 +4,7 @@ import type { Edge, Node, NodeProps } from '@xyflow/react';
 import type { ElkNode, ELK } from 'elkjs';
 import '@xyflow/react/dist/style.css';
 import { Badge, Empty, Icon } from './components';
-import { adoption, actionNames, edgeText, evidenceNames, evidenceState, foldGroup, foldProjection, graphNodeId, joinNames, joinRecords, kindNames, label, projectGraph, scopeKey, scopeText } from './model';
+import { adoption, actionNames, edgeText, evidenceNames, evidenceStateNames, evidenceState, foldGroup, foldProjection, graphNodeId, joinNames, joinRecords, kindNames, label, projectGraph, scopeKey, scopeText } from './model';
 import type { FoldResult } from './model';
 import type { Claim, GraphData, Kind } from './types';
 
@@ -35,7 +35,7 @@ function ResearchCard({ id, data }: NodeProps<ResearchNode>) {
     <p>{data.group ? `${data.group.members.length} 个节点 · ${data.group.evidenceIds.length} 条原证据` : scopeText(identity.scope)}</p>
     {data.group ? <div className="group-retention"><p>保留 {records.length} 条记录 · {records.filter(item => item.effective_state === 'candidate').length} 条待复核</p><p>决定 {records.filter(item => item.claim_type === 'decision_event').length} · 证据状态 {records.filter(item => item.claim_type === 'evidence_event').length} · 范围 {new Set(records.map(item => scopeKey(item.scope))).size}</p><span>全部原关系、共同输入与版本见下方保留清单。</span></div> : <>
       {data.versions.length > 1 && <label className="node-version nodrag">显示内容版本<select aria-label={`显示内容版本 ${identity.entity_id}`} value={claim?.claim_id ?? ''} onChange={event => data.selectVersion(id, event.target.value)}><option value="">未选择（不推定当前版本）</option>{data.versions.map(item => <option key={item.claim_id} value={item.claim_id}>#{item.claim_id} {label(item)} · {item.effective_state === 'candidate' ? '待复核' : '已确认'}</option>)}</select><span>关系指向对象与范围，未指定内容版本。</span></label>}
-      <div className="node-dimensions"><span>采用 {actionNames[decision] ?? (decision === 'unknown_scope' ? '范围未知' : decision === 'time_unknown' ? '时间未知' : decision === 'conflict' ? '有冲突' : '未知')}</span><span>证据 {evidenceNames[evidenceState(data.claims, identity.entity_id!, identity.scope)]}</span><span>运行 未知</span></div>
+      <div className="node-dimensions"><span>采用 {actionNames[decision] ?? (decision === 'unknown_scope' ? '范围未知' : decision === 'time_unknown' ? '时间未知' : decision === 'conflict' ? '有冲突' : '未知')}</span><span>证据 {evidenceStateNames[evidenceState(data.claims, identity.entity_id!, identity.scope)]}</span><span>运行 未知</span></div>
       {joins.map(join => <div className="join-semantics" key={join.claim_id}>#{join.claim_id} {joinNames[join.payload.semantics ?? ''] ?? '汇合语义未知'}{join.effective_state === 'candidate' && ' · 待复核'}<p>{join.payload.inputs?.map(input => `${input.port}: ${input.ref} ${join.payload.semantics === 'compare_then_select' ? input.ref === join.payload.selected ? '（被选输入）' : '（仅比较，未选）' : ''}`).join('；')}</p></div>)}
       {joins.length > 1 && <p>多条汇合记录，逐条保留；不推定唯一语义。</p>}
     </>}

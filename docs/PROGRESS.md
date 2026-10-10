@@ -573,3 +573,16 @@
 - 下一步：完成最终全浏览器与允许文件清单核对，提交并维护现有草稿PR，检查当前HEAD推送/PR两种CI与独立恢复包后结束本任务；随后继续剩余授权开发，不标整体目标完成。
 - 父任务最终 pnpm test:browser：102 passed (1.4m)，原96项保留；ruff再次为All checks passed!，差异检查退出0。产品未变，后端全量和隔离安装结果继续对应最终119运行资源，不作机械重跑。
 - 提交前允许清单：baseline=2956527、staged_files=20、tracked_files=360、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=29、wheel_source_resources_equal=119。暂存差异检查退出0，8791/9792/9793均可重新绑定。仅公开源码、中文说明和合成案例入仓库，凭据、真实会话、数据库、ZIP、截图与缓存继续忽略。
+
+## 2026-10-10 · 精确状态时间与未知诊断
+
+- 任务：继续 §2/5.3/9/15 的状态隔离，开始读取进度末尾、对应章节及决定。e81a0ea 基线恢复包 SHA256 为928f79d146828f21cd72bc0f9ebaa072acc462c56dc64f6c331adfc6f155e54e，独立恢复360个HEAD文件逐字一致。用户选定的整项目清除范围沿用，不操作真实项目；整体M0–M4仍未完成。
+- 改动的文件：新增query/time.py、golden/test_state_time.py、state_time_browser.py、前端exactTime.ts及时间状态单测/浏览器专项、两份中文验收。修改API views、Reader、语义图来源、前端model/types/图/问题卡、原状态单测，以及README、决定、需求落实、PR草稿和本文件。源规格与schema17不改。
+- 行为：原始双时间旁追加UTC六位微秒只读规范值；无时区、非法日期、缺失及UTC越界为null，越界不再抛查询异常。采用/证据按完整微秒、同范围有效确认事件计算，同毫秒不同微秒不再误判；真同刻相反为冲突，单条未知时间也不假定有效证据。未知范围证据需复核。时间诊断不加入人工科学证据枚举，候选/驳回/替换及双截止规则不改。
+- 反证与修正：旧后端18专项为14 failed/4 passed，极端UTC偏移触发OverflowError；旧前端7项6 failed/1 passed。新HTTP测试首版原文路径和详情claim外层写错，按现接口修正测试，不修改生产合同；在专项通过前中止的两组全量不计最终验收。失败日志保留在忽略目录。
+- 后端最终：uv sync --locked为Resolved28/14ms、Checked27/66ms；专项19 passed in30.51s；uv run pytest -q为829 passed in377.84s(0:06:17)，uv run pytest tests/golden -q为782 passed in362.77s(0:06:02)，两组并行不作性能基准。ruff为All checks passed!，pyright为0 errors,0 warnings,0 informations，rg --help退出0。
+- 隔离Python3.12.3 wheel状态/语义图44 passed in70.93s(0:01:10)；125文件成员、120运行资源与源码和安装逐字一致，实际密钥匹配0，SHA256 9e06054d3fa95b09ad7aabee3fcae43df7942b92c2103c1fb0c66af858b4a89b。真实HTTP规范字段/权威状态/原文字节摘要一致，库转储与修订号未变，模型尝试0。
+- 前端沿已有subagent授权继续，父任务实看最终桌面问题/折叠/原文和390冲突/未知范围/候选原文六图。首轮浏览器2 pass/2 fail：过程组无单一状态，测试错误要求组的node-dimensions；手机样式隐藏项目下拉，测试等待不可见控件。按保留原记录/展开原成员核对，桌面选择项目后再于390复核，不伪造聚合、不改手机产品入口、不加超时或重试；最终4 passed(15.9s)。
+- 下一步：完成前端最终冻结与原102加4专项的完整浏览器回归、允许文件和密钥核对，提交维护现有草稿PR，核对当前HEAD的两种CI与独立恢复包后结束本任务；实际I/O、传播/note合同、真实客户端、Atlas正式参考、规模/Windows及完整M0–M4仍保留。
+- 前端最终：pnpm test为14 files/112 passed/744ms，build为229 modules/1.04s，tsc退出0无诊断；35项冻结全OK，清单SHA256 b545e62f8288c4bdd0fb52911dee99634753e7370ac642cc3903d300f18e7196。子agent停止编辑，父任务接续106项全浏览器，不预报成功。实际390项目下拉仍隐藏，验证通过桌面切换再缩窄检查，不声称手机入口可用。
+- 父任务最终 `pnpm test:browser` 为106 passed(1.5m)，原102保留；35冻结再次全OK，差异检查退出0。源码、120运行资源及前端不再修改，后端全量和隔离安装结果继续对应最终代码；随后核对允许21文件，维护现有草稿PR与当前HEAD两种CI/恢复包，整体目标保持未完成。

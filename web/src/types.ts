@@ -22,6 +22,7 @@ export interface Claim {
   payload: Payload; scope: Record<string, string> | null; basis: string; actor: string;
   claim_state: ReviewState; effective_state: ReviewState;
   occurred_at: string | null; recorded_at: string;
+  occurred_at_utc?: string | null; recorded_at_utc?: string | null;
   replaces_claim: number | null; replacement_ids: number[]; review: Review | null;
   confirmation_source: 'human' | 'rule' | null;
   evidence: Span[]; groups: { segment_id: string | null; session_pk: number }[];

@@ -42,7 +42,7 @@ describe('审核、采用、证据和范围独立', () => {
     expect(adoption([{ ...decision(1, 'accepted'), occurred_at: null }], 'approach', { dataset: 'v1' })).toBe('time_unknown');
     const a = claim(1, { claim_type: 'evidence_event', payload: { claim_type: 'evidence_event', target: 'finding', state: 'supported' }, effective_state: 'confirmed' });
     const b = { ...a, claim_id: 2, payload: { ...a.payload, state: 'refuted' } };
-    expect(evidenceState([a, b], 'finding', { dataset: 'v1' })).toBe('needs_review');
+    expect(evidenceState([a, b], 'finding', { dataset: 'v1' })).toBe('conflict');
     expect(evidenceState([{ ...a, effective_state: 'candidate' }], 'finding', { dataset: 'v1' })).toBe('unassessed');
   });
   it('并行 scope 版本保留，候选不能覆盖已确认版本，编辑版替换旧版', () => {

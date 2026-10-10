@@ -9,6 +9,7 @@ from jsonschema import Draft202012Validator
 
 from rg.extract.differences import confirmed_differences
 from rg.extract.schemas import CLAIM_SCHEMA
+from rg.query.time import canonical_times
 from rg.store.database import ConflictError, Store, dumps, now
 from rg.store.objects import digest
 
@@ -66,6 +67,7 @@ def _claim(store: Store, row: sqlite3.Row, comparisons: bool = False) -> dict[st
     from rg.record.resolve import pending
 
     result = dict(row)
+    result.update(canonical_times(row["occurred_at"], row["recorded_at"]))
     result["payload"] = json.loads(row["payload"])
     result["scope"] = json.loads(row["scope"]) if row["scope"] else None
     result["effective_state"] = store.claim_state(row["claim_id"])

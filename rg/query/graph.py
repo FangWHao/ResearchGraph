@@ -40,6 +40,8 @@ def provenance(reader: Reader, claim: dict[str, Any]) -> dict[str, Any]:
             "scope",
             "occurred_at",
             "recorded_at",
+            "occurred_at_utc",
+            "recorded_at_utc",
             "occurred_time_unknown",
             "replaces_claim",
             "replacement_ids",

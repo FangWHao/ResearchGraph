@@ -1,4 +1,5 @@
 import type { Claim, Kind, ReviewState } from './types';
+import { claimInstant, compareInstants } from './exactTime';
 
 export const kindNames: Record<Kind, string> = {
   question: '问题', approach: '方案', attempt: '尝试', finding: '发现', decision: '决定', join: '汇合',
@@ -15,6 +16,7 @@ export const evidenceNames: Record<string, string> = {
   unassessed: '未评估', supported: '受支持', contested: '有争议', refuted: '被否定',
   insufficient: '不足', needs_review: '需复核',
 };
+export const evidenceStateNames: Record<string, string> = { ...evidenceNames, time_unknown: '发生时间未知', conflict: '记录冲突' };
 export const joinNames: Record<string, string> = {
   all_required: '共同输入：所有输入都必需', compare_then_select: '比较后选择', evidence_synthesis: '证据综合',
 };
@@ -52,31 +54,26 @@ export function entityVersions(claims: Claim[]): Claim[] {
 }
 export function timeline(claims: Claim[], entityId: string): Claim[] {
   return claims.filter(item => item.claim_type === 'decision_event' && item.payload.target === entityId)
-    .sort((a, b) => eventOrder(a) - eventOrder(b) || a.claim_id - b.claim_id);
+    .sort((a, b) => compareInstants(eventOrder(a), eventOrder(b)) || a.claim_id - b.claim_id);
 }
-function occurredTime(claim: Claim): number | null {
-  const result = claim.occurred_at ? Date.parse(claim.occurred_at) : NaN;
-  return Number.isFinite(result) ? result : null;
+function eventOrder(claim: Claim): bigint { return claimInstant(claim, 'occurred') ?? claimInstant(claim, 'recorded') ?? 0n; }
+function eventState(events: Claim[], field: 'action' | 'state', unknown: string): string {
+  const stamped = events.filter(item => item.effective_state === 'confirmed' && activeClaim(item)).map(item => ({ item, time: claimInstant(item, 'occurred') }));
+  if (!stamped.length) return unknown;
+  if (stamped.some(event => event.time == null)) return 'time_unknown';
+  const latest = stamped.reduce((max, event) => event.time! > max ? event.time! : max, stamped[0].time!);
+  const states = new Set(stamped.filter(event => event.time === latest).map(event => event.item.payload[field] ?? unknown));
+  return states.size === 1 ? [...states][0] : 'conflict';
 }
-function eventOrder(claim: Claim): number { return occurredTime(claim) ?? (Date.parse(claim.recorded_at) || 0); }
 export function adoption(claims: Claim[], entityId: string, scope: Record<string, string> | null): string {
   if (!knownScope(scope)) return 'unknown_scope';
-  const events = timeline(claims, entityId).filter(item => item.effective_state === 'confirmed' && activeClaim(item) && scopeKey(item.scope) === scopeKey(scope));
-  if (!events.length) return 'unknown';
-  if (events.some(item => occurredTime(item) == null)) return 'time_unknown';
-  const latest = events.at(-1)!;
-  const atLatest = events.filter(item => occurredTime(item) === occurredTime(latest));
-  if (new Set(atLatest.map(item => item.payload.action)).size > 1) return 'conflict';
-  return latest.payload.action ?? 'unknown';
+  return eventState(claims.filter(item => item.claim_type === 'decision_event' && item.payload.target === entityId && scopeKey(item.scope) === scopeKey(scope)), 'action', 'unknown');
 }
 export function evidenceState(claims: Claim[], entityId: string, scope: Record<string, string> | null): string {
+  if (!knownScope(scope)) return 'needs_review';
   const events = claims.filter(item => item.claim_type === 'evidence_event' && item.payload.target === entityId
-    && item.effective_state === 'confirmed' && activeClaim(item) && scopeKey(item.scope) === scopeKey(scope));
-  if (!events.length) return 'unassessed';
-  if (events.length > 1 && events.some(item => occurredTime(item) == null)) return 'needs_review';
-  const latest = events.sort((a, b) => eventOrder(a) - eventOrder(b)).at(-1)!;
-  if (new Set(events.filter(item => occurredTime(item) === occurredTime(latest)).map(item => item.payload.state)).size > 1) return 'needs_review';
-  return latest.payload.state ?? 'unassessed';
+    && scopeKey(item.scope) === scopeKey(scope));
+  return eventState(events, 'state', 'unassessed');
 }
 export function graphNodeId(claim: Claim): string { return `${claim.entity_id}::${scopeKey(claim.scope)}`; }
 export function relatedChildren(claims: Claim[], parent: string, scope: Claim['scope'], includeCandidates = true): string[] {
