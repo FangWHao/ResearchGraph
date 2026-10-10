@@ -180,8 +180,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/claims":
             return views.claims(store, values)
         if match := re.fullmatch(r"/api/claims/([1-9][0-9]*)", path):
+            if values:
+                from rg.api.graph import record
+
+                return record(store, int(match[1]), values)
             return views.claim(store, int(match[1]))
         if match := re.fullmatch(r"/api/evidence/([1-9][0-9]*)", path):
+            if set(values) & {"project", "occurred_until", "known_until", "expected_revision"}:
+                from rg.api.graph import original
+
+                return original(store, int(match[1]), values)
             return views.evidence(store, int(match[1]), values)
         if path == "/api/search":
             return views.search(store, values)

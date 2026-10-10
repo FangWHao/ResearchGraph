@@ -37,7 +37,7 @@ export function knownScope(scope: Record<string, string> | null): boolean {
 export function label(claim: Claim): string {
   return claim.payload.label ?? claim.payload.reason ?? relationNames[claim.payload.relation ?? ''] ?? claim.claim_type;
 }
-function activeClaim(claim: Claim): boolean { return claim.effective_state !== 'dismissed' && claim.replacement_ids.length === 0; }
+function activeClaim(claim: Claim): boolean { return claim.effective_state !== 'dismissed' && claim.replacement_ids.length === 0 && claim.replaced !== true; }
 export function entityVersions(claims: Claim[]): Claim[] {
   const candidates = new Map<string, Claim[]>();
   for (const claim of claims) {
@@ -102,16 +102,18 @@ export interface SemanticEdge {
   sourceEntity?: string; targetEntity?: string; targetPort?: string;
   joinSemantics?: string; role?: 'required_input' | 'selected_input' | 'compared_input' | 'synthesis_input' | 'unknown_input';
   semantic?: boolean; evidenceIds?: number[];
+  diagnostic?: string;
 }
 export interface FoldResult {
   members: string[]; entry: string; exit: string; evidenceIds: number[]; claimIds: number[];
   internalEdges: SemanticEdge[]; boundaryEdges: SemanticEdge[];
 }
 export function edgeText(edge: SemanticEdge): string {
+  if (edge.diagnostic) return `异常记录 · ${edge.diagnostic}`;
   const ports: Record<string, string> = { required_input: '必需输入', selected_input: '被选输入', compared_input: '仅比较（未选）', synthesis_input: '综合证据输入', unknown_input: '输入语义未知' };
   return edge.role ? `${ports[edge.role]} · ${edge.targetPort}` : relationNames[edge.relation] ?? edge.relation;
 }
-export function isSemanticEdge(edge: SemanticEdge): boolean { return edge.semantic !== false && edge.relation !== 'same_topic'; }
+export function isSemanticEdge(edge: SemanticEdge): boolean { return edge.semantic !== false && edge.relation !== 'same_topic' && !edge.diagnostic; }
 
 export function joinRecords(claims: Claim[], target: string, scope: Claim['scope'], includeCandidates = true): Claim[] {
   return claims.filter(claim => claim.claim_type === 'join_ports'
@@ -120,7 +122,15 @@ export function joinRecords(claims: Claim[], target: string, scope: Claim['scope
     && (includeCandidates || claim.effective_state === 'confirmed'));
 }
 
-export function projectGraph(claims: Claim[], showCandidates = true): { entities: Claim[]; versions: Map<string, Claim[]>; edges: SemanticEdge[]; unresolvedClaimIds: number[] } {
+export function graphKind(records: Claim[]): string | null {
+  const registered = new Set(records.flatMap(record => record.kind === undefined ? [] : [record.kind]));
+  const declared = new Set(records.flatMap(record => record.payload.kind == null ? [] : [record.payload.kind]));
+  const values = registered.size ? registered : declared;
+  const kind = [...values][0];
+  return values.size === 1 && typeof kind === 'string' && Object.hasOwn(kindNames, kind) ? kind : null;
+}
+
+export function projectGraph(claims: Claim[], showCandidates = true): { entities: Claim[]; versions: Map<string, Claim[]>; edges: SemanticEdge[]; unresolvedClaimIds: number[]; diagnostics: { claimId: number; reasons: string[] }[] } {
   const versions = new Map<string, Claim[]>();
   for (const claim of claims) {
     if (claim.claim_type !== 'entity_version' || !claim.entity_id || !activeClaim(claim) || (!showCandidates && claim.effective_state !== 'confirmed')) continue;
@@ -129,35 +139,68 @@ export function projectGraph(claims: Claim[], showCandidates = true): { entities
   }
   // This representative supplies object identity only. Multiple content versions remain unselected in the graph UI.
   const entities = [...versions.values()].map(values => values[0]);
+  const diagnostics = new Map<number, Set<string>>();
+  function diagnose(id: number, reason: string) { diagnostics.set(id, new Set([...(diagnostics.get(id) ?? []), reason])); }
+  const kinds = new Map<string, string | null>();
+  for (const [id, records] of versions) {
+    const kind = graphKind(records);
+    kinds.set(id, kind);
+    if (!kind || records.some(record => record.payload.kind != null && record.payload.kind !== kind))
+      for (const record of records) diagnose(record.claim_id, '登记对象种类与内容版本未知或矛盾，不按内容版本顺序推定种类');
+  }
   function resolve(entityId: string, scope: Claim['scope']): string | undefined {
     const exact = entities.find(item => item.entity_id === entityId && scopeKey(item.scope) === scopeKey(scope));
     return exact ? graphNodeId(exact) : undefined;
   }
-  const edges: SemanticEdge[] = [], unresolved = new Set<number>();
+  const edges: SemanticEdge[] = [];
+  const validPairs: Record<string, string[]> = { part_of: ['attempt:approach', 'approach:question'],
+    supports: ['finding:question', 'finding:finding'], challenges: ['finding:question', 'finding:finding'],
+    selects: ['join:approach', 'join:attempt', 'join:finding'] };
   for (const claim of claims) {
     if (!activeClaim(claim) || (!showCandidates && claim.effective_state !== 'confirmed')) continue;
     const target = resolve(claim.payload.target ?? '', claim.scope);
     if (claim.claim_type === 'relation' || claim.claim_type === 'merge') {
       const source = resolve(claim.payload.source ?? '', claim.scope);
-      if (source && target) edges.push({ id: `claim-${claim.claim_id}`, source, target, sourceEntity: claim.payload.source, targetEntity: claim.payload.target!, claimId: claim.claim_id, relation: claim.payload.relation ?? 'merge', semantic: claim.payload.relation !== 'same_topic', evidenceIds: claim.evidence.map(span => span.span_id) });
-      else unresolved.add(claim.claim_id);
+      const relation = claim.claim_type === 'merge' ? 'merge' : claim.payload.relation ?? '';
+      if (!source || !target) diagnose(claim.claim_id, '关系缺少同范围端点');
+      else {
+        const sourceKind = kinds.get(source), targetKind = kinds.get(target);
+        const valid = validPairs[relation] ? validPairs[relation].includes(`${sourceKind}:${targetKind}`)
+          : relation === 'supersedes' || relation === 'merge' ? !!sourceKind && sourceKind === targetKind : relation === 'same_topic';
+        if (!valid) diagnose(claim.claim_id, '关系方向与对象种类不符，或关系类型未知');
+        edges.push({ id: `claim-${claim.claim_id}`, source, target, sourceEntity: claim.payload.source,
+          targetEntity: claim.payload.target!, claimId: claim.claim_id, relation, semantic: valid && relation !== 'same_topic',
+          ...(!valid ? { diagnostic: '关系方向与对象种类不符，或关系类型未知' } : {}), evidenceIds: claim.evidence.map(span => span.span_id) });
+      }
     }
     if (claim.claim_type === 'join_ports') {
       const semantics = claim.payload.semantics;
-      if (!target || !claim.payload.inputs?.length || !['all_required', 'compare_then_select', 'evidence_synthesis'].includes(semantics ?? '') || (semantics === 'compare_then_select' && !claim.payload.inputs.some(input => input.ref === claim.payload.selected))) unresolved.add(claim.claim_id);
+      const inputs = claim.payload.inputs ?? [];
+      if (!target) diagnose(claim.claim_id, '汇合缺少同范围所属对象');
+      else if (kinds.get(target) !== 'join') diagnose(claim.claim_id, '端口声明的所属对象不是汇合');
+      if (!['all_required', 'compare_then_select', 'evidence_synthesis'].includes(semantics ?? '')) diagnose(claim.claim_id, '汇合语义未知');
+      if (inputs.length < 2) diagnose(claim.claim_id, '汇合必须有至少两个输入');
+      if (inputs.some(input => !input.port.trim()) || new Set(inputs.map(input => input.port)).size !== inputs.length) diagnose(claim.claim_id, '输入端口缺失或重复');
+      if (semantics === 'compare_then_select' ? !inputs.some(input => input.ref === claim.payload.selected) : claim.payload.selected != null) diagnose(claim.claim_id, semantics === 'compare_then_select' ? '被选对象不在比较输入中' : '非比较汇合不允许声明被选对象');
+      if (inputs.some(input => !resolve(input.ref, claim.scope))) diagnose(claim.claim_id, '输入缺少同范围端点');
       for (const [index, input] of (claim.payload.inputs ?? []).entries()) {
         const source = resolve(input.ref, claim.scope);
         const role = semantics === 'all_required' ? 'required_input' : semantics === 'evidence_synthesis' ? 'synthesis_input' : semantics === 'compare_then_select' ? input.ref === claim.payload.selected ? 'selected_input' : 'compared_input' : 'unknown_input';
-        if (source && target) edges.push({ id: `claim-${claim.claim_id}-${index}-${input.port}`, source, target, sourceEntity: input.ref, targetEntity: claim.payload.target!, targetPort: input.port, joinSemantics: semantics, role, semantic: role !== 'compared_input' && role !== 'unknown_input', claimId: claim.claim_id, relation: `input:${input.port}`, evidenceIds: claim.evidence.map(span => span.span_id) });
-        else unresolved.add(claim.claim_id);
+        const invalid = diagnostics.get(claim.claim_id);
+        if (source && target) edges.push({ id: `claim-${claim.claim_id}-${index}-${input.port}`, source, target,
+          sourceEntity: input.ref, targetEntity: claim.payload.target!, targetPort: input.port, joinSemantics: semantics, role,
+          semantic: !invalid && role !== 'compared_input' && role !== 'unknown_input',
+          ...(invalid ? { diagnostic: [...invalid].join('；') } : {}), claimId: claim.claim_id,
+          relation: `input:${input.port}`, evidenceIds: claim.evidence.map(span => span.span_id) });
       }
     }
   }
-  return { entities, versions, edges, unresolvedClaimIds: [...unresolved] };
+  return { entities, versions, edges, unresolvedClaimIds: [...diagnostics.keys()],
+    diagnostics: [...diagnostics].map(([claimId, reasons]) => ({ claimId, reasons: [...reasons] })) };
 }
 
 export function foldGroup(selected: string[], edges: SemanticEdge[], claims: Claim[], complete = true): FoldResult {
-  if (!complete) throw new Error('需要完整研究图才能验证单入口单出口，部分记录未显示时不能折叠');
+  if (!complete || edges.some(edge => edge.diagnostic)) throw new Error('需要完整研究图才能验证单入口单出口，部分记录未显示或关系异常时不能折叠');
   const members = new Set(selected);
   if (members.size < 2) throw new Error('过程组至少选择两个节点');
   if ([...members].some(id => !claims.some(claim => claim.claim_type === 'entity_version' && graphNodeId(claim) === id))

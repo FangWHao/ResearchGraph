@@ -60,7 +60,7 @@ def parser() -> argparse.ArgumentParser:
     semantic.add_argument("--project", required=True)
     semantic.add_argument(
         "--collection",
-        choices=["nodes", "edges", "joins", "merges", "state_events", "unresolved"],
+        choices=["nodes", "edges", "joins", "merges", "state_events", "unresolved", "claims"],
         default="nodes",
     )
     semantic.add_argument("--limit", type=int, default=20)

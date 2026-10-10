@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { adoption, entityVersions, evidenceState, foldGroup, foldProjection, graphNodeId, isSemanticEdge, joinRecords, projectGraph, relatedChildren, scopeKey, timeline } from '../src/model';
+import { adoption, entityVersions, evidenceState, foldGroup, foldProjection, graphKind, graphNodeId, isSemanticEdge, joinRecords, projectGraph, relatedChildren, scopeKey, timeline } from '../src/model';
 import type { SemanticEdge } from '../src/model';
 import type { Claim } from '../src/types';
 
@@ -18,6 +18,19 @@ function decision(id: number, action: string, state: Claim['effective_state'] = 
   return claim(id, { claim_type: 'decision_event', entity_id: 'approach', effective_state: state, payload: { claim_type: 'decision_event', target: 'approach', action }, scope });
 }
 describe('审核、采用、证据和范围独立', () => {
+  it('登记种类保留未重复kind的历史版本，内容矛盾不按版本顺序消解', () => {
+    const a = claim(1, { kind: 'finding', entity_id: 'a', payload: { claim_type: 'entity_version', label: '没有重复kind' } });
+    const b = claim(2, { kind: 'question', entity_id: 'b', payload: { claim_type: 'entity_version', kind: 'question' } });
+    const relation = claim(3, { claim_type: 'relation', payload: { claim_type: 'relation', source: 'a', target: 'b', relation: 'supports' } });
+    expect(graphKind([a])).toBe('finding');
+    expect(projectGraph([a, b, relation]).edges.filter(isSemanticEdge)).toHaveLength(1);
+    expect(projectGraph([a, b, relation]).diagnostics).toEqual([]);
+    const contradiction: Claim = { ...a, claim_id: 4, payload: { ...a.payload, kind: 'approach' } };
+    expect(graphKind([contradiction, a])).toBe('finding');
+    expect(projectGraph([a, contradiction, b, relation]).diagnostics).toEqual(projectGraph([contradiction, a, b, relation]).diagnostics.sort((x, y) => x.claimId - y.claimId));
+    const registeredConflict = { ...a, claim_id: 5, kind: 'approach' };
+    expect(graphKind([a, registeredConflict])).toBeNull();
+  });
   it('汇合语义只取同范围记录，多条候选或确认不任意挑成当前事实', () => {
     const v1 = { dataset: 'v1' }, v2 = { dataset: 'v2' };
     const older = claim(1, { claim_type: 'join_ports', payload: { claim_type: 'join_ports', target: 'join', semantics: 'all_required' }, effective_state: 'confirmed', scope: v1 });
@@ -112,7 +125,7 @@ describe('审核、采用、证据和范围独立', () => {
     expect(JSON.stringify(history)).toBe(original);
   });
   it('比较只把选中端口标成使用，共同输入和综合证据分别保留各端口', () => {
-    const nodes = [claim(1), claim(2), claim(3)];
+    const nodes = [claim(1), claim(2), claim(3, { payload: { claim_type: 'entity_version', kind: 'join', label: '汇合' } })];
     const compare = claim(10, { claim_type: 'join_ports', entity_id: null, payload: { claim_type: 'join_ports', target: 'e3', semantics: 'compare_then_select', selected: 'e1', inputs: [{ port: '甲', ref: 'e1' }, { port: '乙', ref: 'e2' }] } });
     const projected = projectGraph([...nodes, compare]);
     expect(projected.edges.map(edge => [edge.role, edge.targetPort, isSemanticEdge(edge)])).toEqual([['selected_input', '甲', true], ['compared_input', '乙', false]]);
@@ -123,6 +136,42 @@ describe('审核、采用、证据和范围独立', () => {
       expect(graph.edges.map(edge => edge.joinSemantics)).toEqual([semantics, semantics]);
     }
     expect(projectGraph([...nodes, { ...compare, payload: { ...compare.payload, selected: 'missing' } }]).unresolvedClaimIds).toEqual([10]);
+  });
+  it('错误方向和未知关系仍有原ID及证据，但不能证明折叠边界', () => {
+    const nodes = [claim(1), claim(2)];
+    for (const relation of ['supports', 'challenges', 'part_of', 'selects', 'unknown_relation']) {
+      const record = claim(10, { claim_type: 'relation', payload: { claim_type: 'relation', source: 'e1', target: 'e2', relation } });
+      const graph = projectGraph([...nodes, record]);
+      expect(graph.unresolvedClaimIds).toEqual([10]);
+      expect(graph.edges[0]).toMatchObject({ id: 'claim-10', claimId: 10, sourceEntity: 'e1', targetEntity: 'e2', evidenceIds: [10] });
+      expect(isSemanticEdge(graph.edges[0])).toBe(false);
+      expect(() => foldGroup(nodes.map(graphNodeId), graph.edges, [...nodes, record])).toThrow('完整研究图');
+    }
+  });
+  it('历史异常汇合不恢复成共同使用：不足两输入、重复端口、非汇合owner与多余selected', () => {
+    const nodes = [claim(1), claim(2), claim(3, { payload: { claim_type: 'entity_version', kind: 'join' } })];
+    const valid = { claim_type: 'join_ports', target: 'e3', semantics: 'all_required', inputs: [{ port: '甲', ref: 'e1' }, { port: '乙', ref: 'e2' }], selected: null };
+    for (const patch of [{ inputs: [valid.inputs[0]] }, { inputs: [valid.inputs[0], valid.inputs[0]] }, { target: 'e2' }, { selected: 'e1' }]) {
+      const record = claim(10, { claim_type: 'join_ports', payload: { ...valid, ...patch } });
+      const graph = projectGraph([...nodes, record]);
+      expect(graph.unresolvedClaimIds).toEqual([10]); expect(graph.diagnostics[0].reasons.length).toBeGreaterThan(0);
+      expect(graph.edges.every(edge => !isSemanticEdge(edge))).toBe(true);
+      expect(graph.edges.every(edge => edge.evidenceIds?.includes(10))).toBe(true);
+      expect(joinRecords([...nodes, record], record.payload.target!, record.scope)).toEqual([record]);
+    }
+  });
+  it('关系不能借多版本kind任挑一条获有效方向，撤回和代码事件互不替代', () => {
+    const first = claim(1, { payload: { claim_type: 'entity_version', kind: 'finding' } });
+    const second = claim(3, { entity_id: 'e1', payload: { claim_type: 'entity_version', kind: 'approach' } });
+    const target = claim(2, { payload: { claim_type: 'entity_version', kind: 'finding' } });
+    const relation = claim(10, { claim_type: 'relation', payload: { claim_type: 'relation', source: 'e1', target: 'e2', relation: 'supports' } });
+    for (const records of [[first, second, target, relation], [second, first, target, relation]]) {
+      const graph = projectGraph(records); expect(graph.versions.get(graphNodeId(first))).toHaveLength(2);
+      expect(graph.edges.every(edge => !isSemanticEdge(edge))).toBe(true); expect(graph.unresolvedClaimIds).toContain(10);
+    }
+    const method = decision(20, 'accepted');
+    const rollback = claim(21, { claim_type: 'code_rollback', payload: { claim_type: 'code_rollback', target: 'approach' } });
+    expect(adoption([method, rollback], 'approach', method.scope)).toBe('accepted');
   });
 });
 describe('纯视图过程组保持证据', () => {

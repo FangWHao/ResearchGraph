@@ -6,6 +6,7 @@ import { DateText } from './DateText';
 import { EvidenceRecords, VersionRecords } from './EvidenceRecords';
 import { SessionParentPanel } from './SessionParentPanel';
 import { EventChainPanel } from './EventChainPanel';
+import { researchQuery, validateResearchEvidence } from './researchGraph';
 import { actionNames, evidenceNames, kindNames, label, reviewNames, scopeText } from './model';
 import type { Claim, EvidenceData, EvidenceTarget, EventWindow, Span } from './types';
 
@@ -62,11 +63,11 @@ export function EvidencePanel({ target, onError, compact = false, onEvidence }: 
   useEffect(() => {
     const controller = new AbortController();
     setData(null); setFailure('');
-    api<EvidenceData>(`/evidence/${target.event_id}?${query({ context, start: target.byte_start, end: target.byte_end })}`, undefined, controller.signal)
-      .then(result => { if (!controller.signal.aborted) setData(result); })
+    api<EvidenceData>(`/evidence/${target.event_id}?${query({ context, start: target.byte_start, end: target.byte_end, ...(target.reading ? researchQuery(target.reading) : {}) })}`, undefined, controller.signal)
+      .then(result => { if (!controller.signal.aborted) { validateResearchEvidence(result, target); setData(result); } })
       .catch(error => { if (!controller.signal.aborted) { setFailure(error.message); onError(error); } });
     return () => controller.abort();
-  }, [target.event_id, target.byte_start, target.byte_end, context, onError]);
+  }, [target.event_id, target.byte_start, target.byte_end, target.reading, context, onError]);
   if (failure) return <Empty title="原文暂不可用">{failure}</Empty>;
   if (!data) return <Loading />;
   const hashMatches = !target.quote_sha256 || target.quote_sha256 === data.event.quote_sha256;
@@ -79,7 +80,8 @@ export function EvidencePanel({ target, onError, compact = false, onEvidence }: 
     {data.before.map(event => <RawWindow key={event.event_id} event={event} />)}
     <RawWindow event={data.event} focus />
     {data.after.map(event => <RawWindow key={event.event_id} event={event} />)}
-    {!compact && <>
+    {target.reading && <p className="notice">此原文与上下文按研究图的项目、双时间和修订读取。当前父线程、事件父链、运行和文件版本派生资料未加载，不表示没有这些记录。</p>}
+    {!compact && !target.reading && <>
       <SessionParentPanel value={data.session_parent} session={data.event.session_pk}
         responseEvent={data.event.event_id} expectedEvent={target.event_id} onOpen={onEvidence} />
       <EventChainPanel value={data.event_chain} session={data.event.session_pk}

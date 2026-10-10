@@ -252,4 +252,8 @@ def query(store: Store, project: str, values: dict[str, Any]) -> dict[str, Any]:
         reader = Reader(store, project, values)
         if expected is not None and expected != store.revision():
             raise ConflictError("图已变化，请固定双时间后重新读取")
+        if values.get("collection") == "claims":
+            from rg.query.graph_records import records
+
+            return records(reader, values)
         return SemanticGraph(reader).query(values)

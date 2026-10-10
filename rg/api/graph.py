@@ -14,7 +14,7 @@ def parameters(values: dict[str, str]) -> dict[str, Any]:
     for key, value in values.items():
         if key == "project":
             continue
-        if key in {"limit", "offset", "expected_revision"}:
+        if key in {"limit", "offset", "expected_revision", "start", "end", "context"}:
             if not value.isascii() or not value.isdecimal() or len(value) > 20:
                 raise ValueError("图分页参数需为有限非负整数")
             arguments[key] = int(value)
@@ -36,6 +36,18 @@ def parameters(values: dict[str, str]) -> dict[str, Any]:
 
 def semantic(store: Store, values: dict[str, str]) -> dict[str, Any]:
     return query(store, values.get("project", ""), parameters(values))
+
+
+def record(store: Store, claim_id: int, values: dict[str, str]) -> dict[str, Any]:
+    from rg.query.graph_records import detail
+
+    return detail(store, values.get("project", ""), claim_id, parameters(values))
+
+
+def original(store: Store, event_id: int, values: dict[str, str]) -> dict[str, Any]:
+    from rg.query.graph_records import evidence
+
+    return evidence(store, values.get("project", ""), event_id, parameters(values))
 
 
 def l1(store: Store, values: dict[str, str]) -> dict[str, Any]:

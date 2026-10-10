@@ -1,6 +1,10 @@
-显式登记的Codex／Claude会话原先缺少可定位的决定、范围和历史版本入口，来源清理与fork／resume副本还可能丢失父线程依据。本次增加Python后端与React本地工作区，把增量日志整理成保留原文引用、完整范围和双时间的研究决定史；正文去重与来源父声明分别保存，缺口和冲突明确显示。
+显式登记的Codex／Claude会话原先缺少可定位的研究决定、范围和历史版本入口，日志清理与fork／resume副本还可能丢失来源依据。本次增加Python后端与React本地工作区，把增量日志整理成保留原文引用、完整范围及双时间的研究决定史。研究图读取全部记录后才能折叠；例如超过2000条时，后面的决定和边界仍保留，点开历史候选也不会换成今天的确认状态。
 
 扫描器、离线钩子、影子快照、候选提取、跨会话关联及概览由持久队列接续。每次完整模型请求先实测token，默认128000可调，项目默认禁止外发；模型输出始终candidate，截断、超预算或执行器压缩结果作废。规则原话确认和可选人工复核独立处理；MCP沿用户选择取消固定1500token返回上限，保留分页、原文字节窗口和本地精确计数。
+
+完整研究图按项目、发生截止、已知截止和修订逐页读取L2断言，保留所有历史版本、审核、更正及可见引用。分页未齐、修订冲突、错页、隐藏候选或未解析关系时拒绝折叠；失败重读保留旧完整图，迟到响应不进入新条件或其它项目。过程组保留撤回、阴性结果、范围历史、候选审核、内部关系及每条边界的类型／端点／端口／证据；展开恢复同一修订的原节点、关系和位置。未选比较仅作为比较，显示版本和布局不决定研究语义。
+
+节点详情及原文沿用图的同一双时间和修订，历史分支只读。原文先按项目和双时间筛选，再打开已存对象；未来发生、旧事迟到和未知已知时间的上下文不会混入。原UTF8字节窗口及引用摘要保留，源文件消失也可读取。历史原文明确标记当前父链、运行及文件版本派生未加载，来源分组仅包含可见原件会话，晚到片段计划不会补造历史。
 
 Codex以session_meta直接父线程声明核对，根session_id及forked_from_id不替代直接父；Claude逐物理记录保存uuid、parentUuid和严格布尔isSidechain，多块共用记录锚点，副本保留各自声明。父迟到自动恢复，冲突、歧义、循环与缺父不猜。Claude同来源先核对，再回退同项目唯一等价组；来源上下文和64步上限明确停止，20个父引用与完整计数分开。跨项目不继承归属、不落父外键、不公开父编号或原文引用。
 
@@ -11,28 +15,29 @@ Codex以session_meta直接父线程声明核对，根session_id及forked_from_id
 ## 当前验收
 
 ```text
-uv sync --locked                       Resolved28/1ms；Checked27/47ms
-uv run pytest -q                       1123 passed in489.71s(0:08:09)
-uv run pytest tests/golden -q           1076 passed in474.66s(0:07:54)
-uv run ruff check rg tests scripts      All checks passed!
-uv run pyright                         0 errors,0 warnings,0 informations
-uv run rg --help及session-parent --help  均退出0
-cd web && pnpm test                    147 passed/18files/905ms
-cd web && pnpm build                   241modules/1.49s
-cd web && pnpm exec tsc --noEmit        退出0
-原父线程及自动补记八项浏览器专项           8 passed(21.5s)
-隔离Python3.12.3安装的父线程／补记案例      84 passed in36.87s
-cd web && pnpm test:browser             133 passed(2.1m)
+uv sync --locked                        Resolved28/1ms；Checked27/65ms
+uv run pytest -q                        1146 passed in491.73s(0:08:11)
+uv run pytest tests/golden -q            1099 passed in476.83s(0:07:56)
+uv run ruff check rg tests scripts       All checks passed!
+uv run pyright                          0 errors,0 warnings,0 informations
+uv run rg graph --help                  退出0，claims集合可用
+cd web && pnpm test                     158 passed/19files/875ms
+cd web && pnpm build                    243modules/1.06s
+cd web && pnpm exec tsc --noEmit         退出0
+新记录页及原语义图的关联后端案例             152 passed in53.33s
+隔离Python3.12.3安装的记录页及语义图案例      48 passed in19.69s
+原五项研究图及新增五项真实浏览器专项          10 passed(32.2s)
+cd web && pnpm test:browser              138 passed(2.4m)
 ```
 
-两组后端全量并行，不作为性能基准；两组和浏览器专项结束后，父任务串行完整133项浏览器，原129项保留，2.1m全部通过。新增29项固定案例验证18/20/21/22旧库与源消失恢复、末尾冲突／晚身份、连续游标、锁占用、对象缺失／摘要不符／压缩损坏、批内回滚／实际进程退出79、旧备份与轮换、CLI／令牌HTTP只读快照以及临时跨项目清除。135包成员、130运行资源与源码及隔离安装逐字一致，实际目录密钥匹配0、私有文件0。
+两组后端全量均实际退出0后才开始浏览器验收，并行全量不作为性能基准。新增23项固定案例覆盖2006条完整分页、105引用、历史审核／替换、完整与未知范围、跨项目、分页及原文并发写、上下文先过滤、删除源后的原字节／摘要、错误参数和真实CLI／令牌HTTP只读快照。136包成员、131运行资源与源码及隔离安装逐字一致，实际目录密钥匹配0、私有文件0。
 
-界面新增四项语义回归与四项真实浏览器，原父线程四例、取消后的迟到200／401及其余已有案例保留。真实扫描在合成原日志删除后两批核对776／12条，不以部分资料宣称唯一；原文UTF8摘要与原L0时间保持。手机整卡／标题／声明按钮的严格位置检查通过，父实看桌面及390七图；43项源码／证据冻结全部核对，九文件恢复包独立解包逐字一致。最初失败与复验详情保留在中文验收，超时／重试未调整。
+前端保留原有语义回归，新增完整分页、迟到响应、注册对象种类与载入错误检查。真实浏览器使用独立临时服务及脱敏合成资料，2033条记录21页读齐、35引用保留；真实409及晚200／401、错误页模拟、历史详情和原文只读与390几何通过。两组后端和专项结束后，父串行完整138项浏览器，原133项保留。父实看六张桌面／390图，56项冻结全部核对，13文件恢复包独立解包逐字一致。前三轮失败及后续修正记录在中文验收，超时／重试未调整。
 
-证据见[Codex自动补记验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/Codex已存父线程自动补记验收_20261011.md)、[补记界面验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/父线程自动补记界面验收_20261011.md)、[Claude父链验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/Claude事件父链验收_20261011.md)、[管理目录整项目清除验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/管理目录整项目清除验收_20261010.md)及[需求落实与剩余项](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。
+证据见[完整研究图记录与历史原文验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/完整研究图记录与历史原文验收_20261011.md)、[完整研究图界面验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/完整研究图界面验收_20261011.md)、[Codex自动补记验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/Codex已存父线程自动补记验收_20261011.md)、[Claude父链验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/Claude事件父链验收_20261011.md)、[管理目录整项目清除验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/管理目录整项目清除验收_20261010.md)及[需求落实与剩余项](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。
 
 ## 保留边界
 
-草稿待评审，完整M0–M4尚未完成。整项目清除覆盖当前管理目录；外部原日志、研究工作区和用户保存／分享副本沿既有保留边界。全部真实工具版本、嵌套L1完整映射、跨项目片段优先级、自动worktree发现／跨设备路径、钩子无法写日志时的漏报、完整实际I/O、影响传播／note合同、真实客户端／实际规模／原生Windows及Atlas正式人工参考仍待落实。
+草稿待评审，完整M0–M4尚未完成。整项目清除覆盖当前管理目录；外部原日志、研究工作区和用户保存／分享副本沿既有保留边界。问题／时间线仍使用2000条简版投影，个人ViewState持久保存、完整十类折叠端到端、全部真实工具版本、嵌套L1完整映射、跨项目片段优先级、自动worktree发现／跨设备路径、钩子无法写日志时的漏报、完整实际I/O、影响传播／note合同、真实客户端／实际规模／原生Windows及Atlas正式人工参考仍待落实。
 
 本阶段没有删除真实项目、读取整份真实会话或调用模型；公开源码、中文说明和合成案例，凭据、真实会话、数据库、截图及缓存不入仓库。提交后维护既有草稿PR #1，核对当前HEAD的推送／PR两种CI与独立恢复包，不预报这些结果。

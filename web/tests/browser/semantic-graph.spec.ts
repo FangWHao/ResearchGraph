@@ -133,7 +133,13 @@ test('隐藏候选、真实缺端点和模拟部分投影都不能折叠', async
   await expect(page.locator('.notice').filter({ hasText: '同范围端点' })).toBeVisible();
   await page.getByRole('button', { name: '折叠所选（0）', exact: true }).click();
   await expect(page.locator('.graph-notice')).toContainText('完整研究图');
-  await page.route('**/api/graph?*', async route => { const response = await route.fetch(); const body = await response.json(); await route.fulfill({ response, json: { ...body, partial: true } }); });
+  await page.route('**/api/semantic-graph?*', async route => {
+    if (new URL(route.request().url()).searchParams.get('offset') !== '0') {
+      await route.fulfill({ status: 503, json: { error: '合成第二页读取失败' } }); return;
+    }
+    const response = await route.fetch(); const body = await response.json();
+    await route.fulfill({ response, json: { ...body, total: body.total + 1, claims_total: body.total + 1, next_offset: body.items.length } });
+  });
   await open(page, request);
   await select(page, members);
   await page.getByRole('button', { name: '折叠所选（2）', exact: true }).click();

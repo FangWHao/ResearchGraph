@@ -18,12 +18,14 @@ export interface Payload {
   [key: string]: unknown;
 }
 export interface Claim {
+  kind?: string;
   claim_id: number; claim_type: string; entity_id: string | null;
   payload: Payload; scope: Record<string, string> | null; basis: string; actor: string;
   claim_state: ReviewState; effective_state: ReviewState;
   occurred_at: string | null; recorded_at: string;
   occurred_at_utc?: string | null; recorded_at_utc?: string | null;
   replaces_claim: number | null; replacement_ids: number[]; review: Review | null;
+  replaced?: boolean;
   confirmation_source: 'human' | 'rule' | null;
   evidence: Span[]; groups: { segment_id: string | null; session_pk: number }[];
   review_history?: Review[];
@@ -41,6 +43,13 @@ export interface GraphData {
   revision: number; claims: Claim[]; partial: boolean; limit: number;
   run_states: { run_id: string; state: string; exit_code: number | null }[];
   capabilities: { impact_propagation: boolean; artifact_diff: boolean };
+}
+export interface ResearchReading {
+  project_id: string; revision: number; occurred_until: string; known_until: string;
+}
+export interface ResearchGraphData extends ResearchReading {
+  claims: Claim[]; partial: boolean; total: number; intent: string;
+  scope: Record<string, string> | null; scope_filter: boolean;
 }
 export interface QuestionRequest {
   project_id: string; text: string; scope: Record<string, string> | null;
@@ -82,7 +91,7 @@ export interface EventWindow {
   total_bytes: number; window_start: number; window_end: number; window_truncated: boolean;
   before: string; quote: string; after: string; quote_sha256: string | null;
 }
-export type EvidenceTarget = { event_id: number; byte_start?: number; byte_end?: number; quote_sha256?: string };
+export type EvidenceTarget = { event_id: number; byte_start?: number; byte_end?: number; quote_sha256?: string; reading?: ResearchReading };
 export interface ArtifactVersion {
   version_id: string; path: string; algo: string; digest: string; source: string;
   phase?: string | null; basis?: string | null; claim_state?: ReviewState | null;
@@ -181,6 +190,7 @@ export interface EvidenceData {
   l1?: L1Evidence | null;
   session_parent?: SessionParentData | null;
   event_chain?: EventChainData | null;
+  history_context?: boolean; derived_context_loaded?: boolean;
 }
 export type EventChainState = 'unsupported' | 'unobserved' | 'uuid_unavailable' | 'parent_not_declared'
   | 'null_parent' | 'invalid_parent' | 'conflicting_record' | 'ambiguous_parent' | 'outside_project'
