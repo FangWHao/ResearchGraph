@@ -744,3 +744,22 @@ def test_repeated_uuid_in_different_source_context_does_not_create_false_cycle(s
     assert result["state"] == "linked" and result["ancestry_state"] == "null_parent"
     assert result["ancestry_steps"] == 3
     assert result["parent_references"][0]["event_id"] == 3
+
+
+def test_live_source_with_corrupt_object_does_not_abort_cycle_for_other_sources(
+    tmp_path, monkeypatch
+):
+    root, _, _ = legacy(tmp_path, monkeypatch, [message(A, None)])
+    with monkeypatch.context() as patch:
+        patch.setattr(migrations, "LATEST_VERSION", 21)
+        with closing(Store(root)) as old:
+            _, events, _ = add(old, tmp_path, "second", [message(B, None)])
+            sha = old.db.execute(
+                "SELECT object_sha256 FROM raw_events WHERE event_id=1"
+            ).fetchone()[0]
+            old.objects.path(sha).write_bytes(b"synthetic-corrupt-object")
+    with closing(Store(root)) as store:
+        result = cycle(store)
+        assert result["errors"] == result["chain_errors"] == 1
+        assert view(store)["state"] == "unobserved"
+        assert view(store, events[0])["state"] == "null_parent"

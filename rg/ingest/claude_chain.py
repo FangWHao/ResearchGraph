@@ -85,7 +85,10 @@ def backfill_file(store: Store, file_id: int) -> int:
         return 0
     with store.transaction() as db:
         for row in rows:
-            raw = store.raw(row[0])
+            try:
+                raw = store.raw(row[0])
+            except zstandard.ZstdError as exc:
+                raise ValueError("已存原文对象损坏，父链补记保留缺口") from exc
             try:
                 record = json.loads(raw)
             except (ValueError, UnicodeError):
