@@ -296,22 +296,25 @@ class Reader:
     def evidence(self) -> dict[str, Any]:
         values = self.values
         if "version_id" in values:
+            from rg.query.artifacts import version_record
+
             if self.scope_filter:
                 raise ValueError("文件观察没有统一范围，请先查看关联记录")
             version = self.store.db.execute(
-                "SELECT v.*,r.occurred_at,r.recorded_at FROM artifact_versions v "
-                "LEFT JOIN raw_events r ON r.event_id=v.evidence_event_id "
+                "SELECT v.* FROM artifact_versions v "
                 "WHERE v.version_id=? AND v.project_id=?",
                 (values["version_id"], self.project),
             ).fetchone()
-            if version is None or not self.visible(
-                version["occurred_at"], version["recorded_at"], ("V", values["version_id"])
-            ):
+            record = version_record(self, dict(version)) if version is not None else None
+            if record is None:
                 raise NotFound("当前查询中没有这个版本观察")
+            card, observed = record
             return self.metadata() | {
-                "citation_id": f"V:{version['version_id']}",
-                "version": dict(version),
-                "notice": "文件版本观察；不读取当前文件，也不推断该版本内容完整或运行成功。",
+                "citation_id": card["citation_id"],
+                "version": card,
+                "observations": page(observed, values),
+                "notice": "文件版本观察；时间和条数仅来自双截止内的记录。缓存保留原读取窗口；"
+                "发现快照只是线索，不证明当时字节或运行 I/O。不读取当前文件或推断运行成功。",
             }
         if "claim_id" in values:
             if not any(r["claim_id"] == values["claim_id"] for r in self.scoped(self.claims())):

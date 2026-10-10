@@ -5,6 +5,8 @@ import json
 import mimetypes
 import re
 import secrets
+import socket
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -52,10 +54,34 @@ class LocalServer(ThreadingHTTPServer):
 
 class Handler(BaseHTTPRequestHandler):
     server: LocalServer
+    _unread_body = False
 
     def log_message(self, format: str, *args: Any) -> None:
         # 查询文字、引用、启动令牌不写 HTTP 访问日志。
         return
+
+    def finish(self) -> None:
+        if self._unread_body:
+            # 先发布拒绝响应，再有限清空未消费的请求体。直接关闭含未读数据的
+            # TCP 连接会发送 RST，使客户端丢失已经写出的 401/403/413。
+            try:
+                self.wfile.flush()
+                self.connection.shutdown(socket.SHUT_WR)
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    length = 2 * MAX_BODY_BYTES
+                remaining = min(max(length, 0), 2 * MAX_BODY_BYTES)
+                deadline = time.monotonic() + 0.2
+                while remaining and (wait := deadline - time.monotonic()) > 0:
+                    self.connection.settimeout(wait)
+                    chunk = self.rfile.read1(min(remaining, 8192))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+            except OSError:
+                pass
+        super().finish()
 
     def _send(self, status: int, data: bytes, content_type: str) -> None:
         self.send_response(status)
@@ -183,6 +209,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.NOT_FOUND, {"error": "静态资源不存在"})
 
     def do_POST(self) -> None:
+        self._unread_body = True
         if not self._authorized():
             return
         if self.headers.get("Transfer-Encoding"):
@@ -198,7 +225,9 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get_content_type() != "application/json":
                 raise ValueError("请求体需使用 application/json")
             self.connection.settimeout(10)
-            body = json.loads(self.rfile.read(length))
+            raw = self.rfile.read(length)
+            self._unread_body = False
+            body = json.loads(raw)
             if not isinstance(body, dict):
                 raise ValueError("请求体需为 JSON 对象")
             path = urlsplit(self.path).path

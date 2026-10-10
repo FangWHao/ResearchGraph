@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from rg.query.artifacts import version_record
 from rg.query.reader import Reader, page, state_card
 from rg.store.database import dumps
 
@@ -55,17 +56,17 @@ def context(reader: Reader) -> dict[str, Any]:
             entry["resolution"] = "unknown"
         entries.append(entry)
     for row in reader.store.db.execute(
-        "SELECT v.*,r.recorded_at,r.occurred_at FROM artifact_versions v "
-        "LEFT JOIN raw_events r ON r.event_id=v.evidence_event_id WHERE v.project_id=? "
+        "SELECT v.* FROM artifact_versions v WHERE v.project_id=? "
         "ORDER BY v.version_id",
         (reader.project,),
     ):
         if reader.scope_filter:
             # 文件观察没有完整 claim 范围；不按路径或时间猜测归属。
             continue
-        if reader.visible(row["occurred_at"], row["recorded_at"], ("V", row["version_id"])):
+        record = version_record(reader, dict(row))
+        if record is not None:
             entries.append(
-                dict(row)
+                record[0]
                 | {
                     "priority": 5,
                     "section": "文件版本记录",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 
 import httpx
 import pytest
@@ -196,6 +197,35 @@ def test_all_qa_operations_require_host_origin_and_token(qa_api, store, path):
     ]:
         response = client.post("/api/qa/" + path, json=body(project, store), headers=headers)
         assert response.status_code == status
+    assert protocol.counts == protocol.calls == 0
+
+
+@pytest.mark.parametrize(
+    "headers,status,size",
+    [
+        ({"Authorization": ""}, 401, 32768),
+        ({"Origin": "https://outside.invalid"}, 403, 32768),
+        ({}, 413, 65537),
+    ],
+)
+def test_early_rejections_deliver_status_with_request_body_still_arriving(
+    qa_api, store, headers, status, size
+):
+    _, client, _, _, _, protocol = qa_api
+    before = list(store.db.iterdump())
+
+    def chunks():
+        yield b"x" * 1024
+        time.sleep(0.03)
+        yield b"x" * (size - 1024)
+
+    response = client.post(
+        "/api/qa/disable-remote",
+        content=chunks(),
+        headers={"Content-Type": "application/json", "Content-Length": str(size)} | headers,
+    )
+    assert response.status_code == status and response.json()["error"]
+    assert list(store.db.iterdump()) == before
     assert protocol.counts == protocol.calls == 0
 
 

@@ -64,7 +64,8 @@ TOOLS = [
     ),
     definition(
         "evidence",
-        "引用 C=记录、S=片段、E=事件、V:=版本；片段偏移相对引用，事件偏移相对原件。",
+        "引用 C=记录、S=片段、E=事件、V:=版本；版本观察按双截止分页，缓存保留原读取窗口。"
+        "片段偏移相对引用，事件偏移相对原件。",
         {
             "claim_id": {"type": "integer", "minimum": 1},
             "span_id": {"type": "integer", "minimum": 1},

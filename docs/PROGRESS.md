@@ -421,3 +421,19 @@
 - 前端最终 pnpm test：7 files/57 passed/656ms；pnpm build：204 modules/1.07s；pnpm test:browser：54 passed/37.2s。父 agent 实看最终五张桌面/390 手机/缓存窗口图，无横向溢出；18 项冻结全部 OK，摘要 9ece6869e130cefcfa49de3cd098924e57cf40c7ac4855b77d6d0db6fcf76d31。未知、矛盾、缺项目、迟到回包和纳秒舍入诊断保留；真实 HTTP 合成统计不冒充后台引擎或研究质量。
 - 下一步：允许清单提交并维护现有草稿 PR，按新 HEAD 核对推送/PR 两种 CI，刷新公开恢复包并独立还原全部跟踪文件后结束本任务。后续继续物理版本与研究对象/运行/MCP 双时间关联、全图语义、export、临床编号与隐私清除；note 类型、正式参考及真实 M0–M4/规模性能/实际客户端验收仍保留，整个目标不标完成。
 - 提交前允许清单检查：tracked_files=271 staged_files=32 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True frontend_frozen_files_unchanged=True；git diff --cached --check 退出码 0。仅公开源码、中文记录与合成测试提交；凭据、原件、数据库、图片和缓存继续留忽略目录，原规格保留原文。
+
+
+## 2026-10-10 · 物理版本的 MCP 双时间读取
+
+- 任务：落实 §2、§7.11/8.2，验收修复另核对 §11。开始核对进度末尾、相关章节与决定；642469b 基线恢复包 SHA256 和独立恢复的 271 个跟踪文件字节通过。父 agent 独立后端，无新子 agent 工作，整个 M0–M4 不标完成。
+- 改动的文件：新增 rg/query/artifacts.py、tests/golden/test_version_queries.py 与中文验收；修改 reader/context、MCP 描述、版本 14 迁移、官方 SDK 检查、HTTP 服务及问答 API 固定案例；更新 README、需求落实、决定、PR 草稿与本文件。前端源码未改。
+- 行为：版本证据和状态卡共用不可变观察的双时间；捕获快照按明确 ID/项目/根目录核对，当前摘要采用完整读取窗口。必要快照晚入库时使用较晚已知时间，原观察时间另留；缓存保留原窗口，发现信息截止外不展示。条数和时间摘要只计算可见观察，首次插入时间不绕过截止，指定分析范围不猜文件归属，不读文件或补造 L0/run_io。
+- 修订：新增版本、观察和快照改变 revision；即使复用版本，新观察也拒绝旧 expected_revision 续页。已有数据升级失效旧修订，空库仍为零；迁移失败回滚，原件保留、重开不重复变更。
+- uv sync --locked：Resolved 28 packages in 14ms、Checked 27 packages in 67ms；rg --help 退出码 0。专项 uv run pytest tests/golden/test_version_queries.py -q：16 passed in 3.39s；HTTP 专项 tests/golden/test_qa_api.py tests/test_api.py：42 passed in 26.91s。
+- uv run pytest -q：603 passed in 221.99s (0:03:41)；uv run pytest tests/golden -q：556 passed in 208.21s (0:03:28)。两者并行，不作性能基准；ruff check rg tests scripts：All checks passed!；pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。
+- 验收修复：初次十二个新案例因合成种子误把整数 job_id 当文字 ID，修正后通过；另补可空类型检查。两次全量分别遇到超限 POST/鉴权拒绝的 TCP 重置，已补拒绝后的有限收尾，最多 0.2 秒/128 KiB、单块 8 KiB；三个分段请求回归不进库或模型，鉴权和 64 KiB 接收上限不变。旧收尾模拟三项亦通过，不冒充稳定复现；早期 551/600 和失败全量不替代最终 603/556。
+- 官方 MCP SDK 2.3.0：新版 2026-07-28/旧版 2025-11-25 各列五工具、七查询含两个物理版本，状态卡包含两者，逻辑库不变/run_io 为零；Codex/Claude 两种生成配置仍通过。本轮仅合成材料，未读完整真实会话或发 Atlas 原文、未调用模型。
+- uv build --wheel：104 文件/99 源码资源全部匹配，缺失/差异/实际密钥/私有文件均 0；独立环境重新安装最终包，模块来自安装目录。仓库外真实 scan --watch 形成三版本/六完成任务/一缓存，原窗口保留、SIGINT 退出 0；删除工作区后备份只读 MCP 的三版本/状态卡/旧截止通过，库不变、model_attempts/run_io 为零。安装目录 HTTP 分段 401/403/413 通过；首次验证受本机 SOCKS 环境缺包阻止，显式 trust_env=False 限定本机后通过，未改生产代理或外发资料。
+- cd web && pnpm test：7 files/57 passed/651ms；pnpm build：204 modules/1.10s；最终 pnpm test:browser：54 passed/40.2s。十三项前端源码与旧基线一致，截图因新增修订号/合成时间变化，父 agent 实看变更的桌面/390 手机图，最终健康桌面再次实看；无横向溢出。当前十八项冻结全部 OK，SHA256 91a4a1afabe21191467cf08b061028c5fa705a7c02af688969067212c0fd9a26。
+- 下一步：允许清单提交、维护现有草稿 PR，核对新 HEAD 的推送/PR 两种 CI，刷新公开包并独立恢复全部跟踪文件后结束本任务。后续继续版本与研究对象/实际运行 I/O 的直接关联、全图语义、export、临床编号与隐私清除；note 类型、正式参考、真实工具/性能/完整 M0–M4 验收继续保留。
+- 提交前允许清单：tracked_files=271 staged_files=15 actual_secret_matches=0 forbidden_tracked_files=0 spec_unchanged=True frontend_source_unchanged=True；git diff --cached --check 退出码 0。只提交公开源码、合成测试及中文记录，真实材料、凭据、数据库、截图和缓存仍忽略。

@@ -10,7 +10,10 @@ from pathlib import Path
 
 from mcp import Client, StdioServerParameters
 
+from rg.artifacts.worker import Worker
+from rg.ingest.spool import consume, register
 from rg.query.tokenizer import LocalCounter
+from rg.snapshot.capture import MAX_FILE_BYTES, capture
 from rg.store.database import Store
 from tests.golden.test_links_overview import add_object
 
@@ -24,11 +27,24 @@ async def check() -> None:
         path = Path(temporary)
         store = Store(path / "data")
         try:
-            project = store.project("官方客户端合成项目", [])
+            work = path / "work"
+            work.mkdir()
+            (work / "small.bin").write_bytes(b"saved\r\nbytes")
+            (work / "large.bin").write_bytes(b"x" * (MAX_FILE_BYTES + 1))
+            project = store.project("官方客户端合成项目", [work])
             claim, event = add_object(store, path, project, "sdk-only")
             entity = store.db.execute(
                 "SELECT entity_id FROM claims WHERE claim_id=?", (claim,)
             ).fetchone()[0]
+            source_root = store.db.execute(
+                "SELECT root_id FROM source_roots WHERE project_id=?", (project,)
+            ).fetchone()[0]
+            assert capture(store.root, project, source_root, work)["skipped"] is None
+            register(store)
+            consume(store, [])
+            assert Worker(store).run()["done"] == 2
+            physical = [dict(row) for row in store.db.execute("SELECT * FROM artifact_versions")]
+            assert len(physical) == 2 and all(r["evidence_event_id"] is None for r in physical)
             before = list(store.db.iterdump())
             parameters = StdioServerParameters(
                 command=str(root / ".venv/bin/rg"),
@@ -45,8 +61,8 @@ async def check() -> None:
                         ("node", {"entity_id": entity}),
                         ("history", {"entity_id": entity}),
                         ("evidence", {"event_id": event, "max_bytes": 100}),
-                        ("context", {"budget": 2000}),
-                    ]:
+                        ("context", {"budget": 6000}),
+                    ] + [("evidence", {"version_id": r["version_id"]}) for r in physical]:
                         result = await client.call_tool("research." + name, arguments)
                         assert not result.is_error
                         block = result.content[0]
@@ -54,6 +70,13 @@ async def check() -> None:
                         text = block.text
                         assert text.startswith("<rg-context")
                         payload = json.loads(text.split("\n", 1)[1].rsplit("\n", 1)[0])
+                        if "version_id" in arguments:
+                            assert payload["version"]["claim_state"] == "candidate"
+                            assert payload["observations"]["total"] == 1
+                        if name == "context":
+                            assert {r["version_id"] for r in physical} <= {
+                                r.get("version_id") for r in payload["items"]
+                            }
                         calls.append(
                             {
                                 "tool": name,
@@ -70,6 +93,10 @@ async def check() -> None:
                         "tools": 5,
                         "queries": calls,
                         "logical_database_unchanged": True,
+                        "physical_versions": len(physical),
+                        "inferred_run_io": store.db.execute(
+                            "SELECT count(*) FROM run_io"
+                        ).fetchone()[0],
                     }
                 )
         finally:

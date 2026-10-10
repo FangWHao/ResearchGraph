@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 13
+LATEST_VERSION = 14
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -276,6 +276,16 @@ MIGRATIONS = {
         "CREATE TRIGGER physical_version_no_delete BEFORE DELETE ON artifact_versions "
         "WHEN OLD.source IN ('shadow_snapshot','current_file') "
         "BEGIN SELECT RAISE(ABORT,'physical version is append-only'); END",
+    ),
+    14: (
+        "UPDATE graph_clock SET revision=revision+1 WHERE id=1 AND "
+        "(EXISTS(SELECT 1 FROM artifact_versions) OR EXISTS(SELECT 1 FROM workspace_snapshots))",
+        "CREATE TRIGGER artifact_version_revision AFTER INSERT ON artifact_versions BEGIN "
+        "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
+        "CREATE TRIGGER artifact_observation_revision AFTER INSERT ON artifact_observations BEGIN "
+        "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
+        "CREATE TRIGGER workspace_snapshot_revision AFTER INSERT ON workspace_snapshots BEGIN "
+        "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
     ),
 }
 

@@ -10,25 +10,25 @@
 
 本地页面提供研究问题、问答、可选人工补记、分组复核、双时间线、原文窗口、运行/编辑证据、文件版本分页、两个独立健康队列和 React Flow/ELK 图。快照字节、当前完整摘要和工具报告分别解释；缓存读取窗口与观察入库时间分开，版本缺口和未知数量保留。来源、问题、项目和鉴权变化后的迟到结果隔离。HTTP 仅监听 127.0.0.1，保留随机令牌及 Host/同源校验。
 
-Agent 使用五个固定项目的只读 MCP 工具、双截止历史与离线状态卡，研究文字包装防回流；client-pack 生成 Codex/Claude 原生技能及 stdio 配置，人工 question/decide 仅明确调用，原话用有限 JSON 和固定项目包装写入既有幂等合同。物理版本当前由 versions CLI/HTTP 查看，未为 MCP 或旧运行补猜原文事件。
+Agent 使用五个固定项目的只读 MCP 工具、双截止历史与离线状态卡，研究文字包装防回流；client-pack 生成 Codex/Claude 原生技能及 stdio 配置，人工 question/decide 仅明确调用，原话用有限 JSON 和固定项目包装写入既有幂等合同。物理版本可由 versions CLI/HTTP 和 MCP 双时间查询；直接核对不可变观察与必要快照，不补猜原文事件或旧运行。缓存保留原读取窗口，详情只分页可见观察，新增观察使旧修订失效。
 
 ```text
 uv sync --locked                   → 28 个包解析、27 个包检查
-uv run pytest -q                   → 584 passed in 213.24s (0:03:33)
-uv run pytest tests/golden -q       → 537 passed in 200.12s (0:03:20)
+uv run pytest -q                   → 603 passed in 221.99s (0:03:41)
+uv run pytest tests/golden -q       → 556 passed in 208.21s (0:03:28)
 uv run ruff check rg tests scripts  → All checks passed!
 uv run pyright rg                  → 0 errors, 0 warnings, 0 informations
-uv run rg --help / hash-files --help / versions --help → 退出码均 0
-cd web && pnpm test                → 57 passed，656ms
-cd web && pnpm build               → 204 modules，1.07s
-cd web && pnpm test:browser         → 54 passed，37.2s
-uv build --wheel                   → 103 文件、98 源码资源匹配，私有文件及实际密钥匹配 0
+uv run rg --help                   → 退出码 0
+cd web && pnpm test                → 57 passed，651ms
+cd web && pnpm build               → 204 modules，1.10s
+cd web && pnpm test:browser         → 54 passed，40.2s
+uv build --wheel                   → 104 文件、99 源码资源匹配，私有文件及实际密钥匹配 0
 ```
 
-本轮新增 21 项后端固定案例验证完整摘要、缓存读取窗口、并发写库、路径/内容变化作废、祖先目录链接在读取前拒绝、不可变观察、归属提交、实际 SIGKILL/父管道断开、备份及迁移恢复和分页隔离。前端新增十项语义单测与七项真实 HTTP 浏览器案例；真实纳秒签名超过浏览器安全整数时不展示舍入值，来源矛盾、缺项目及迟到回包保留错误。合成浏览器统计不冒充实际快照/摘要引擎运行。
+本轮新增十六项物理版本查询固定案例及三个分段 POST 回归：双截止、迟到目录、缓存旧窗口、未来数量隔离、时区排序、跨项目原事件/快照拒绝、复用版本的观察分页修订、备份与迁移恢复。全量发现拒绝请求提前关闭可能重置连接，已补有限收尾，不改鉴权和接收上限。前端十三项源码不变，修订号及合成时间引起的截图变化经实看，当前十八项冻结均核对。
 
-独立安装最终 wheel、从仓库外启动真实 CLI scan --watch：一个快照字节版本、两个大文件完整摘要版本、六任务完成，缓存复用一次且窗口不变；大文件没有副本或旧快照绑定，模型调用与推定 run_io 为零，分页与备份恢复通过，正常停止退出零。以前的模型合成实测及官方 MCP SDK 两种协议/两套生成配置验收保留，不能替代 Atlas 的正式效果。
+独立安装最终 wheel、仓库外实际 scan --watch 形成一个快照版本、两个当前完整摘要版本和六个完成任务；缓存沿用原窗口，SIGINT 退出零。删除工作区后，从备份的只读库读取三份 MCP 版本和状态卡，旧截止隐藏发现信息；无模型、正文副本或补写 run_io。安装目录 HTTP 另验 401/403/413，库不变；官方 SDK 2.3.0 两种协议各七查询含两个物理版本，两套生成客户端配置继续通过。
 
-完整证据见[物理文件版本与后台摘要验收](acceptance/M2物理文件版本与后台摘要验收_20261010.md)、[文件版本界面验收](acceptance/前端物理文件版本验收_20261010.md)、[自动关联与概览验收](acceptance/M3自动关联与概览验收_20261010.md)及[问答与许可验收](acceptance/M4问答接口与外发许可验收_20261010.md)。
+完整证据见[物理版本 MCP 双时间验收](acceptance/M4物理版本MCP双时间验收_20261010.md)、[物理文件版本与后台摘要验收](acceptance/M2物理文件版本与后台摘要验收_20261010.md)、[文件版本界面验收](acceptance/前端物理文件版本验收_20261010.md)、[自动关联与概览验收](acceptance/M3自动关联与概览验收_20261010.md)及[问答与许可验收](acceptance/M4问答接口与外发许可验收_20261010.md)。
 
-Atlas 正式参考、真实效果和完整 M0–M4 尚未验收。后续包括物理版本的研究对象/运行/MCP 双时间关联、全图语义、export、临床编号配置和隐私清除；note/propose_note 类型待约定。没有安装个人钩子或系统常驻服务。凭据、真实材料、数据库、截图和缓存不入仓库。维护[草稿 PR #1](https://github.com/FangWHao/ResearchGraph/pull/1)，本次提交后按新 HEAD 核对推送/PR 两种 CI，再独立还原全部跟踪文件。
+Atlas 正式参考、真实效果和完整 M0–M4 尚未验收。后续包括物理版本的研究对象/实际运行 I/O 关联、全图语义、export、临床编号配置和隐私清除；note/propose_note 类型待约定。没有安装个人钩子或系统常驻服务。凭据、真实材料、数据库、截图和缓存不入仓库。维护[草稿 PR #1](https://github.com/FangWHao/ResearchGraph/pull/1)，本次提交后按新 HEAD 核对推送/PR 两种 CI，再独立还原全部跟踪文件。
