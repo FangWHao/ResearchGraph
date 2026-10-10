@@ -179,6 +179,20 @@ export interface EvidenceData {
   artifact_diff: { available: boolean; reason: string };
   artifact_versions_partial?: boolean;
   l1?: L1Evidence | null;
+  session_parent?: SessionParentData | null;
+}
+export type SessionParentState = 'unobserved' | 'no_parent_declared' | 'invalid' | 'conflicting'
+  | 'missing_parent' | 'ambiguous_parent' | 'cycle' | 'linked' | 'outside_project' | 'unsupported';
+export interface SessionParentObservation {
+  event_id: number; state: 'invalid' | 'conflict' | 'declared' | 'not_declared';
+  basis: 'none' | 'top_level' | 'thread_spawn' | 'both'; reason: string;
+  native_id: string | null; parent_id: string | null; other_parent_id: string | null; recorded_at: string;
+}
+export interface SessionParentData {
+  session_pk: number; tool: string; native_id: string | null; state: SessionParentState;
+  parent_session_pk: number | null; parent_native_id: string | null; parent_event_id: number | null;
+  observations: SessionParentObservation[]; observations_total: number;
+  observations_partial: boolean; observation_highwater: number;
 }
 export interface SearchPage {
   results: { event_id: number; session_pk: number; text: string; occurred_at: string | null }[];

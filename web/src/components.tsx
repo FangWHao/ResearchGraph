@@ -4,6 +4,7 @@ import { requiresDecisionTarget } from './manualDecision';
 import { api, query } from './api';
 import { DateText } from './DateText';
 import { EvidenceRecords, VersionRecords } from './EvidenceRecords';
+import { SessionParentPanel } from './SessionParentPanel';
 import { actionNames, evidenceNames, kindNames, label, reviewNames, scopeText } from './model';
 import type { Claim, EvidenceData, EvidenceTarget, EventWindow, Span } from './types';
 
@@ -78,6 +79,8 @@ export function EvidencePanel({ target, onError, compact = false, onEvidence }: 
     <RawWindow event={data.event} focus />
     {data.after.map(event => <RawWindow key={event.event_id} event={event} />)}
     {!compact && <>
+      <SessionParentPanel value={data.session_parent} session={data.event.session_pk}
+        responseEvent={data.event.event_id} expectedEvent={target.event_id} onOpen={onEvidence} />
       <EvidenceRecords data={data.l1} current={data.event.event_id} onOpen={onEvidence} onError={onError} />
       <VersionRecords versions={data.artifact_versions} partial={data.artifact_versions_partial} />
       {!data.artifact_diff.available && <p className="missing-note">差异缺失：{data.artifact_diff.reason}。</p>}

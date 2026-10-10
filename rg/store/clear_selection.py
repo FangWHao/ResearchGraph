@@ -14,7 +14,8 @@ extraction_queue_events extraction_runs file_hash_cache graph_clock hook_error_c
 hook_error_reports hook_error_sources ingest_sources jobs
 l1_derivations link_progress message_fingerprints model_attempts parser_records pipeline_queue
 pipeline_queue_events project_privacy projects raw_events remote_previews review_actions run_io
-run_manifests run_observations runs segment_coverage session_results sessions slim_events
+run_manifests run_observations runs segment_coverage session_parent_observations session_results
+sessions slim_events
 source_files source_roots spool_receipts token_cache view_states workspace_snapshots
 """.split()
 )

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 20
+LATEST_VERSION = 21
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -393,6 +393,20 @@ MIGRATIONS = {
         "SELECT RAISE(ABORT,'hook error check is append-only'); END",
         "CREATE TRIGGER hook_error_check_no_delete BEFORE DELETE ON hook_error_checks BEGIN "
         "SELECT RAISE(ABORT,'hook error check is append-only'); END",
+    ),
+    21: (
+        "CREATE TABLE session_parent_observations(event_id INTEGER PRIMARY KEY REFERENCES "
+        "raw_events,session_pk INTEGER NOT NULL REFERENCES sessions,native_id TEXT,parent_id TEXT,"
+        "other_parent_id TEXT,state TEXT NOT NULL CHECK(state IN "
+        "('declared','not_declared','invalid','conflict')),basis TEXT NOT NULL CHECK(basis IN "
+        "('top_level','thread_spawn','both','none')),reason TEXT NOT NULL,"
+        "recorded_at TEXT NOT NULL)",
+        "CREATE INDEX session_parent_session ON session_parent_observations(session_pk,event_id)",
+        "CREATE INDEX session_parent_native ON session_parent_observations(native_id)",
+        "CREATE TRIGGER session_parent_no_update BEFORE UPDATE ON session_parent_observations "
+        "BEGIN SELECT RAISE(ABORT,'session parent observation is append-only'); END",
+        "CREATE TRIGGER session_parent_no_delete BEFORE DELETE ON session_parent_observations "
+        "BEGIN SELECT RAISE(ABORT,'session parent observation is append-only'); END",
     ),
 }
 

@@ -66,7 +66,7 @@ def _session(store: Store, path: Path, tool: str, project_id: str | None) -> int
                 "UPDATE sessions SET project_id = ?, project_basis = 'manual' WHERE session_pk = ?",
                 (project_id, row["session_pk"]),
             )
-        if agent:
+        if agent and tool == "claude":
             parent = db.execute(
                 "SELECT session_pk FROM sessions WHERE tool = ? "
                 "AND native_session_id = ? AND agent_id = ''",
@@ -77,7 +77,7 @@ def _session(store: Store, path: Path, tool: str, project_id: str | None) -> int
                     "UPDATE sessions SET parent_session_pk = ? WHERE session_pk = ?",
                     (parent[0], row["session_pk"]),
                 )
-        else:
+        elif tool == "claude":
             db.execute(
                 "UPDATE sessions SET parent_session_pk = ? WHERE tool = ? "
                 "AND native_session_id = ? AND agent_id != ''",
@@ -228,6 +228,10 @@ def _scan_file(
         return {"privacy_blocked": 1}
     instance = _instance(store, path, tool, session)
     file_id, offset = instance["file_instance_id"], instance["committed_offset"]
+    if tool == "codex" and store.db.execute("PRAGMA user_version").fetchone()[0] >= 21:
+        from rg.ingest.parents import backfill_file
+
+        backfill_file(store, file_id)
     counts: Counter[str] = Counter()
     with path.open("rb") as stream:
         stream.seek(offset)
@@ -329,6 +333,10 @@ def _scan_file(
                 from rg.ingest.catalog import append
 
                 append(db, file_id, PARSER_VERSION, tool, record, events, event_ids, status)
+                if tool == "codex" and db.execute("PRAGMA user_version").fetchone()[0] >= 21:
+                    from rg.ingest.parents import observe
+
+                    observe(db, session, event_ids[0], record)
                 if fault:
                     fault()
                 prefix_length = min(end, 4096)
@@ -346,6 +354,10 @@ def _scan_file(
                     (events[0].timestamp, events[-1].timestamp, session),
                 )
             offset = end
+    if tool == "codex" and store.db.execute("PRAGMA user_version").fetchone()[0] >= 21:
+        from rg.ingest.parents import refresh
+
+        refresh(store)
     if counts.get("events") and store.db.execute("PRAGMA user_version").fetchone()[0] >= 8:
         from rg.derive.worker import derive
         from rg.store.locking import TaskBusy

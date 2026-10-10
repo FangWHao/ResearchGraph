@@ -193,6 +193,9 @@ def parser() -> argparse.ArgumentParser:
     hook_errors.add_argument("--limit", type=int, default=20)
     hook_errors.add_argument("--offset", type=int, default=0)
     hook_errors.add_argument("--snapshot", type=int, help="续页使用第一页面的 snapshot_id")
+    session_parent = commands.add_parser("session-parent", help="只读核对 Codex 父线程及头记录依据")
+    session_parent.add_argument("--session", type=int, required=True)
+    session_parent.add_argument("--project")
     versions = commands.add_parser("versions", help="分页读取文件版本与来源，不读取当前文件正文")
     versions.add_argument("--project")
     versions.add_argument("--path", help="精确匹配已记录的绝对路径")
@@ -627,6 +630,12 @@ def run(args: argparse.Namespace, store: Store) -> object:
             for key in ("project", "limit", "offset", "snapshot")
             if getattr(args, key) is not None
         })
+    if args.command == "session-parent":
+        from rg.query.session_parent import query
+
+        return query(store, {"session": str(args.session)} | (
+            {"project": args.project} if args.project is not None else {}
+        ))
     if args.command == "versions":
         from rg.artifacts.views import versions
 
@@ -917,6 +926,7 @@ def main() -> None:
                 "mcp",
                 "parser-health",
                 "hook-errors",
+                "session-parent",
                 "context",
                 "client-pack",
                 "versions",

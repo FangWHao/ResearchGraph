@@ -156,6 +156,10 @@ class Handler(BaseHTTPRequestHandler):
             from rg.query.hook_errors import query
 
             return query(store, values)
+        if path == "/api/session-parent":
+            from rg.query.session_parent import query
+
+            return query(store, values)
         if path == "/api/versions":
             from rg.artifacts.views import versions
 

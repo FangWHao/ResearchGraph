@@ -1,12 +1,14 @@
 # PR 草稿
 
-建议标题：自动记录研究决定史、钩子诊断与整项目清除
+建议标题：自动整理研究决定史、核对原生父线程与整项目清除
 
 原始 Codex／Claude 会话缺少可定位的决定、范围和历史版本入口。本次增加 Python 后端与 React 本地工作区，把显式登记的增量日志整理成保留原文引用、完整范围与双时间的研究决定史。扫描器、离线钩子、影子快照、候选提取、跨会话关联和概览按持久队列接续；模型完整请求先实测token，默认128000可调，项目默认禁止外发，模型输出保持候选。
 
 采集现在为每条完整物理日志行持久记录类型集合、解析器版本、工具版本与版本依据，并与原事件和游标原子提交。多块、别名副本、未知内容和解析故障分开计数；直接声明与同一文件继承区分，非法声明重置上下文，复制／轮换／旧库不借版本。schema19只建表，不重读旧日志或补造历史。CLI与令牌只读接口及健康页共用项目分页诊断；续页冻结观测截止和归属摘要，迟到归属变化返回409，首次／最近事件可打开已保存原文。统计缺失、旧记录未观测和非法版本明确显示，识别类型不代表提取完整或研究确认。
 
 钩子错误日志现在由扫描循环有界采集，来源、报告、观测和游标原子保存；日志轮换或删除后已采集历史仍可查看。schema20只建表，旧日志待正常扫描；错误正文不进研究事件或对象库，白名单外类别只存摘要。残片、积压、超长行、缺失和读取失败明确显示，未观测仍未知。CLI、只读接口和健康页按全管理目录分页，固定观测与报告截止；已采集报告数不能代表实际失败总数。生产钩子继续脱敏、离线、静默exit 0；全库无正文运维账本随SQLite备份，整项目清除保留非项目运维元数据。
+
+Codex子线程现在使用原生session_meta直接父线程声明自动关联，支持顶层与旧thread_spawn字段。父头迟到后恢复；冲突、无效身份、父身份歧义和循环不猜关联。声明与L0及游标原子保存，只读查询直接解读全部声明，投影中断也可恢复；原文页显示头依据并可打开同项目父头。根session_id和forked_from_id不充当直接父线程，项目不继承，跨项目声明不落外键或返回父引用。迁移21不改L0；重扫从已存可识别头补记观测，记录补记时刻。新账本纳入备份和整项目清除。
 
 已有项目可以追加仓库、worktree、数据或别名根目录，登记Git独立／共同目录与本地URL字节摘要；相同远端不合并项目。390宽直接显示项目切换入口，旧响应与页面草稿按项目隔离。文件版本页比较两个明确保存版本，核对对象字节、摘要、模式和捕获观察，区分实际字节与工具候选全文；未知、二进制、损坏或超限明确不可用。前端采用／证据状态按UTC微秒计算，候选、冲突、未知时间及未知范围不互换。
 
@@ -20,24 +22,28 @@
 ## 当前验收
 
 ```text
-uv sync --locked                       Resolved28；Checked27
-uv run pytest -q                       974 passed in413.88s
-uv run pytest tests/golden -q           927 passed in399.07s
+uv sync --locked                       Resolved28/13ms；Checked27/51ms
+uv run pytest -q                       1029 passed in435.58s
+uv run pytest tests/golden -q           982 passed in420.83s
 uv run ruff check rg tests scripts      All checks passed!
 uv run pyright                         0 errors,0 warnings,0 informations
 uv run rg --help                       退出0
-uv run rg hook-errors --help           退出0
-cd web && pnpm test                    128 passed/16files/1.06s
-cd web && pnpm build                   235modules/1.04s
-cd web && pnpm test:browser             121 passed (1.8m)
-隔离Python3.12.3安装的新错误账本案例       40 passed in9.29s
+uv run rg session-parent --help           退出0
+cd web && pnpm test                    135 passed/17files/976ms
+cd web && pnpm build                   238modules/1.08s
+cd web && pnpm test:browser             125 passed (1.8m)
+隔离Python3.12.3安装的新父线程案例         55 passed in14.61s
 ```
 
-后端两组全量并行，不作为性能基准；结束后串行完整浏览器。安装包131成员、126运行资源与源码／隔离安装逐字一致，实际密钥与私有文件匹配0。新增40项固定案例覆盖错误日志残片／重启／轮换／截断／边界变化、无变化幂等、预算积压／超长行、未知正文不复制、UTC双时间、链接／FIFO拒读、读取变化作废、事务与提交前实际进程退出恢复、不可变约束、旧库原子升级不补造、冻结分页、只读CLI／HTTP鉴权、源消失后的备份及合成整项目清除；原解析账本与项目归属案例保留。
+后端两组全量并行，不作为性能基准；结束后串行完整浏览器。安装包133成员、128运行资源与源码／隔离安装逐字一致，实际密钥与私有文件匹配0。新增40项固定案例覆盖错误日志残片／重启／轮换／截断／边界变化、无变化幂等、预算积压／超长行、未知正文不复制、UTC双时间、链接／FIFO拒读、读取变化作废、事务与提交前实际进程退出恢复、不可变约束、旧库原子升级不补造、冻结分页、只读CLI／HTTP鉴权、源消失后的备份及合成整项目清除；原解析账本与项目归属案例保留。
 
-前端四项新专项首轮4 passed(9.9s)，通过真实合成日志轮换／残片及追加验证全库报告、未知正文不显示、旧观测截止不纳入新报告；核对真实400／401、明确模拟的旧服务和错误分页，390项目切换后迟到旧观测与401不覆盖新响应。四张最终桌面／手机图由父任务实看，33项源码与证据冻结全通过；原有移动项目选择文件不改。
+新增55项父线程固定案例覆盖新旧头字段、两字段核对、根／分叉ID不猜、迟到恢复、身份无效／歧义、自引用／循环、迟到冲突、原子故障及真实进程退出79、投影中断恢复、只读并发快照、旧账本补记与迁移回滚、源消失备份、全部声明判定与部分展示、跨项目隔离及合成整项目清除。前一轮40项错误账本案例继续保留。
 
-证据见[钩子失败账本验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/钩子失败账本验收_20261010.md)、[钩子界面验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/钩子失败报告界面验收_20261010.md)和[解析账本验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/解析器类型与版本账本验收_20261010.md)、[解析界面验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/解析器健康界面验收_20261010.md)、[管理目录整项目清除验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/管理目录整项目清除验收_20261010.md)和[需求落实与剩余项](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。
+本轮父线程前端7项新增语义测试及4项真实专项首次通过11.3s；真实scan补齐迟到父头，21头中的旧冲突不会被最近20条覆盖，父头及源声明只按event_id导航并核对全文UTF8 SHA。390导航后真实迟到200／401不覆盖新证据；身份错误只在测试路由注入。父实看桌面关联／父头／冲突和390关联／跨项目五图，32项源码／证据冻结及9文件恢复包逐字一致。父在后端和专项结束后串行完整125浏览器，原121项保留，1.8m全部通过。
+
+前一轮钩子前端四项专项首轮4 passed(9.9s)，通过真实合成日志轮换／残片及追加验证全库报告、未知正文不显示、旧观测截止不纳入新报告；核对真实400／401、明确模拟的旧服务和错误分页，390项目切换后迟到旧观测与401不覆盖新响应。四张最终桌面／手机图由父任务实看，33项源码与证据冻结全通过；原有移动项目选择文件不改。
+
+证据见[Codex父线程验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/Codex父线程关联验收_20261011.md)、[父线程面板验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/父线程证据面板验收_20261011.md)、[钩子失败账本验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/钩子失败账本验收_20261010.md)、[钩子界面验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/钩子失败报告界面验收_20261010.md)和[解析账本验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/解析器类型与版本账本验收_20261010.md)、[解析界面验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/解析器健康界面验收_20261010.md)、[管理目录整项目清除验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/管理目录整项目清除验收_20261010.md)和[需求落实与剩余项](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。
 
 ## 保留边界
 
