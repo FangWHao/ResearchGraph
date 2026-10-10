@@ -232,4 +232,59 @@ describe('纯视图过程组保持证据', () => {
     const comparisonOnly = edges.map(edge => edge.claimId === 11 ? { ...edge, role: 'compared_input' as const, semantic: false } : edge);
     expect(() => foldGroup([nodeIds[1], nodeIds[2]], comparisonOnly, records)).toThrow('连通');
   });
+  it('入口可达的死路分支不能折叠；循环只有仍可到达出口才保留', () => {
+    const branch = claim(5);
+    const branchId = graphNodeId(branch);
+    const branchEdge: SemanticEdge = { id: 'branch', source: nodeIds[1], target: branchId, claimId: 20, relation: 'supports' };
+    const history = [...records, branch];
+    const members = [nodeIds[1], nodeIds[2], branchId];
+    expect(() => foldGroup(members, [...edges, branchEdge], history)).toThrow('所有节点都必须连通到同一出口');
+    const returnEdge: SemanticEdge = { ...branchEdge, id: 'branch-return', source: branchId, target: nodeIds[1] };
+    const folded = foldGroup(members, [...edges, branchEdge, returnEdge], history);
+    expect(folded.internalEdges.map(edge => edge.id)).toEqual(['edge-1', 'branch', 'branch-return']);
+    expect(foldProjection([...edges, branchEdge, returnEdge], null)).toEqual([...edges, branchEdge, returnEdge]);
+  });
+  it('真实比较只按被选输入连通，未选端口和共同输入原证据保留且不偷换边界', () => {
+    const a = claim(101, { entity_id: 'a', payload: { claim_type: 'entity_version', kind: 'finding' } });
+    const b = claim(102, { entity_id: 'b', payload: { claim_type: 'entity_version', kind: 'finding' } });
+    const c = claim(103, { entity_id: 'c', payload: { claim_type: 'entity_version', kind: 'finding' } });
+    const join = claim(104, { entity_id: 'join', payload: { claim_type: 'entity_version', kind: 'join' } });
+    const d = claim(105, { entity_id: 'd', payload: { claim_type: 'entity_version', kind: 'finding' } });
+    const input = claim(110, { claim_type: 'relation', entity_id: null, payload: { claim_type: 'relation', source: 'a', target: 'b', relation: 'supports' } });
+    const output = claim(111, { claim_type: 'relation', entity_id: null, payload: { claim_type: 'relation', source: 'join', target: 'd', relation: 'selects' } });
+    const ports = claim(112, { claim_type: 'join_ports', entity_id: null, payload: { claim_type: 'join_ports', target: 'join', semantics: 'compare_then_select', selected: 'b', inputs: [{ port: '采用项', ref: 'b' }, { port: '比较项', ref: 'c' }] } });
+    const history = [a, b, c, join, d, input, output, ports];
+    const original = JSON.stringify(history);
+    const graph = projectGraph(history);
+    expect(graph.diagnostics).toEqual([]);
+    const folded = foldGroup([graphNodeId(b), graphNodeId(join)], graph.edges, history);
+    expect(folded.entry).toBe(graphNodeId(b)); expect(folded.exit).toBe(graphNodeId(join));
+    expect(folded.internalEdges.map(edge => edge.id)).toEqual(['claim-112-0-采用项']);
+    expect(folded.boundaryEdges.map(edge => edge.id)).toEqual(['claim-110', 'claim-111', 'claim-112-1-比较项']);
+    expect(folded.boundaryEdges[2]).toMatchObject({ targetPort: '比较项', sourceEntity: 'c', targetEntity: 'join', role: 'compared_input', semantic: false, evidenceIds: [112] });
+    expect(folded.evidenceIds).toEqual([102, 104, 110, 111, 112]);
+    expect(() => foldGroup([graphNodeId(c), graphNodeId(join)], graph.edges, history)).toThrow('连通');
+    for (const semantics of ['all_required', 'evidence_synthesis']) {
+      const common = [...history.slice(0, -1), { ...ports, payload: { ...ports.payload, semantics, selected: null } }];
+      const commonGraph = projectGraph(common);
+      expect(commonGraph.diagnostics).toEqual([]);
+      expect(commonGraph.edges.filter(edge => edge.claimId === 112).every(isSemanticEdge)).toBe(true);
+      expect(() => foldGroup([graphNodeId(b), graphNodeId(join)], commonGraph.edges, common)).toThrow('单入口单出口');
+    }
+    expect(JSON.stringify(history)).toBe(original);
+  });
+  it('旧边被人工替代不再构成额外入口，但替代前端口和证据仍保留为历史', () => {
+    const findings: Claim[] = nodes.map(node => ({ ...node, payload: { ...node.payload, kind: 'finding' } }));
+    const currentRelations = [0, 1, 2].map(index => claim(110 + index, { claim_type: 'relation', entity_id: null, payload: { claim_type: 'relation', source: `e${index + 1}`, target: `e${index + 2}`, relation: 'supports' } }));
+    const replaced = claim(120, { claim_type: 'relation', entity_id: null, replacement_ids: [111], payload: { claim_type: 'relation', source: 'e1', target: 'e3', relation: 'challenges' } });
+    const history = [...findings, ...currentRelations, replaced];
+    const graph = projectGraph(history);
+    expect(graph.edges.map(edge => edge.claimId)).toEqual([110, 111, 112]);
+    const folded = foldGroup([nodeIds[1], nodeIds[2]], graph.edges, history);
+    expect(folded.claimIds).toEqual([2, 3, 110, 111, 112, 120]);
+    expect(folded.evidenceIds).toEqual([2, 3, 110, 111, 112, 120]);
+    expect(folded.boundaryEdges.map(edge => edge.claimId)).toEqual([110, 112]);
+    expect(foldProjection(graph.edges, null)).toEqual(graph.edges);
+    expect(history.find(record => record.claim_id === 120)?.replacement_ids).toEqual([111]);
+  });
 });

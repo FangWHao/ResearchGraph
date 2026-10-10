@@ -20,6 +20,7 @@ from tests.graph_browser import seed_graph
 from tests.l1_graph_browser import seed_l1_graph
 from tests.privacy_browser import seed_privacy
 from tests.qa_browser import seed_qa
+from tests.semantic_cases import seed_semantic_cases
 
 
 def seed(store: Store, directory: Path) -> None:
@@ -964,6 +965,10 @@ def main() -> None:
         seed_graph(store)
         seed_privacy(store)
         seed_l1_graph(store)
+        semantic_index = seed_semantic_cases(store, directory)
+        index_path = Path(".cache/semantic-cases-index.json")
+        index_path.parent.mkdir(exist_ok=True)
+        index_path.write_text(dumps(semantic_index) + "\n")
         store.close()
         server = LocalServer(
             directory / "store",

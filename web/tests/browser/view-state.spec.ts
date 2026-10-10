@@ -137,7 +137,7 @@ test('过程组拖动只移动入口原位置，恢复重新验证边界证据�
   })).toBe(true);
   expect((await head(request, fixture.project, '视图过程验收')).view).toEqual(saved.view);
   await page.screenshot({ path: '../.cache/frontend-personal-view-state-fold-focused-mobile.png' });
-  await page.getByRole('button', { name: '展开过程组', exact: true }).click(); await expect(page.locator('.react-flow__node')).toHaveCount(Object.keys(saved.view!.positions).length); closePositions((await layout(page)).positions, saved.view!.positions); expect((await layout(page)).edges).toEqual(original.edges);
+  await page.getByRole('button', { name: '展开过程组', exact: true }).click(); await expect(page.locator('.react-flow__node')).toHaveCount(Object.keys(saved.view!.positions).length); closePositions((await layout(page)).positions, saved.view!.positions); await expect.poll(async () => (await layout(page)).edges).toEqual(original.edges);
   await page.getByRole('button', { name: '适配画布', exact: true }).click(); await canvasVisible(page); await viewportSettled(page); await page.screenshot({ path: '../.cache/frontend-personal-view-state-expanded-mobile.png' });
   const panel = page.getByRole('region', { name: '个人研究图视图' }); await panel.evaluate(node => node.scrollIntoView({ block: 'center' }));
   for (const label of ['个人视图标识']) { const b = (await page.getByLabel(label, { exact: true }).boundingBox())!; expect(b.x).toBeGreaterThanOrEqual(0); expect(b.x + b.width).toBeLessThanOrEqual(390); }

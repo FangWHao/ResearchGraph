@@ -1,0 +1,1268 @@
+{
+  "version": 1,
+  "synthetic_only": true,
+  "cases": [
+    {
+      "id": "A01",
+      "title": "提出拒绝后再次采用",
+      "project_name": "验收 §15 A01 · 提出拒绝后再次采用",
+      "scope": {
+        "data": "synthetic_v1",
+        "step": "语义折叠"
+      },
+      "nodes": {
+        "A": {
+          "kind": "approach",
+          "label": "A01 合成A"
+        },
+        "B": {
+          "kind": "approach",
+          "label": "A01 合成B"
+        },
+        "C": {
+          "kind": "approach",
+          "label": "A01 合成C"
+        },
+        "R": {
+          "kind": "approach",
+          "label": "A01 合成R"
+        }
+      },
+      "relations": [
+        {
+          "key": "AB",
+          "source": "A",
+          "target": "B",
+          "relation": "supersedes"
+        },
+        {
+          "key": "BC",
+          "source": "B",
+          "target": "C",
+          "relation": "supersedes"
+        },
+        {
+          "key": "CR",
+          "source": "C",
+          "target": "R",
+          "relation": "supersedes"
+        }
+      ],
+      "events": [
+        {
+          "key": "proposed",
+          "target": "B",
+          "type": "decision_event",
+          "value": "proposed",
+          "day": 1
+        },
+        {
+          "key": "rejected",
+          "target": "B",
+          "type": "decision_event",
+          "value": "rejected",
+          "day": 2
+        },
+        {
+          "key": "accepted",
+          "target": "B",
+          "type": "decision_event",
+          "value": "accepted",
+          "day": 3
+        }
+      ],
+      "joins": [],
+      "expected": {
+        "members": [
+          "B",
+          "C"
+        ],
+        "entry": "B",
+        "exit": "C",
+        "node_count": 4,
+        "internal_edges": [
+          "BC"
+        ],
+        "boundary_edges": [
+          "AB",
+          "CR"
+        ],
+        "retained_claims": [
+          "v:B",
+          "v:C",
+          "AB",
+          "BC",
+          "CR",
+          "proposed",
+          "rejected",
+          "accepted"
+        ],
+        "states": [
+          {
+            "node": "B",
+            "adoption": "accepted"
+          }
+        ]
+      }
+    },
+    {
+      "id": "A02",
+      "title": "仅回退代码，方法继续采用",
+      "project_name": "验收 §15 A02 · 仅回退代码，方法继续采用",
+      "scope": {
+        "data": "synthetic_v1",
+        "step": "语义折叠"
+      },
+      "nodes": {
+        "A": {
+          "kind": "approach",
+          "label": "A02 合成A"
+        },
+        "B": {
+          "kind": "approach",
+          "label": "A02 合成B"
+        },
+        "C": {
+          "kind": "approach",
+          "label": "A02 合成C"
+        },
+        "R": {
+          "kind": "approach",
+          "label": "A02 合成R"
+        }
+      },
+      "relations": [
+        {
+          "key": "AB",
+          "source": "A",
+          "target": "B",
+          "relation": "supersedes"
+        },
+        {
+          "key": "BC",
+          "source": "B",
+          "target": "C",
+          "relation": "supersedes"
+        },
+        {
+          "key": "CR",
+          "source": "C",
+          "target": "R",
+          "relation": "supersedes"
+        }
+      ],
+      "events": [
+        {
+          "key": "accepted",
+          "target": "B",
+          "type": "decision_event",
+          "value": "accepted",
+          "day": 1
+        }
+      ],
+      "joins": [],
+      "expected": {
+        "members": [
+          "B",
+          "C"
+        ],
+        "entry": "B",
+        "exit": "C",
+        "node_count": 4,
+        "internal_edges": [
+          "BC"
+        ],
+        "boundary_edges": [
+          "AB",
+          "CR"
+        ],
+        "retained_claims": [
+          "v:B",
+          "v:C",
+          "AB",
+          "BC",
+          "CR",
+          "accepted"
+        ],
+        "states": [
+          {
+            "node": "B",
+            "adoption": "accepted"
+          }
+        ],
+        "native": {
+          "reported_rollback_edits": 1,
+          "physical_version": false
+        }
+      },
+      "native": "rollback"
+    },
+    {
+      "id": "A03",
+      "title": "暂停方案但保留阴性发现",
+      "project_name": "验收 §15 A03 · 暂停方案但保留阴性发现",
+      "scope": {
+        "data": "synthetic_v1",
+        "step": "语义折叠"
+      },
+      "nodes": {
+        "A": {
+          "kind": "approach",
+          "label": "A03 合成A"
+        },
+        "B": {
+          "kind": "approach",
+          "label": "A03 合成B"
+        },
+        "C": {
+          "kind": "approach",
+          "label": "A03 合成C"
+        },
+        "R": {
+          "kind": "approach",
+          "label": "A03 合成R"
+        },
+        "N": {
+          "kind": "finding",
+          "label": "A03 关键阴性发现"
+        }
+      },
+      "relations": [
+        {
+          "key": "AB",
+          "source": "A",
+          "target": "B",
+          "relation": "supersedes"
+        },
+        {
+          "key": "BC",
+          "source": "B",
+          "target": "C",
+          "relation": "supersedes"
+        },
+        {
+          "key": "CR",
+          "source": "C",
+          "target": "R",
+          "relation": "supersedes"
+        },
+        {
+          "key": "BN",
+          "source": "B",
+          "target": "N",
+          "relation": "same_topic"
+        }
+      ],
+      "events": [
+        {
+          "key": "paused",
+          "target": "B",
+          "type": "decision_event",
+          "value": "deferred",
+          "day": 2
+        },
+        {
+          "key": "negative",
+          "target": "N",
+          "type": "evidence_event",
+          "value": "refuted",
+          "day": 2
+        }
+      ],
+      "joins": [],
+      "expected": {
+        "members": [
+          "B",
+          "C"
+        ],
+        "entry": "B",
+        "exit": "C",
+        "node_count": 5,
+        "internal_edges": [
+          "BC"
+        ],
+        "boundary_edges": [
+          "AB",
+          "CR",
+          "BN"
+        ],
+        "retained_claims": [
+          "v:B",
+          "v:C",
+          "AB",
+          "BC",
+          "CR",
+          "paused",
+          "BN"
+        ],
+        "states": [
+          {
+            "node": "B",
+            "adoption": "deferred"
+          },
+          {
+            "node": "N",
+            "evidence_state": "refuted"
+          }
+        ],
+        "outside_retained": [
+          "negative"
+        ]
+      }
+    },
+    {
+      "id": "A04-required",
+      "title": "所有输入必需",
+      "project_name": "验收 §15 A04-required · 所有输入必需",
+      "scope": {
+        "data": "synthetic_v1",
+        "step": "语义折叠"
+      },
+      "nodes": {
+        "A": {
+          "kind": "finding",
+          "label": "A04-required 外部观察"
+        },
+        "F": {
+          "kind": "finding",
+          "label": "A04-required 分支起点"
+        },
+        "B": {
+          "kind": "finding",
+          "label": "A04-required 材料B"
+        },
+        "C": {
+          "kind": "finding",
+          "label": "A04-required 材料C"
+        },
+        "D": {
+          "kind": "join",
+          "label": "A04-required 汇合D"
+        },
+        "R": {
+          "kind": "finding",
+          "label": "A04-required 外部结论"
+        }
+      },
+      "relations": [
+        {
+          "key": "AF",
+          "source": "A",
+          "target": "F",
+          "relation": "supports"
+        },
+        {
+          "key": "FB",
+          "source": "F",
+          "target": "B",
+          "relation": "supports"
+        },
+        {
+          "key": "FC",
+          "source": "F",
+          "target": "C",
+          "relation": "supports"
+        },
+        {
+          "key": "DR",
+          "source": "D",
+          "target": "R",
+          "relation": "selects"
+        }
+      ],
+      "events": [],
+      "joins": [
+        {
+          "key": "join",
+          "target": "D",
+          "semantics": "all_required",
+          "inputs": [
+            {
+              "port": "材料B",
+              "ref": "B"
+            },
+            {
+              "port": "材料C",
+              "ref": "C"
+            }
+          ],
+          "selected": null
+        }
+      ],
+      "expected": {
+        "members": [
+          "F",
+          "B",
+          "C",
+          "D"
+        ],
+        "entry": "F",
+        "exit": "D",
+        "node_count": 6,
+        "internal_edges": [
+          "FB",
+          "FC",
+          "join:材料B",
+          "join:材料C"
+        ],
+        "boundary_edges": [
+          "AF",
+          "DR"
+        ],
+        "retained_claims": [
+          "v:F",
+          "v:B",
+          "v:C",
+          "v:D",
+          "AF",
+          "FB",
+          "FC",
+          "DR",
+          "join"
+        ],
+        "states": [],
+        "join": {
+          "key": "join",
+          "semantics": "all_required",
+          "inputs": [
+            {
+              "port": "材料B",
+              "ref": "B",
+              "semantic": true,
+              "required": true
+            },
+            {
+              "port": "材料C",
+              "ref": "C",
+              "semantic": true,
+              "required": true
+            }
+          ],
+          "selected": null,
+          "independence": false
+        },
+        "refuse_members": [
+          "B",
+          "C",
+          "D"
+        ]
+      }
+    },
+    {
+      "id": "A04-synthesis",
+      "title": "综合证据不推定独立",
+      "project_name": "验收 §15 A04-synthesis · 综合证据不推定独立",
+      "scope": {
+        "data": "synthetic_v1",
+        "step": "语义折叠"
+      },
+      "nodes": {
+        "A": {
+          "kind": "finding",
+          "label": "A04-synthesis 外部观察"
+        },
+        "F": {
+          "kind": "finding",
+          "label": "A04-synthesis 分支起点"
+        },
+        "B": {
+          "kind": "finding",
+          "label": "A04-synthesis 材料B"
+        },
+        "C": {
+          "kind": "finding",
+          "label": "A04-synthesis 材料C"
+        },
+        "D": {
+          "kind": "join",
+          "label": "A04-synthesis 汇合D"
+        },
+        "R": {
+          "kind": "finding",
+          "label": "A04-synthesis 外部结论"
+        }
+      },
+      "relations": [
+        {
+          "key": "AF",
+          "source": "A",
+          "target": "F",
+          "relation": "supports"
+        },
+        {
+          "key": "FB",
+          "source": "F",
+          "target": "B",
+          "relation": "supports"
+        },
+        {
+          "key": "FC",
+          "source": "F",
+          "target": "C",
+          "relation": "supports"
+        },
+        {
+          "key": "DR",
+          "source": "D",
+          "target": "R",
+          "relation": "selects"
+        }
+      ],
+      "events": [],
+      "joins": [
+        {
+          "key": "join",
+          "target": "D",
+          "semantics": "evidence_synthesis",
+          "inputs": [
+            {
+              "port": "材料B",
+              "ref": "B"
+            },
+            {
+              "port": "材料C",
+              "ref": "C"
+            }
+          ],
+          "selected": null
+        }
+      ],
+      "expected": {
+        "members": [
+          "F",
+          "B",
+          "C",
+          "D"
+        ],
+        "entry": "F",
+        "exit": "D",
+        "node_count": 6,
+        "internal_edges": [
+          "FB",
+          "FC",
+          "join:材料B",
+          "join:材料C"
+        ],
+        "boundary_edges": [
+          "AF",
+          "DR"
+        ],
+        "retained_claims": [
+          "v:F",
+          "v:B",
+          "v:C",
+          "v:D",
+          "AF",
+          "FB",
+          "FC",
+          "DR",
+          "join"
+        ],
+        "states": [],
+        "join": {
+          "key": "join",
+          "semantics": "evidence_synthesis",
+          "inputs": [
+            {
+              "port": "材料B",
+              "ref": "B",
+              "semantic": true,
+              "required": false
+            },
+            {
+              "port": "材料C",
+              "ref": "C",
+              "semantic": true,
+              "required": false
+            }
+          ],
+          "selected": null,
+          "independence": false
+        },
+        "refuse_members": [
+          "B",
+          "C",
+          "D"
+        ]
+      }
+    },
+    {
+      "id": "A05",
+      "title": "比较B与C后只采用B",
+      "project_name": "验收 §15 A05 · 比较B与C后只采用B",
+      "scope": {
+        "data": "synthetic_v1",
+        "step": "语义折叠"
+      },
+      "nodes": {
+        "A": {
+          "kind": "approach",
+          "label": "A05 合成A"
+        },
+        "B": {
+          "kind": "approach",
+          "label": "A05 合成B"
+        },
+        "C": {
+          "kind": "approach",
+          "label": "A05 合成C"
+        },
+        "R": {
+          "kind": "approach",
+          "label": "A05 合成R"
+        },
+        "D": {
+          "kind": "join",
+          "label": "A05 比较汇合"
+        }
+      },
+      "relations": [
+        {
+          "key": "AB",
+          "source": "A",
+          "target": "B",
+          "relation": "supersedes"
+        },
+        {
+          "key": "DR",
+          "source": "D",
+          "target": "R",
+          "relation": "selects"
+        }
+      ],
+      "events": [
+        {
+          "key": "selected",
+          "target": "B",
+          "type": "decision_event",
+          "value": "accepted",
+          "day": 2
+        },
+        {
+          "key": "not_selected",
+          "target": "C",
+          "type": "decision_event",
+          "value": "rejected",
+          "day": 2
+        }
+      ],
+      "joins": [
+        {
+          "key": "join",
+          "target": "D",
+          "semantics": "compare_then_select",
+          "inputs": [
+            {
+              "port": "方案B",
+              "ref": "B"
+            },
+            {
+              "port": "方案C",
+              "ref": "C"
+            }
+          ],
+          "selected": "B"
+        }
+      ],
+      "expected": {
+        "members": [
+          "B",
+          "D"
+        ],
+        "entry": "B",
+        "exit": "D",
+        "node_count": 5,
+        "internal_edges": [
+          "join:方案B"
+        ],
+        "boundary_edges": [
+          "AB",
+          "DR",
+          "join:方案C"
+        ],
+        "retained_claims": [
+          "v:B",
+          "v:D",
+          "AB",
+          "DR",
+          "join",
+          "selected"
+        ],
+        "states": [
+          {
+            "node": "B",
+            "adoption": "accepted"
+          },
+          {
+            "node": "C",
+            "adoption": "rejected"
+          }
+        ],
+        "join": {
+          "key": "join",
+          "semantics": "compare_then_select",
+          "inputs": [
+            {
+              "port": "方案B",
+              "ref": "B",
+              "semantic": true,
+              "required": false
+            },
+            {
+              "port": "方案C",
+              "ref": "C",
+              "semantic": false,
+              "required": false
+            }
+          ],
+          "selected": "B",
+          "independence": false
+        },
+        "outside_retained": [
+          "not_selected"
+        ]
+      }
+    },
+    {
+      "id": "A06",
+      "title": "相同文字在不同条件分别成立",
+      "project_name": "验收 §15 A06 · 相同文字在不同条件分别成立",
+      "scope": {
+        "data": "synthetic_v1",
+        "step": "语义折叠"
+      },
+      "nodes": {
+        "A": {
+          "kind": "finding",
+          "label": "A06 合成A"
+        },
+        "B": {
+          "kind": "finding",
+          "label": "A06 合成B"
+        },
+        "C": {
+          "kind": "finding",
+          "label": "A06 合成C"
+        },
+        "R": {
+          "kind": "finding",
+          "label": "A06 合成R"
+        },
+        "A2": {
+          "kind": "finding",
+          "label": "A06 合成A",
+          "entity": "A",
+          "scope": {
+            "data": "synthetic_v2",
+            "step": "语义折叠"
+          }
+        },
+        "B2": {
+          "kind": "finding",
+          "label": "A06 合成B",
+          "entity": "B",
+          "scope": {
+            "data": "synthetic_v2",
+            "step": "语义折叠"
+          }
+        },
+        "C2": {
+          "kind": "finding",
+          "label": "A06 合成C",
+          "entity": "C",
+          "scope": {
+            "data": "synthetic_v2",
+            "step": "语义折叠"
+          }
+        },
+        "R2": {
+          "kind": "finding",
+          "label": "A06 合成R",
+          "entity": "R",
+          "scope": {
+            "data": "synthetic_v2",
+            "step": "语义折叠"
+          }
+        }
+      },
+      "relations": [
+        {
+          "key": "AB",
+          "source": "A",
+          "target": "B",
+          "relation": "supports"
+        },
+        {
+          "key": "BC",
+          "source": "B",
+          "target": "C",
+          "relation": "supports"
+        },
+        {
+          "key": "CR",
+          "source": "C",
+          "target": "R",
+          "relation": "supports"
+        },
+        {
+          "key": "AB2",
+          "source": "A2",
+          "target": "B2",
+          "relation": "supports",
+          "scope": {
+            "data": "synthetic_v2",
+            "step": "语义折叠"
+          }
+        },
+        {
+          "key": "BC2",
+          "source": "B2",
+          "target": "C2",
+          "relation": "supports",
+          "scope": {
+            "data": "synthetic_v2",
+            "step": "语义折叠"
+          }
+        },
+        {
+          "key": "CR2",
+          "source": "C2",
+          "target": "R2",
+          "relation": "supports",
+          "scope": {
+            "data": "synthetic_v2",
+            "step": "语义折叠"
+          }
+        }
+      ],
+      "events": [
+        {
+          "key": "condition_v1",
+          "target": "B",
+          "type": "decision_event",
+          "value": "accepted",
+          "day": 2
+        },
+        {
+          "key": "condition_v2",
+          "target": "B2",
+          "type": "decision_event",
+          "value": "rejected",
+          "day": 2,
+          "scope": {
+            "data": "synthetic_v2",
+            "step": "语义折叠"
+          }
+        }
+      ],
+      "joins": [],
+      "expected": {
+        "members": [
+          "B",
+          "C"
+        ],
+        "entry": "B",
+        "exit": "C",
+        "node_count": 8,
+        "internal_edges": [
+          "BC"
+        ],
+        "boundary_edges": [
+          "AB",
+          "CR"
+        ],
+        "retained_claims": [
+          "v:B",
+          "v:C",
+          "AB",
+          "BC",
+          "CR",
+          "condition_v1",
+          "condition_v2",
+          "v:B2",
+          "v:C2",
+          "AB2",
+          "BC2",
+          "CR2"
+        ],
+        "states": [
+          {
+            "node": "B",
+            "adoption": "accepted"
+          },
+          {
+            "node": "B2",
+            "adoption": "rejected"
+          }
+        ]
+      }
+    },
+    {
+      "id": "A07",
+      "title": "压缩前后镜像保留一次语义",
+      "project_name": "验收 §15 A07 · 压缩前后镜像保留一次语义",
+      "scope": {
+        "data": "synthetic_v1",
+        "step": "语义折叠"
+      },
+      "nodes": {
+        "A": {
+          "kind": "finding",
+          "label": "A07 合成A"
+        },
+        "B": {
+          "kind": "finding",
+          "label": "A07 合成B"
+        },
+        "C": {
+          "kind": "finding",
+          "label": "A07 合成C"
+        },
+        "R": {
+          "kind": "finding",
+          "label": "A07 合成R"
+        }
+      },
+      "relations": [
+        {
+          "key": "AB",
+          "source": "A",
+          "target": "B",
+          "relation": "supports"
+        },
+        {
+          "key": "BC",
+          "source": "B",
+          "target": "C",
+          "relation": "supports"
+        },
+        {
+          "key": "CR",
+          "source": "C",
+          "target": "R",
+          "relation": "supports"
+        }
+      ],
+      "events": [
+        {
+          "key": "accepted",
+          "target": "B",
+          "type": "decision_event",
+          "value": "accepted",
+          "day": 2
+        }
+      ],
+      "joins": [],
+      "expected": {
+        "members": [
+          "B",
+          "C"
+        ],
+        "entry": "B",
+        "exit": "C",
+        "node_count": 4,
+        "internal_edges": [
+          "BC"
+        ],
+        "boundary_edges": [
+          "AB",
+          "CR"
+        ],
+        "retained_claims": [
+          "v:B",
+          "v:C",
+          "AB",
+          "BC",
+          "CR",
+          "accepted"
+        ],
+        "states": [
+          {
+            "node": "B",
+            "adoption": "accepted"
+          }
+        ],
+        "native": {
+          "mirrors": 1,
+          "compact_boundaries": 1,
+          "canonical_quote_count": 1
+        }
+      },
+      "native": "mirror"
+    },
+    {
+      "id": "A08",
+      "title": "工具请求缺少返回保持未知",
+      "project_name": "验收 §15 A08 · 工具请求缺少返回保持未知",
+      "scope": {
+        "data": "synthetic_v1",
+        "step": "语义折叠"
+      },
+      "nodes": {
+        "A": {
+          "kind": "finding",
+          "label": "A08 合成A"
+        },
+        "B": {
+          "kind": "finding",
+          "label": "A08 请求执行但尚无返回"
+        },
+        "C": {
+          "kind": "finding",
+          "label": "A08 执行结果未知"
+        },
+        "R": {
+          "kind": "finding",
+          "label": "A08 合成R"
+        }
+      },
+      "relations": [
+        {
+          "key": "AB",
+          "source": "A",
+          "target": "B",
+          "relation": "supports"
+        },
+        {
+          "key": "BC",
+          "source": "B",
+          "target": "C",
+          "relation": "supports"
+        },
+        {
+          "key": "CR",
+          "source": "C",
+          "target": "R",
+          "relation": "supports"
+        }
+      ],
+      "events": [],
+      "joins": [],
+      "expected": {
+        "members": [
+          "B",
+          "C"
+        ],
+        "entry": "B",
+        "exit": "C",
+        "node_count": 4,
+        "internal_edges": [
+          "BC"
+        ],
+        "boundary_edges": [
+          "AB",
+          "CR"
+        ],
+        "retained_claims": [
+          "v:B",
+          "v:C",
+          "AB",
+          "BC",
+          "CR"
+        ],
+        "states": [],
+        "native": {
+          "runs": 1,
+          "state": "requested",
+          "exit_code": null,
+          "run_io": 0
+        }
+      },
+      "native": "missing_result"
+    },
+    {
+      "id": "A09",
+      "title": "旧会话迟到不改写较新的采用",
+      "project_name": "验收 §15 A09 · 旧会话迟到不改写较新的采用",
+      "scope": {
+        "data": "synthetic_v1",
+        "step": "语义折叠"
+      },
+      "nodes": {
+        "A": {
+          "kind": "finding",
+          "label": "A09 合成A"
+        },
+        "B": {
+          "kind": "finding",
+          "label": "A09 合成B"
+        },
+        "C": {
+          "kind": "finding",
+          "label": "A09 合成C"
+        },
+        "R": {
+          "kind": "finding",
+          "label": "A09 合成R"
+        }
+      },
+      "relations": [
+        {
+          "key": "AB",
+          "source": "A",
+          "target": "B",
+          "relation": "supports"
+        },
+        {
+          "key": "BC",
+          "source": "B",
+          "target": "C",
+          "relation": "supports"
+        },
+        {
+          "key": "CR",
+          "source": "C",
+          "target": "R",
+          "relation": "supports"
+        }
+      ],
+      "events": [
+        {
+          "key": "current",
+          "target": "B",
+          "type": "decision_event",
+          "value": "accepted",
+          "day": 3
+        },
+        {
+          "key": "late",
+          "target": "B",
+          "type": "decision_event",
+          "value": "rejected",
+          "day": 1
+        }
+      ],
+      "joins": [],
+      "expected": {
+        "members": [
+          "B",
+          "C"
+        ],
+        "entry": "B",
+        "exit": "C",
+        "node_count": 4,
+        "internal_edges": [
+          "BC"
+        ],
+        "boundary_edges": [
+          "AB",
+          "CR"
+        ],
+        "retained_claims": [
+          "v:B",
+          "v:C",
+          "AB",
+          "BC",
+          "CR",
+          "current",
+          "late"
+        ],
+        "states": [
+          {
+            "node": "B",
+            "adoption": "accepted"
+          }
+        ],
+        "native": {
+          "late_absent_before_known_cutoff": true,
+          "late_absent_before_occurred_cutoff": false,
+          "original_files_unchanged": true
+        }
+      },
+      "native": "late"
+    },
+    {
+      "id": "A10",
+      "title": "人工更正后更换模型重提取",
+      "project_name": "验收 §15 A10 · 人工更正后更换模型重提取",
+      "scope": {
+        "data": "synthetic_v1",
+        "step": "语义折叠"
+      },
+      "nodes": {
+        "A": {
+          "kind": "approach",
+          "label": "A10 合成A"
+        },
+        "B": {
+          "kind": "approach",
+          "label": "A10 合成B"
+        },
+        "C": {
+          "kind": "approach",
+          "label": "A10 合成C"
+        },
+        "R": {
+          "kind": "approach",
+          "label": "A10 合成R"
+        }
+      },
+      "relations": [
+        {
+          "key": "AB",
+          "source": "A",
+          "target": "B",
+          "relation": "supersedes"
+        },
+        {
+          "key": "BC",
+          "source": "B",
+          "target": "C",
+          "relation": "supersedes"
+        },
+        {
+          "key": "CR",
+          "source": "C",
+          "target": "R",
+          "relation": "supersedes"
+        }
+      ],
+      "events": [],
+      "joins": [],
+      "expected": {
+        "members": [
+          "B",
+          "C"
+        ],
+        "entry": "B",
+        "exit": "C",
+        "node_count": 4,
+        "internal_edges": [
+          "BC"
+        ],
+        "boundary_edges": [
+          "AB",
+          "CR"
+        ],
+        "retained_claims": [
+          "v:B",
+          "v:C",
+          "AB",
+          "BC",
+          "CR",
+          "initial",
+          "correction",
+          "reextracted"
+        ],
+        "states": [
+          {
+            "node": "B",
+            "adoption": "deferred"
+          }
+        ],
+        "native": {
+          "models": [
+            "synthetic-model-v1",
+            "synthetic-model-v2"
+          ],
+          "initial_state": "candidate",
+          "corrected_state": "confirmed",
+          "new_state": "candidate",
+          "l0_unchanged": true,
+          "initial_effective_state": "dismissed"
+        }
+      },
+      "native": "reextract"
+    }
+  ]
+}
