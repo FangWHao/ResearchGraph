@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from rg.api import views
+from rg.api import qa, views
 from rg.store.database import ConflictError, Store
 
 MAX_BODY_BYTES = 65536
@@ -27,6 +27,7 @@ class LocalServer(ThreadingHTTPServer):
         port: int = 8787,
         daily_budget: int = 500000,
         token: str | None = None,
+        qa_config: qa.QAConfig | None = None,
     ):
         if not 0 <= port <= 65535 or daily_budget < 1:
             raise ValueError("端口或每日额度无效")
@@ -34,6 +35,7 @@ class LocalServer(ThreadingHTTPServer):
             raise ValueError("未找到前端构建；先在 web 运行 pnpm build，或使用 --web-dir")
         self.root, self.web_dir = root.resolve(), web_dir.resolve()
         self.daily_budget = daily_budget
+        self.qa_config = qa_config
         self.token = token or secrets.token_urlsafe(32)
         self.timeout = 1
         # 不接受 host 参数，避免把研究资料意外暴露到公网。
@@ -106,6 +108,10 @@ class Handler(BaseHTTPRequestHandler):
     def _dispatch(self, path: str, values: dict[str, str], store: Store) -> Any:
         if path == "/api/projects":
             return views.projects(store)
+        if path == "/api/qa/options":
+            if set(values) != {"project"}:
+                raise ValueError("问答配置仅需明确项目")
+            return qa.options(store, values["project"], self.server.qa_config)
         if path == "/api/health":
             return views.health(store, values, self.server.daily_budget)
         if path == "/api/claims":
@@ -191,10 +197,28 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length))
             if not isinstance(body, dict):
                 raise ValueError("请求体需为 JSON 对象")
-            store = Store(self.server.root)
+            path = urlsplit(self.path).path
+            store = Store(
+                self.server.root, readonly=path in {"/api/qa/retrieve", "/api/qa/preview"}
+            )
             try:
-                path = urlsplit(self.path).path
-                if path == "/api/review":
+                if path == "/api/qa/retrieve":
+                    result = {"context_text": qa.wrap(qa.packet(store, body))}
+                elif path == "/api/qa/preview":
+                    result = {
+                        "context_text": qa.wrap(qa.preview(store, body, self.server.qa_config))
+                    }
+                elif path == "/api/qa/answer":
+                    result = {
+                        "context_text": qa.answer(
+                            store, body, self.server.qa_config, self.server.daily_budget
+                        )
+                    }
+                elif path == "/api/qa/allow-remote":
+                    result = qa.allow(store, body, self.server.qa_config)
+                elif path == "/api/qa/disable-remote":
+                    result = qa.disable(store, body)
+                elif path == "/api/review":
                     result = views.review(store, body)
                 elif path == "/api/records/question":
                     from rg.record.question import question
@@ -217,6 +241,16 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.OK, result)
         except ConflictError as error:
             self._json(HTTPStatus.CONFLICT, {"error": str(error)})
+        except PermissionError:
+            if path == "/api/qa/answer":
+                self._json(
+                    HTTPStatus.FORBIDDEN,
+                    {"error": "本项目尚未允许远程模型；请先查看发送预览"},
+                )
+            else:
+                self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "本地读写权限不足"})
+        except qa.ModelUnavailable as error:
+            self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
         except views.NotFound as error:
             self._json(HTTPStatus.NOT_FOUND, {"error": str(error)})
         except (ValueError, UnicodeError) as error:
@@ -239,10 +273,11 @@ def serve(
     daily_budget: int,
     open_browser: bool = False,
     initial_view: str = "questions",
+    qa_config: qa.QAConfig | None = None,
 ) -> None:
     if initial_view not in {"questions", "review"}:
         raise ValueError("初始页面无效")
-    server = LocalServer(root, web_dir, port, daily_budget)
+    server = LocalServer(root, web_dir, port, daily_budget, qa_config=qa_config)
     try:
         print("ResearchGraph 本地界面（Ctrl+C 停止）", flush=True)
         url = (

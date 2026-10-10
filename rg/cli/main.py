@@ -16,10 +16,14 @@ from rg.store.backup import backup
 from rg.store.database import Store
 
 
-def model_arguments(command: argparse.ArgumentParser) -> None:
+def model_connection_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument("--base-url", default=os.environ.get("RG_BASE_URL"))
     command.add_argument("--model", default=os.environ.get("RG_MODEL"))
     command.add_argument("--key-file", type=Path)
+
+
+def model_arguments(command: argparse.ArgumentParser) -> None:
+    model_connection_arguments(command)
     command.add_argument("--daily-budget", type=int, default=500000)
     command.add_argument(
         "--input-budget", type=int, default=128000, help="完整输入上限，默认 128000 token"
@@ -147,6 +151,8 @@ def parser() -> argparse.ArgumentParser:
     served.add_argument("--port", type=int, default=8787)
     served.add_argument("--web-dir", type=Path, default=Path("web/dist"))
     served.add_argument("--daily-budget", type=int, default=500000)
+    served.add_argument("--input-budget", type=int, default=128000)
+    model_connection_arguments(served)
     served.add_argument("--open", action="store_true", help="自动打开浏览器")
     backed = commands.add_parser("backup", help="使用 SQLite backup API 备份证据")
     backed.add_argument("destination", type=Path)
@@ -284,7 +290,19 @@ def run(args: argparse.Namespace, store: Store) -> object:
 
         return derive(store, args.limit, args.session, args.retry_failed)
     if args.command == "serve" or (args.command == "review" and args.open):
+        from rg.api.qa import QAConfig
         from rg.api.server import serve
+
+        base_url = getattr(args, "base_url", os.environ.get("RG_BASE_URL"))
+        model = getattr(args, "model", os.environ.get("RG_MODEL"))
+        key_file = getattr(args, "key_file", None)
+        qa_config = None
+        if base_url or model or key_file:
+            if not base_url or not model:
+                raise ValueError("界面问答需同时配置 base URL 和模型名")
+            qa_config = QAConfig(
+                base_url, model, load_key(key_file), getattr(args, "input_budget", 128000)
+            )
 
         serve(
             store.root,
@@ -293,6 +311,7 @@ def run(args: argparse.Namespace, store: Store) -> object:
             getattr(args, "daily_budget", 500000),
             args.open,
             initial_view="review" if args.command == "review" else "questions",
+            qa_config=qa_config,
         )
         return {"server": "stopped"}
     if args.command == "init":

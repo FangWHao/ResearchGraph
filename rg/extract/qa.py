@@ -54,6 +54,20 @@ def validate(output: Any, sent: dict[str, Any]) -> None:
         raise InvalidClaim("问答不能嵌套防回流标记")
 
 
+def prepare_input(packet: dict[str, Any], values: dict[str, Any] | None = None) -> dict[str, Any]:
+    """预览和生成共用的遮盖输入；不访问提供方，不读取原生会话。"""
+    sent = dict(packet)
+    for field in ("occurred_until", "known_until"):
+        if not values or values.get(field) is None:
+            sent[field] = "current"
+    sent = json.loads(model_input(dumps(sent), "qa"))
+    sent["question_redacted"] = sent["question"] != packet["question"]
+    for source, original in zip(sent["sources"], packet["sources"], strict=True):
+        source["text_redacted"] = source["text"] != original["text"]
+        source["records_redacted"] = source["records"] != original["records"]
+    return sent
+
+
 def ask(
     worker: Worker,
     project: str,
@@ -61,6 +75,8 @@ def ask(
     k: int = 12,
     values: dict[str, Any] | None = None,
     max_bytes: int = 4000,
+    *,
+    include_provider: bool = True,
 ) -> str:
     packet = retrieve(worker.store, project, question, k, values, max_bytes)
     result = packet | {
@@ -81,15 +97,7 @@ def ask(
         )
     _permission(worker.store, project, worker.provider)
     # 默认“当前”请求可复用同一资料集；显式截止保持精确值。返回仍报告本次实际读取截止。
-    sent = dict(packet)
-    for field in ("occurred_until", "known_until"):
-        if not values or values.get(field) is None:
-            sent[field] = "current"
-    sent = json.loads(model_input(dumps(sent), "qa"))
-    sent["question_redacted"] = sent["question"] != packet["question"]
-    for source, original in zip(sent["sources"], packet["sources"], strict=True):
-        source["text_redacted"] = source["text"] != original["text"]
-        source["records_redacted"] = source["records"] != original["records"]
+    sent = prepare_input(packet, values)
     identity = digest(dumps(sent).encode())
     item = Segment(
         "qa:" + identity, [{"event_id": source["event_id"]} for source in sent["sources"]]
@@ -104,11 +112,11 @@ def ask(
             | output
             | {
                 "run_id": run,
-                "provider": worker.provider.provider,
                 "model": worker.provider.model,
                 "current_revision": worker.store.revision(),
                 "records_changed_during_answer": worker.store.revision() != packet["revision"],
             }
+            | ({"provider": worker.provider.provider} if include_provider else {})
         )
     except (ValueError, RuntimeError, OSError) as error:
         if run is not None:

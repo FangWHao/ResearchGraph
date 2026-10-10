@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, urlparse
 
 import httpx
 
@@ -34,15 +34,20 @@ class ModelResult:
     contaminated: bool = False
 
 
+def validate_base_url(base_url: str) -> ParseResult:
+    address = urlparse(base_url)
+    if address.scheme != "https" and address.hostname not in {"127.0.0.1", "localhost"}:
+        raise ValueError("远程接口必须使用 HTTPS")
+    if address.username or address.password or address.query or address.fragment:
+        raise ValueError("接口地址不得含凭据、查询参数或片段")
+    return address
+
+
 class Provider:
     def __init__(
         self, base_url: str, model: str, key: str, transport: httpx.BaseTransport | None = None
     ):
-        address = urlparse(base_url)
-        if address.scheme != "https" and address.hostname not in {"127.0.0.1", "localhost"}:
-            raise ValueError("远程接口必须使用 HTTPS")
-        if address.username or address.password or address.query:
-            raise ValueError("接口地址不得含凭据或查询参数")
+        address = validate_base_url(base_url)
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.provider = self.base_url
@@ -83,9 +88,7 @@ class Provider:
             rows = data.get("data") if isinstance(data, dict) else None
             if not isinstance(rows, list):
                 raise RuntimeError("模型未返回合法窗口信息，未发送生成请求")
-            row = next(
-                (x for x in rows if isinstance(x, dict) and x.get("id") == self.model), None
-            )
+            row = next((x for x in rows if isinstance(x, dict) and x.get("id") == self.model), None)
             context = row.get("context_window") if row else None
             output = row.get("max_output_tokens") if row else None
             if type(context) is not int or type(output) is not int or context < 1 or output < 1:

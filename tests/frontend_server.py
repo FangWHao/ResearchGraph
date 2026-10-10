@@ -16,6 +16,7 @@ from rg.ingest.spool import register as register_spool
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
 from tests.golden.test_ingestion import lines, record
+from tests.qa_browser import seed_qa
 
 
 def seed(store: Store, directory: Path) -> None:
@@ -565,9 +566,14 @@ def main() -> None:
         store.project("验收新增人工记录项目", [Path("/synthetic/manual-question")])
         store.project("验收新增人工记录项目二", [Path("/synthetic/manual-question-two")])
         seed_decisions(store)
+        qa_config = seed_qa(store, directory)
         store.close()
         server = LocalServer(
-            directory / "store", args.web_dir, args.port, token="synthetic-browser-token"
+            directory / "store",
+            args.web_dir,
+            args.port,
+            token="synthetic-browser-token",
+            qa_config=qa_config,
         )
         print("合成浏览器验收服务已启动；仅含合成记录。", flush=True)
         try:

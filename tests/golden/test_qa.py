@@ -56,6 +56,8 @@ class AnswerProvider(FakeProvider):
             citation["id"] = "S999999"
         elif self.broken == "quote":
             citation["quote"] = "未发送的原文"
+        elif self.broken == "metadata":
+            citation["quote"] = '"records":[]'
         elif self.broken == "blank":
             citation["quote"] = " "
         elif self.broken == "marker":
@@ -254,6 +256,7 @@ def test_answer_caches_revalidates_reviews_and_never_writes_research_facts(store
     [
         "id",
         "quote",
+        "metadata",
         "blank",
         "marker",
         "schema",

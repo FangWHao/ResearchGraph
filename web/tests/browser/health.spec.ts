@@ -12,7 +12,7 @@ test('真实HTTP健康统计保留全库口径、项目范围与重叠快照标�
   const response = await request.get(`/api/health?project=${project.project_id}`, { headers });
   expect(response.status()).toBe(200);
   const health: HealthData = await response.json();
-  expect(health.ingest).toEqual({ registered_sources: 2, known_source_paths: 5, spool_receipts: 3, spool_unfinished: 2, spool_failed: 1 });
+  expect(health.ingest).toEqual({ registered_sources: 2, known_source_paths: 7, spool_receipts: 3, spool_unfinished: 2, spool_failed: 1 });
   expect(health.snapshots).toEqual({ total: 4, skipped: 1, async_race: 2, partial: 2, metadata_unknown: 1 });
   expect(health.hook_failures).toBeNull();
   expect(health.extraction.stages).toEqual([

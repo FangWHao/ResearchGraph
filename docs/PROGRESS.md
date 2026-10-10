@@ -358,3 +358,20 @@
 - 验收修复：测试 fixture 误走含隐私原文的模型入库路径、误用 Parsed/CLI 接口及未剥除输出末尾换行已改正；坏引用与压缩对象分别列缺口，不回显模型失败原件。最终输出按 84/504/457 核对，早期失败不当作通过。未读完整真实会话、不发送 Atlas 材料、不改个人设置。
 - 下一步：本轮允许清单提交、更新既有草稿 PR，按新 HEAD 核对两种远端 CI并独立还原代码包后结束本任务。后续继续问答界面、客户端包装、自动关联串联、完整运行 I/O、后台摘要和全图语义；note 类型待答复，正式参考与真实 M1–M4 门槛保留，整个目标仍未标完成。
 - 提交前允许清单检查：tracked_files=234 staged_files=11 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True；git diff --cached --check 退出码 0。前端八文件冻结清单全部 OK，源规格保留原文。仅公开源码、中文文档和合成测试提交；凭据、真实材料、截图、数据库、缓存和产物保留在忽略目录。
+
+
+## 2026-10-10 · 问答界面与项目外发许可
+
+- 任务：落实 §2、§7.2/7.10/7.11、§9/10/11 的问答 HTTP 与前端，响应日常零人工审核方向；按用户既有明确授权使用前端子 agent。开始核对进度末尾、相关章节和决定，d355626 基线恢复包独立还原，234 个跟踪文件字节一致；完整 M0–M4 未验收。
+- 改动的文件：新增 rg/api/qa.py、tests/golden/test_qa_api.py、tests/qa_browser.py、两份中文问答接口/前端验收；修改 server、CLI、provider、qa 输入准备和提示、合成浏览器服务及固定问答案例。前端新增 QaView、qa 类型/解析、工作区控制器、样式与单测/浏览器测试，修改 App 和健康种子预期；更新 README、需求落实、决定、PR 草稿与本文件。
+- 行为：界面先本地检索，可明确只读；服务配置模型后才生成。地址、密钥和输入预算由本机服务配置，HTTP 不接受浏览器覆盖，不返回服务地址/凭据。默认 128k/4k、提供方完整请求实测、日额度、互斥、缓存和作废合同不变；无来源零调用，模型故障仍保留来源，不创建研究 claims。
+- 权限：本地预览与生成共用实际遮盖输入；主动许可、来源、摘要和记录版本事务核对。摘要绑定资料与模型配置，新增原文即使 claims 版本不变也重验。沿用整个项目许可，明确包含远程计数、自动提取、问答及新增资料；撤回后缓存也先检查许可，不删除原件。页面停止等待只取消浏览器等待，已发出的请求可能继续处理。
+- 界面：项目草稿与结果分别保存在页面内存，请求序号、鉴权代次和完整问题意图匹配后才显示；改问题/范围/双截止后旧结果显式标旧，迟到不能覆盖新页面。封装 JSON 只作数据，原文 HTML 作为文字；引用定位同事件、对象内窗口与 hash，来源文件行位置另标。候选、确认、驳回、替换和采用/证据状态分别保留，无需先逐条人工确认。
+- uv sync --locked：Resolved 28 packages in 14ms、Checked 27 packages in 62ms；uv run rg --help、serve --help 退出码均 0。uv run pytest tests/golden/test_qa_api.py tests/golden/test_qa.py tests/test_api.py -q：71 passed in 29.53s；新增 23 项 HTTP 固定案例和 1 项元数据不能当原文引用的回归。
+- uv run pytest -q：528 passed in 177.04s；uv run pytest tests/golden -q：481 passed in 163.96s。全量与固定案例并行，不作性能基准。uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。
+- cd web && pnpm test：6 files、45 tests passed、692ms；pnpm build：199 modules、1.05s；pnpm test:browser：43 passed (33.7s)。父 agent 实看桌面/390 小屏四图，最终标签更新后再核对桌面及原尺寸手机预览；无横向溢出。13 项冻结清单全部 OK，摘要 573a36a0c958e8c7bf605d6bb9eaec1079dbd3751b5d6e4694e6ca036d72f84c。真实 HTTP 主链与外部模型协议模拟、界面异常拦截分别记录，不冒充真实模型质量。
+- uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；wheel_files=94 source_resources=89 missing=0 mismatches=0 actual_secret_matches=0 private_or_static_files=0，问答 API/提示和词表许可证包含。独立环境安装最终 wheel、隔离解释器及实际 CLI serve 与本机 TCP 模拟服务连通：检索/预览逻辑库不变，计数 2/生成 1、重问同 run、L0 不变、claims=0、SIGINT 退出 0。
+- 用户授权的最终合成 DeepSeek HTTP 实测：权限拒绝和预览阶段零提供方调用；授权后来源 1、陈述 3、实测输入 1400、报告输入/输出 1380/420、状态 ok，生成 1、重问新增网络 0。遮盖合成邮箱，服务地址/密钥不回传；L0 不变、claims=0。前两次未发布，不计为通过；留存诊断为错误引用 records 元数据，实测输入 1328、报告 1308/297，严格拒绝后补提示及回归，不放宽校验。未读完整真实会话、不发 Atlas 原文、不改个人设置。
+- 验收修复：项目回执误写会话编号、问题可为空类型、回答沿用 CLI 的地址元数据分别修正。前端初次专项两项失败为 API hash 路径/文字断言；完整回归的健康路径预期随两条合成来源从 5 改为 7，登记来源 2 和队列 54 保持真实口径。中间 527/480 通过后因追加防元数据引用案例再验最终 528/481，早期结果不替代最终源码。
+- 下一步：允许清单提交，更新既有草稿 PR，按本轮新 HEAD 核对推送/PR 两种 CI；刷新公开代码包、独立还原全部跟踪文件后结束本任务。后续继续客户端包装、自动关联串联、完整运行 I/O、后台大文件摘要和全图语义；note/propose_note 类型待答复，正式参考与真实 M1–M4 门槛保留，整个目标不标完成。
+- 提交前允许清单检查：tracked_files=245 staged_files=25 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True frontend_frozen_files_unchanged=True；git diff --cached --check 退出码 0。仅公开源码、中文记录与合成测试提交；凭据、实际研究材料、截图、数据库和缓存继续留忽略目录，原规格保留原文。
