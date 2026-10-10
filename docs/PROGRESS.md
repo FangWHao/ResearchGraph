@@ -499,3 +499,10 @@
 - 边界：配置不清除旧原件/索引/缓存/快照，也不收回远端已发送资料和用户分享副本；完整隐私清除仍待实现。影响传播未选比较合同仍无用户回复，不猜规则；完整 L1、实际 I/O、规模/真实工具验收、note/propose_note 与 Atlas 正式参考和完整 M0–M4 门槛保留。
 - 下一步：按允许清单提交、维护现有草稿 PR，核对新 HEAD 的推送/PR 两种 CI 与恢复包独立还原后结束本任务。后续继续完整隐私清除及 L1 实际输入输出，待传播合同答案再实现提醒。
 - 提交前允许清单：baseline=aa3569a、staged_files=41、tracked_files=319、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=16；暂存差异检查退出 0。只提交公开源码、中文说明和合成案例；凭据、真实资料、数据库、ZIP、截图与缓存仍忽略。
+
+## 2026-10-10 · CI 进程退出测试竞态修正
+
+- 任务：收尾项目临床编号配置的 PR 验收，读取 §2/15 及已有决定。45efe80 推送 CI 成功；PR CI 全量 730 通过、1 失败，旧进程退出测试在检查文件存在后读取 `/proc/<pid>/stat`，进程此时已被回收而报 FileNotFoundError。
+- 改动的文件：tests/golden/test_artifacts.py、本文件及 docs/acceptance/M4项目临床编号遮盖验收_20261010.md。单次读取进程状态，文件消失表示进程已退出；保留真实父进程强杀、五秒子进程等待和存活失败断言。没有改生产代码、安装包资源、前端或规格。
+- 验收命令：uv run pytest tests/golden/test_artifacts.py::test_background_child_exits_when_actual_parent_pipe_disappears -q 独立运行十次，各 1 passed；重新 uv run pytest -q：731 passed in 281.34s (0:04:41)；uv run pytest tests/golden -q：684 passed in 266.88s (0:04:26)。ruff：All checks passed!；pyright：0 errors, 0 warnings, 0 informations；git diff --check 退出 0。两组全量并行，不作性能基准。
+- 下一步：仅提交上述三文件，维护草稿 PR，重新核对修正后 HEAD 的推送/PR CI 与恢复包；项目遮盖其它验收保持，整体 M0–M4 尚未完成。

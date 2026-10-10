@@ -543,14 +543,18 @@ with Service(store) as service:
         parent.kill()
         parent.wait(5)
         state = Path(f"/proc/{child_pid}/stat")
+
+        def running():
+            # 进程可在存在检查与打开文件之间被系统回收，直接读取一次判定。
+            try:
+                return state.read_text().rsplit(")", 1)[1].split()[0] != "Z"
+            except (FileNotFoundError, ProcessLookupError):
+                return False
+
         deadline = time.monotonic() + 5
-        while (
-            state.exists()
-            and state.read_text().split(")", 1)[1].split()[0] != "Z"
-            and time.monotonic() < deadline
-        ):
+        while running() and time.monotonic() < deadline:
             time.sleep(0.03)
-        assert not state.exists() or state.read_text().split(")", 1)[1].split()[0] == "Z"
+        assert not running()
     finally:
         if parent.poll() is None:
             parent.kill()
