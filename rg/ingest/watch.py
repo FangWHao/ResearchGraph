@@ -44,12 +44,19 @@ def cycle(
 def watch(
     store: Store, interval: float = 2, retry_failed: bool = False
 ) -> Iterator[dict[str, int]]:
+    from rg.artifacts.service import Service
+
     if not math.isfinite(interval) or interval <= 0:
         raise ValueError("扫描间隔必须为有限正数")
-    with exclusive(store.root / "locks" / "watch.lock", "该数据目录已有扫描守护进程"):
+    with (
+        exclusive(store.root / "locks" / "watch.lock", "该数据目录已有扫描守护进程"),
+        Service(store) as service,
+    ):
         while True:
             try:
-                yield cycle(store, retry_failed)
+                result = cycle(store, retry_failed)
             except TaskBusy:
-                yield {"busy": 1}
+                result = {"busy": 1}
+            service.tick()
+            yield result
             time.sleep(interval)

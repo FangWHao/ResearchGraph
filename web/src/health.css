@@ -30,6 +30,13 @@
 .queue-task-reason { font-size: 12px; line-height: 1.7; margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .extraction-queue-panel .pagination, .pipeline-queue-panel .pagination { flex-wrap: wrap; }
 .queue-result pre { font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.artifact-health-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 20px 14px; margin: 24px 0 20px; }
+.artifact-health-metrics div { min-width: 0; }
+.artifact-health-metrics dt { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.artifact-health-metrics dd { font-size: 27px; line-height: 1.4; margin: 7px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.artifact-health-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 25px; }
+.artifact-health-groups h4 { margin-top: 10px; font-size: 13px; }
+.artifact-health-panel > button { margin-top: 18px; }
 @media (max-width: 760px) {
   .health-view .quality-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
   .health-view .health-metrics, .health-view .health-queue-metrics { gap: 18px 10px; }
@@ -38,4 +45,6 @@
   .health-view .panel h3 .eyebrow { display: block; }
   .health-view .panel h3 > span:not(.eyebrow) { display: inline; margin-left: 8px; }
   .extraction-tasks { grid-template-columns: 1fr; }
+  .artifact-health-groups { grid-template-columns: 1fr; gap: 5px; }
+  .artifact-health-metrics dd { font-size: 25px; }
 }

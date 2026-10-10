@@ -354,13 +354,15 @@ class Queue:
     def watch(
         self, interval: float = 2, limit: int = 20, retry_failed: bool = False
     ) -> Iterator[dict[str, Any]]:
+        from rg.artifacts.service import Service
         from rg.ingest.watch import cycle
 
         if not math.isfinite(interval) or interval <= 0:
             raise ValueError("轮询间隔必须为有限正数")
         self.validate_limit(limit)
-        with exclusive(
-            self.store.root / "locks" / "extract-queue.lock", "该数据目录已有提取调度器"
+        with (
+            exclusive(self.store.root / "locks" / "extract-queue.lock", "该数据目录已有提取调度器"),
+            Service(self.store) as service,
         ):
             first = True
             while True:
@@ -368,6 +370,7 @@ class Queue:
                     scanned = cycle(self.store)
                 except TaskBusy:
                     scanned = {"busy": 1}
+                service.tick()
                 yield {"scan": scanned, "extract": self._run(limit, retry_failed and first)}
                 first = False
                 time.sleep(interval)

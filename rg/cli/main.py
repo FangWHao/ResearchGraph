@@ -101,6 +101,17 @@ def parser() -> argparse.ArgumentParser:
     health.add_argument("--limit", type=int, default=50, help="各队列与覆盖缺口页长")
     health.add_argument("--offset", type=int, default=0, help="提取任务与覆盖缺口偏移")
     health.add_argument("--pipeline-offset", type=int, default=0, help="关联与概览队列独立偏移")
+    versions = commands.add_parser("versions", help="分页读取文件版本与来源，不读取当前文件正文")
+    versions.add_argument("--project")
+    versions.add_argument("--path", help="精确匹配已记录的绝对路径")
+    versions.add_argument("--limit", type=int, default=50)
+    versions.add_argument("--offset", type=int, default=0)
+    hashed = commands.add_parser("hash-files", help="离线建立快照版本并计算大文件完整 SHA256")
+    hashed.add_argument("--project")
+    hashed.add_argument("--limit", type=int, default=20)
+    hashed.add_argument("--watch", action="store_true")
+    hashed.add_argument("--interval", type=float, default=2)
+    hashed.add_argument("--retry-failed", action="store_true")
     search = commands.add_parser("search", help="原文检索，用户文本按字面量处理")
     search.add_argument("text")
     search.add_argument("--limit", type=int, default=20)
@@ -408,6 +419,44 @@ def run(args: argparse.Namespace, store: Store) -> object:
         return store.health(
             args.project, args.day, args.daily_budget, args.limit, args.offset, args.pipeline_offset
         )
+    if args.command == "versions":
+        from rg.artifacts.views import versions
+
+        return versions(
+            store,
+            {
+                key: str(getattr(args, key))
+                for key in ("project", "path", "limit", "offset")
+                if getattr(args, key) is not None
+            },
+        )
+    if args.command == "hash-files":
+        import math
+        import time
+
+        from rg.api.views import project_exists
+        from rg.artifacts.worker import Worker as ArtifactWorker
+        from rg.store.database import dumps
+        from rg.store.locking import TaskBusy
+
+        project_exists(store, args.project)
+        if not math.isfinite(args.interval) or args.interval <= 0:
+            raise ValueError("完整摘要轮询间隔必须为有限正数")
+        worker = ArtifactWorker(store, args.project)
+        if not args.watch:
+            return worker.run(args.limit, args.retry_failed)
+        first = True
+        try:
+            while True:
+                try:
+                    result = worker.run(args.limit, args.retry_failed and first)
+                    first = False
+                except TaskBusy:
+                    result = {"busy": 1}
+                print(dumps(result), flush=True)
+                time.sleep(args.interval)
+        except KeyboardInterrupt:
+            return {"watch": "stopped"}
     if args.command == "search":
         return store.search(args.text, args.limit)
     if args.command == "evidence":
@@ -587,7 +636,7 @@ def main() -> None:
                     args.client_body = read_request(stream, args.kind)
         store = Store(
             args.data_dir,
-            readonly=args.command in {"mcp", "context", "client-pack"}
+            readonly=args.command in {"mcp", "context", "client-pack", "versions"}
             or (args.command == "ask" and args.retrieve_only),
         )
         if args.command == "mcp":

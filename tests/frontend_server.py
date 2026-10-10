@@ -220,6 +220,7 @@ def seed(store: Store, directory: Path) -> None:
     )
     seed_health(store, project, empty_project, batch_project, source, batch_source)
     seed_l1(store, project, directory)
+    seed_artifacts(store, project, batch_project)
 
 
 def seed_l1(store: Store, project: str, directory: Path) -> None:
@@ -518,6 +519,104 @@ def seed_pipeline_queue(store: Store, project: str, batch_project: str) -> None:
                 "VALUES (?,'synthetic_browser_boundary',?,?)",
                 (queue_id, dumps({"state": state, "synthetic_fixture": True}), now()),
             )
+
+
+def seed_artifacts(store: Store, project: str, batch_project: str) -> None:
+    """仅合成元数据与合成字节身份，不启动后台任务、不读取研究文件。"""
+    import hashlib
+
+    root = store.db.execute(
+        "SELECT root_id FROM source_roots WHERE project_id=? ORDER BY path LIMIT 1", (project,)
+    ).fetchone()[0]
+    snapshots = store.db.execute(
+        "SELECT snapshot_id,taken_at FROM workspace_snapshots "
+        "WHERE project_id=? ORDER BY snapshot_id",
+        (project,),
+    ).fetchall()
+    for snapshot, status in zip(snapshots[:3], ("unknown", "partial", "done"), strict=True):
+        store.db.execute(
+            "INSERT INTO artifact_discoveries(snapshot_id,status,details,recorded_at) "
+            "VALUES (?,?,?,?)",
+            (snapshot[0], status, dumps({"synthetic_fixture": True}), now()),
+        )
+
+    def version(
+        name: str, path: str, source: str, algo: str, value: str, size: int | None,
+        representation: str | None, observed: str, content: str | None = None,
+    ) -> str:
+        identifier = f"synthetic-browser-artifact:{name}"
+        store.db.execute(
+            "INSERT INTO artifact_versions(version_id,project_id,path,algo,digest,size,source,"
+            "observed_at,content_sha256,phase,root_id,basis,claim_state,representation) "
+            "VALUES (?,?,?,?,?,?,?,?,?,'observed',?,'direct_record','candidate',?)",
+            (identifier, project, path, algo, value, size, source,
+             observed, content, root, representation),
+        )
+        return identifier
+
+    def job(name: str, state: str, kind: str = "file_hash") -> int:
+        identifier = f"synthetic-browser-artifact-job:{name}"
+        job_id = store.db.execute(
+            "INSERT INTO artifact_jobs(job_key,project_id,root_id,snapshot_id,kind,input_json,"
+            "state,attempts,error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,1,?,?,?)",
+            (identifier, project, root, snapshots[0][0], kind, dumps({"synthetic_fixture": True}),
+             state, "合成失败边界" if state == "failed" else None, now(), now()),
+        ).lastrowid
+        assert job_id is not None
+        store.db.execute(
+            "INSERT INTO artifact_job_events(job_id,kind,details,recorded_at) "
+            "VALUES (?,'synthetic_browser_boundary',?,?)",
+            (job_id, dumps({"synthetic_fixture": True, "state": state}), now()),
+        )
+        return job_id
+
+    for state in ("queued", "running", "paused", "failed"):
+        job(state, state)
+    for name, raw, mode, representation in (
+        ("snapshot", "合成保存字节，不显示正文\n".encode(), "100644", "physical_file_bytes"),
+        ("link", b"synthetic-target.txt", "120000", "symlink_target_bytes"),
+    ):
+        content = store.objects.put(raw)
+        identity = hashlib.sha1(
+            b"blob " + str(len(raw)).encode() + b"\0" + raw, usedforsecurity=False
+        ).hexdigest()
+        archived = version(name, f"/synthetic/research/{name}.txt", "shadow_snapshot", "git-sha1",
+                           identity, len(raw), representation, snapshots[0][1], content)
+        store.db.execute(
+            "INSERT INTO artifact_observations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (f"synthetic-observation:{name}", archived, job(name, "done", "snapshot_blob"),
+             snapshots[0][0], snapshots[0][0], mode, None, None, None, 0, None,
+             dumps({"synthetic_fixture": True, "complete": True, "content_copied": True,
+                    "shadow_commit": "synthetic-shadow-commit"}), "2026-10-10T08:00:00Z"),
+        )
+    special = '/synthetic/research/合成大文件 "quote";$(never-run)<img>.bin'
+    size = 6_000_001
+    current = version("current", special, "current_file", "sha256",
+                      hashlib.sha256(b"x" * size).hexdigest(), size, "physical_file_bytes",
+                      "2026-10-10T09:01:00Z")
+    original = "synthetic-observation:current-0"
+    for index, recorded in enumerate(("09:05:00", "09:10:00", "10:00:00", "11:00:00")):
+        store.db.execute(
+            "INSERT INTO artifact_observations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (f"synthetic-observation:current-{index}", current, job(f"current-{index}", "done"),
+             None, snapshots[0][0], "100644", dumps([1, 2, 33188, size, 1, 1]),
+             "2026-10-10T09:00:00Z", "2026-10-10T09:01:00Z", int(index > 0),
+             original if index else None,
+             dumps({"synthetic_fixture": True, "complete": True, "content_copied": False,
+                    "matches_discovery_hint": True}), f"2026-10-10T{recorded}Z"),
+        )
+    version("unknown", "/synthetic/research/unknown.dat", "legacy_unknown", "unknown", "unknown",
+            None, None, "2026-10-10T08:00:00Z")
+    for index in range(27):
+        version(f"page-{index}", f"/synthetic/research/history-{index:02}.txt", "watcher", "sha256",
+                digest(f"合成旧记录{index}".encode()), 20, None, "2026-10-08T12:00:00Z")
+    store.db.execute(
+        "INSERT INTO artifact_versions(version_id,project_id,path,algo,digest,size,source,"
+        "phase,basis,claim_state,representation) VALUES (?,?,?,?,?,20,'agent_edit','after',"
+        "'direct_record','candidate','tool_reported_utf8')",
+        ("synthetic-browser-artifact:batch", batch_project, "/synthetic/batch/reported.txt",
+         "sha256:tool-utf8", digest(b"synthetic-tool-report")),
+    )
 
 
 def seed_model_observations(store: Store, project: str) -> None:

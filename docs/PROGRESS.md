@@ -406,3 +406,18 @@
 - 验收修复：初次失败包含合成关系方向非法、测试日额度不足容纳输出、未带概览备份、未变会话不应重复概览、原队列测试需用诊断入口；缓存重建的分量计数改为复用实测缓存。另补 CLI 独立分页和发布回执竞争回归。前端首次兼容案例因未等待加载失败，补等待后重跑，不放宽生产行为。早期 562/515 不替代最终 563/516 验收。
 - 下一步：允许清单提交、维护已有草稿 PR，按新 HEAD 核对推送与 PR 两种 CI，刷新代码包并独立恢复全部跟踪文件后结束本任务。后续继续完整运行 I/O、后台大文件摘要、全图语义、export 与隐私清除；note 类型待答复，正式参考及真实 M1–M4/规模性能/实际客户端门槛继续保留。
 - 提交前允许清单检查：tracked_files=257 staged_files=26 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True frontend_frozen_files_unchanged=True；git diff --cached --check 退出码 0。仅公开源码、中文记录及合成测试；凭据、研究原件、数据库、截图、缓存及包留忽略目录，原规格不改。
+
+
+## 2026-10-10 · 物理文件版本与后台完整摘要
+
+- 任务：落实 §2、§8.2/8.3 与原设计 v1 §5；开始核对进度末尾、相关章节与既有 L1 决定，b5a9b78 基线包 SHA256 与独立还原的 257 个跟踪文件字节已验证。按用户既有授权由前端子 agent 做版本/健康页面，后端父 agent 独立完成；整个 M0–M4 不标完成。
+- 改动的文件：新增 rg/artifacts/ 的 files/worker/views/service 与包入口、tests/golden/test_artifacts.py 及中文验收；修改版本 13 迁移、Store 健康、scan/extract watch、CLI 和只读 HTTP。前端新增 VersionsView、ArtifactHealthPanel、来源/观察 helper 与样式、单测和浏览器案例；修改导航、类型、L1 元数据、health 样式及 tests/frontend_server.py 合成种子。更新 README、需求落实、决定、PR 草稿与本文件。
+- 行为：快照 Git 原对象入物理版本目录；大文件由遗漏清单发现、后台全文 SHA256，缓存元数据含 ctime，变化重读。current_file 与旧快照的 snapshot_id 留空，另存发现线索及实际读取窗口；缓存沿用原窗口，不复制大文件、不补 run_io。工具报告与物理字节分开，版本仍 candidate。
+- 恢复：只取得实际进程锁后接管 running，owner 原子提交、输入及观察只追加。慢读取不占写事务，读前/提交前复核根目录登记；根绝对路径祖先、文件父目录和文件都 nofollow。中途变化作废等五秒，缺失文件/对象留下失败，发现故障轮转避免阻塞后续快照。watch 持实际子进程句柄与管道，正常结束或父强杀的 EOF 后退出；钩子仍离线且未安装常驻服务。
+- uv sync --locked：Resolved 28 packages in 12ms、Checked 27 packages in 53ms；rg --help、hash-files --help、versions --help 退出码均 0。专项 uv run pytest tests/golden/test_artifacts.py -q：21 passed in 8.88s，含实际 SIGKILL、父进程管道断开、源目录丢失和备份恢复等历史风险。
+- uv run pytest -q：584 passed in 213.24s (0:03:33)；uv run pytest tests/golden -q：537 passed in 200.12s (0:03:20)。两者并行，不作性能基准；ruff check rg tests scripts：All checks passed!；pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。
+- uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；103 文件/98 源码资源，缺失/字节差异/实际密钥/私有文件均 0。独立环境安装最终 wheel、仓库外真实 CLI scan --watch：小文件版本 1、大文件完整 SHA256 版本 2、六任务完成、缓存复用 1/读取窗口不变；没有正文副本/旧快照绑定/模型调用/推定 run_io；只读分页和备份恢复通过，SIGINT 退出 0。
+- 验收修复：最初五个专项失败来自测试误用 Store 上下文、合成静态目录缺文件，修正环境后通过。随后发现根目录的祖先链接也应提前拒绝，补 nofollow 遍历与新案例；早期 583/536 不替代最终 584/537。前端另收紧缺项目回包拒绝、观察条数/partial 矛盾及纳秒签名的浏览器整数精度，最终结果单独记录。
+- 前端最终 pnpm test：7 files/57 passed/656ms；pnpm build：204 modules/1.07s；pnpm test:browser：54 passed/37.2s。父 agent 实看最终五张桌面/390 手机/缓存窗口图，无横向溢出；18 项冻结全部 OK，摘要 9ece6869e130cefcfa49de3cd098924e57cf40c7ac4855b77d6d0db6fcf76d31。未知、矛盾、缺项目、迟到回包和纳秒舍入诊断保留；真实 HTTP 合成统计不冒充后台引擎或研究质量。
+- 下一步：允许清单提交并维护现有草稿 PR，按新 HEAD 核对推送/PR 两种 CI，刷新公开恢复包并独立还原全部跟踪文件后结束本任务。后续继续物理版本与研究对象/运行/MCP 双时间关联、全图语义、export、临床编号与隐私清除；note 类型、正式参考及真实 M0–M4/规模性能/实际客户端验收仍保留，整个目标不标完成。
+- 提交前允许清单检查：tracked_files=271 staged_files=32 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True frontend_frozen_files_unchanged=True；git diff --cached --check 退出码 0。仅公开源码、中文记录与合成测试提交；凭据、原件、数据库、图片和缓存继续留忽略目录，原规格保留原文。

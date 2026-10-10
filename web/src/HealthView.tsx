@@ -3,6 +3,7 @@ import { api, ApiError, query } from './api';
 import { DateText, Empty, Loading } from './components';
 import { ExtractionQueuePanel } from './ExtractionQueuePanel';
 import { PipelineQueuePanel } from './PipelineQueuePanel';
+import { ArtifactHealthPanel } from './ArtifactHealthPanel';
 import { healthCount, healthMetrics, percentage } from './health';
 import type { HealthMetric } from './health';
 import type { HealthData } from './types';
@@ -15,9 +16,10 @@ function Metrics({ items }: { items: HealthMetric[] }) {
     </div>)}</dl>;
 }
 
-export function HealthView({ project, epoch, onEvidence, onError }: {
+export function HealthView({ project, epoch, onEvidence, onError, onVersions }: {
   project: string; epoch: number; onEvidence: (target: { event_id: number }) => void;
   onError: (error: unknown) => void;
+  onVersions?: () => void;
 }) {
   const [response, setResponse] = useState<{ key: string; data: HealthData } | null>(null);
   const [pages, setPages] = useState({ project, offset: 0, pipelineOffset: 0 });
@@ -64,6 +66,8 @@ export function HealthView({ project, epoch, onEvidence, onError }: {
     <ExtractionQueuePanel queue={data.extraction_queue} offset={offset} limit={limit} onOffset={setOffset} />
 
     <PipelineQueuePanel queue={data.pipeline_queue} offset={pipelineOffset} limit={limit} onOffset={setPipelineOffset} />
+
+    <ArtifactHealthPanel data={data.artifacts} onVersions={onVersions} />
 
     <div className="health-columns">
       <section className="panel" aria-labelledby="ingest-heading">

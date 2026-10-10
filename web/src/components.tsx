@@ -17,6 +17,7 @@ export function Icon({ name, size = 18 }: { name: string; size?: number }) {
     health: <><path d="M3 12h4l3-8 4 16 3-8h4" /></>,
     search: <><circle cx="10" cy="10" r="6" /><path d="m15 15 6 6" /></>,
     evidence: <><path d="M5 3h10l4 4v14H5zM14 3v5h5M8 12h8M8 16h6" /></>,
+    versions: <><path d="M7 3h9l4 4v13H7zM16 3v5h4M4 7v14h12M10 12h7M10 16h5" /></>,
     arrow: <><path d="M5 12h14m-5-5 5 5-5 5" /></>,
     close: <><path d="m6 6 12 12M6 18 18 6" /></>,
     refresh: <><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6 7a7 7 0 0 1 12-2l2 3M4 16l2 3a7 7 0 0 0 12-2" /></>,

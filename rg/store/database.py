@@ -232,6 +232,9 @@ class Store:
         from rg.extract.queue_health import pipeline_health
 
         result["pipeline_queue"] = pipeline_health(self, project, limit, pipeline_offset)
+        from rg.artifacts.views import health as artifact_health
+
+        result["artifacts"] = artifact_health(self, project)
         result["snapshots"] = dict(
             self.db.execute(
                 "SELECT count(*) AS total, "

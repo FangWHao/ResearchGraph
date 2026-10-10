@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 12
+LATEST_VERSION = 13
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -211,6 +211,71 @@ MIGRATIONS = {
         "BEGIN SELECT RAISE(ABORT,'pipeline event is append-only'); END",
         "CREATE TRIGGER pipeline_queue_event_no_delete BEFORE DELETE ON pipeline_queue_events "
         "BEGIN SELECT RAISE(ABORT,'pipeline event is append-only'); END",
+    ),
+    13: (
+        "CREATE TABLE artifact_discovery_attempts(attempt_id INTEGER PRIMARY KEY,"
+        "snapshot_id INTEGER NOT NULL REFERENCES workspace_snapshots,status TEXT NOT NULL,"
+        "recorded_at TEXT NOT NULL)",
+        "CREATE INDEX artifact_discovery_attempts_snapshot "
+        "ON artifact_discovery_attempts(snapshot_id,attempt_id)",
+        "CREATE TRIGGER artifact_discovery_attempt_no_update "
+        "BEFORE UPDATE ON artifact_discovery_attempts "
+        "BEGIN SELECT RAISE(ABORT,'artifact discovery attempt is append-only'); END",
+        "CREATE TRIGGER artifact_discovery_attempt_no_delete "
+        "BEFORE DELETE ON artifact_discovery_attempts "
+        "BEGIN SELECT RAISE(ABORT,'artifact discovery attempt is append-only'); END",
+        "CREATE TABLE artifact_discoveries(snapshot_id INTEGER PRIMARY KEY "
+        "REFERENCES workspace_snapshots,status TEXT NOT NULL,details TEXT NOT NULL,"
+        "recorded_at TEXT NOT NULL)",
+        "CREATE TRIGGER artifact_discovery_no_update BEFORE UPDATE ON artifact_discoveries "
+        "BEGIN SELECT RAISE(ABORT,'artifact discovery is append-only'); END",
+        "CREATE TRIGGER artifact_discovery_no_delete BEFORE DELETE ON artifact_discoveries "
+        "BEGIN SELECT RAISE(ABORT,'artifact discovery is append-only'); END",
+        "CREATE TABLE artifact_jobs(job_id INTEGER PRIMARY KEY,job_key TEXT NOT NULL UNIQUE,"
+        "project_id TEXT NOT NULL REFERENCES projects,root_id TEXT NOT NULL "
+        "REFERENCES source_roots,"
+        "snapshot_id INTEGER NOT NULL REFERENCES workspace_snapshots,kind TEXT NOT NULL "
+        "CHECK(kind IN ('snapshot_blob','file_hash')),input_json TEXT NOT NULL,"
+        "state TEXT NOT NULL CHECK(state IN ('queued','running','done','failed','paused')),"
+        "owner_id TEXT,attempts INTEGER NOT NULL DEFAULT 0,error TEXT,result TEXT,"
+        "next_attempt_at TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)",
+        "CREATE INDEX artifact_jobs_ready ON artifact_jobs(state,next_attempt_at,updated_at)",
+        "CREATE TRIGGER artifact_job_input_no_update BEFORE UPDATE OF job_key,project_id,"
+        "root_id,snapshot_id,kind,input_json,created_at ON artifact_jobs "
+        "BEGIN SELECT RAISE(ABORT,'artifact job input is immutable'); END",
+        "CREATE TABLE artifact_job_events(event_id INTEGER PRIMARY KEY,job_id INTEGER "
+        "NOT NULL REFERENCES artifact_jobs,kind TEXT NOT NULL,owner_id TEXT,"
+        "details TEXT NOT NULL,recorded_at TEXT NOT NULL)",
+        "CREATE TRIGGER artifact_job_event_no_update BEFORE UPDATE ON artifact_job_events "
+        "BEGIN SELECT RAISE(ABORT,'artifact job event is append-only'); END",
+        "CREATE TRIGGER artifact_job_event_no_delete BEFORE DELETE ON artifact_job_events "
+        "BEGIN SELECT RAISE(ABORT,'artifact job event is append-only'); END",
+        "CREATE TABLE artifact_observations(observation_id TEXT PRIMARY KEY,version_id TEXT "
+        "NOT NULL REFERENCES artifact_versions,job_id INTEGER NOT NULL UNIQUE REFERENCES "
+        "artifact_jobs,snapshot_id INTEGER REFERENCES workspace_snapshots,"
+        "discovery_snapshot_id INTEGER NOT NULL REFERENCES workspace_snapshots,"
+        "mode TEXT NOT NULL,signature TEXT,hash_started_at TEXT,hash_finished_at TEXT,"
+        "cache_reused INTEGER NOT NULL CHECK(cache_reused IN (0,1)),"
+        "cached_from TEXT REFERENCES artifact_observations,"
+        "details TEXT NOT NULL,recorded_at TEXT NOT NULL)",
+        "CREATE INDEX artifact_observations_version ON "
+        "artifact_observations(version_id,recorded_at)",
+        "CREATE TRIGGER artifact_observation_no_update BEFORE UPDATE ON artifact_observations "
+        "BEGIN SELECT RAISE(ABORT,'artifact observation is append-only'); END",
+        "CREATE TRIGGER artifact_observation_no_delete BEFORE DELETE ON artifact_observations "
+        "BEGIN SELECT RAISE(ABORT,'artifact observation is append-only'); END",
+        "CREATE TABLE file_hash_cache(cache_key TEXT PRIMARY KEY,observation_id TEXT NOT NULL "
+        "REFERENCES artifact_observations)",
+        "CREATE TRIGGER file_hash_cache_no_update BEFORE UPDATE ON file_hash_cache "
+        "BEGIN SELECT RAISE(ABORT,'full hash cache is append-only'); END",
+        "CREATE TRIGGER file_hash_cache_no_delete BEFORE DELETE ON file_hash_cache "
+        "BEGIN SELECT RAISE(ABORT,'full hash cache is append-only'); END",
+        "CREATE TRIGGER physical_version_no_update BEFORE UPDATE ON artifact_versions "
+        "WHEN OLD.source IN ('shadow_snapshot','current_file') "
+        "BEGIN SELECT RAISE(ABORT,'physical version is append-only'); END",
+        "CREATE TRIGGER physical_version_no_delete BEFORE DELETE ON artifact_versions "
+        "WHEN OLD.source IN ('shadow_snapshot','current_file') "
+        "BEGIN SELECT RAISE(ABORT,'physical version is append-only'); END",
     ),
 }
 

@@ -114,6 +114,10 @@ class Handler(BaseHTTPRequestHandler):
             return qa.options(store, values["project"], self.server.qa_config)
         if path == "/api/health":
             return views.health(store, values, self.server.daily_budget)
+        if path == "/api/versions":
+            from rg.artifacts.views import versions
+
+            return versions(store, values)
         if path == "/api/claims":
             return views.claims(store, values)
         if match := re.fullmatch(r"/api/claims/([1-9][0-9]*)", path):

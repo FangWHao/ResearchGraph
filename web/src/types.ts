@@ -86,6 +86,28 @@ export interface ArtifactVersion {
   version_id: string; path: string; algo: string; digest: string; source: string;
   phase?: string | null; basis?: string | null; claim_state?: ReviewState | null;
   representation?: string | null; observed_at?: string | null; size?: number | null;
+  content_sha256?: string | null; project_id?: string; root_id?: string | null;
+  evidence_event_id?: number | null;
+}
+export interface ArtifactObservation {
+  observation_id: string; version_id: string; job_id: number;
+  snapshot_id: number | null; discovery_snapshot_id: number; mode: string;
+  signature: unknown; hash_started_at: string | null; hash_finished_at: string | null;
+  cache_reused: boolean; cached_from: string | null; details: Record<string, unknown>;
+  recorded_at: string;
+}
+export interface FileVersionRecord extends Partial<ArtifactVersion> {
+  observations?: Partial<ArtifactObservation>[]; observations_total?: number;
+  observations_partial?: boolean;
+}
+export interface VersionsPage {
+  revision?: number; versions?: FileVersionRecord[]; total?: number;
+  limit?: number; offset?: number; partial?: boolean;
+}
+export interface ArtifactHealth {
+  versions?: number; archived?: number; current_hashed?: number; cache_reused?: number;
+  jobs?: Partial<Record<'queued' | 'running' | 'paused' | 'failed' | 'done', number>>;
+  discovery?: Partial<Record<'pending' | 'unknown' | 'partial' | 'done', number>>;
 }
 export type RunState = 'requested' | 'started' | 'exited' | 'unknown';
 export interface RunObservation {
@@ -134,6 +156,7 @@ export interface HealthData {
   compression_points: number; hook_failures: number | null; hook_failures_reason: string;
   extraction_queue?: ExtractionQueue | null;
   pipeline_queue?: PipelineQueue | null;
+  artifacts?: ArtifactHealth | null;
   ingest?: {
     registered_sources: number; known_source_paths: number; spool_receipts: number;
     spool_unfinished: number; spool_failed: number;

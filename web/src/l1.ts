@@ -28,8 +28,8 @@ export function editPresentation(edit: L1Edit) {
   return { kind: 'unavailable', title: '差异完整性未证实', text: null, reason: '接口没有提供一致的前后版本与表示信息，无法据此核对完整版本。' } as const;
 }
 
-export function versionMetadata(version: ArtifactVersion) {
-  const phase = version.phase === 'before' ? '编辑前' : version.phase === 'after' ? '编辑后' : '阶段未知';
+export function versionMetadata(version: Partial<ArtifactVersion>) {
+  const phase = version.phase === 'before' ? '编辑前' : version.phase === 'after' ? '编辑后' : version.phase === 'observed' ? '文件观察' : '阶段未知';
   const review = version.claim_state === 'candidate' ? '待复核'
     : version.claim_state === 'confirmed' ? '已确认'
     : version.claim_state === 'dismissed' ? '已驳回' : '审核状态未知';
@@ -37,7 +37,9 @@ export function versionMetadata(version: ArtifactVersion) {
     : version.basis === 'manual' ? '人工记录'
     : version.basis === 'model_inference' ? '模型推断'
     : version.basis === 'time_match' ? '时间匹配' : '依据未知';
-  const representation = version.representation === 'tool_reported_utf8' ? '工具报告的 UTF-8 文本' : '版本表示未知';
+  const representation = version.representation === 'tool_reported_utf8' ? '工具报告的 UTF-8 文本'
+    : version.representation === 'physical_file_bytes' ? '物理文件字节'
+    : version.representation === 'symlink_target_bytes' ? '链接目标字节' : '版本表示未知';
   return { phase, review, basis, representation };
 }
 
