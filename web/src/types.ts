@@ -51,6 +51,17 @@ export interface ResearchGraphData extends ResearchReading {
   claims: Claim[]; partial: boolean; total: number; intent: string;
   scope: Record<string, string> | null; scope_filter: boolean;
 }
+export interface PersonalView {
+  format_version: 1; reading: ResearchReading; show_candidates: boolean;
+  positions: Record<string, { x: number; y: number }>;
+  viewport: { x: number; y: number; zoom: number };
+  selected_versions: Record<string, number>;
+  process_group: { name: string; members: string[] } | null;
+}
+export interface PersonalViewRecord {
+  project_id: string; user: string; view_id: number | null; saved_at: string | null;
+  current_revision: number; view: PersonalView | null; unavailable_reason: string | null;
+}
 export interface QuestionRequest {
   project_id: string; text: string; scope: Record<string, string> | null;
   actor: string; expected_revision: number; request_id: string;

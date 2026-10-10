@@ -135,6 +135,10 @@ class Handler(BaseHTTPRequestHandler):
     def _dispatch(self, path: str, values: dict[str, str], store: Store) -> Any:
         if path == "/api/projects":
             return views.projects(store)
+        if path == "/api/view-state":
+            from rg.api.view_state import read
+
+            return read(store, values)
         if path == "/api/privacy":
             from rg.store.privacy import read
 
@@ -290,7 +294,9 @@ class Handler(BaseHTTPRequestHandler):
             raw = self.rfile.read(length)
             self._unread_body = False
             path = urlsplit(self.path).path
-            if path in {"/api/exports", "/api/privacy"} or path.startswith("/api/project-clear/"):
+            if path in {"/api/exports", "/api/privacy", "/api/view-state"} or path.startswith(
+                "/api/project-clear/"
+            ):
                 from rg.clients.record import unique_pairs
 
                 body = json.loads(raw, object_pairs_hook=unique_pairs)
@@ -332,6 +338,10 @@ class Handler(BaseHTTPRequestHandler):
                     from rg.store.privacy import update
 
                     result = update(store, body)
+                elif path == "/api/view-state":
+                    from rg.api.view_state import save
+
+                    result = save(store, body)
                 elif path == "/api/exports":
                     from rg.export.package import archive
 

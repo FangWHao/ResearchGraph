@@ -221,7 +221,7 @@ export function App() {
         {view === 'versions' && <VersionsView project={projectId} epoch={epoch} onError={onError} />}
         {view === 'exports' && <HistoryExportView project={project} projects={projects} onProject={setProjectId} workspace={historyExport} />}
         {view === 'fileRuns' && <Suspense fallback={<Loading />}><FileRunGraphView project={project} projects={projects} onProject={setProjectId} workspace={fileRuns} /></Suspense>}
-        {view === 'graph' && <Suspense fallback={<Loading />}><GraphView workspace={research} onClaim={openGraphClaim} /></Suspense>}
+        {view === 'graph' && <Suspense fallback={<Loading />}><GraphView workspace={research} onClaim={openGraphClaim} user={name} onUser={setName} authorized={authorized} epoch={epoch} onError={onError} /></Suspense>}
         {view === 'search' && <SearchView project={projectId} text={searchText} onEvidence={onEvidence} onError={onError} />}
       </>}
       <footer className="page-footer"><span>ResearchGraph · 可查证的研究决定史</span><span>审核、采用、证据、运行分别记录</span></footer>

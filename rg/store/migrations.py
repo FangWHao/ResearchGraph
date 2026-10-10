@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 23
+LATEST_VERSION = 24
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -427,6 +427,15 @@ MIGRATIONS = {
     23: (
         "ALTER TABLE source_files ADD COLUMN parent_observed_offset INTEGER NOT NULL DEFAULT 0 "
         "CHECK(parent_observed_offset>=0)",
+    ),
+    24: (
+        "ALTER TABLE view_states RENAME TO view_states_legacy",
+        "CREATE TABLE view_states(view_id INTEGER PRIMARY KEY AUTOINCREMENT,user TEXT,"
+        "project_id TEXT,payload TEXT,graph_revision INTEGER,updated_at TEXT)",
+        "INSERT INTO view_states(view_id,user,project_id,payload,graph_revision,updated_at) "
+        "SELECT rowid,user,project_id,payload,graph_revision,updated_at FROM view_states_legacy",
+        "DROP TABLE view_states_legacy",
+        "CREATE INDEX view_states_personal ON view_states(project_id,user,view_id)",
     ),
 }
 

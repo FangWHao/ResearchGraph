@@ -287,7 +287,9 @@ def test_schema23_upgrade_is_atomic_and_does_no_object_io(tmp_path, monkeypatch)
     with monkeypatch.context() as patch:
         patch.setattr(Store, "raw", lambda *a: pytest.fail("升级不应读原文"))
         with closing(Store(root)) as store:
-            assert store.db.execute("PRAGMA user_version").fetchone()[0] == 23
+            assert (
+                store.db.execute("PRAGMA user_version").fetchone()[0] == migrations.LATEST_VERSION
+            )
             assert offsets(store)[0][0] == 0
 
 
