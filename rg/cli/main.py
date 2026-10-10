@@ -182,6 +182,12 @@ def parser() -> argparse.ArgumentParser:
     health.add_argument("--limit", type=int, default=50, help="各队列与覆盖缺口页长")
     health.add_argument("--offset", type=int, default=0, help="提取任务与覆盖缺口偏移")
     health.add_argument("--pipeline-offset", type=int, default=0, help="关联与概览队列独立偏移")
+    parsers = commands.add_parser("parser-health", help="只读查看解析类型、工具版本和未观测记录")
+    parsers.add_argument("--project")
+    parsers.add_argument("--limit", type=int, default=20)
+    parsers.add_argument("--offset", type=int, default=0)
+    parsers.add_argument("--snapshot", type=int, help="续页使用第一页面的 snapshot_id")
+    parsers.add_argument("--expected-scope-key", help="续页使用第一页面的 scope_key")
     versions = commands.add_parser("versions", help="分页读取文件版本与来源，不读取当前文件正文")
     versions.add_argument("--project")
     versions.add_argument("--path", help="精确匹配已记录的绝对路径")
@@ -600,6 +606,14 @@ def run(args: argparse.Namespace, store: Store) -> object:
         return store.health(
             args.project, args.day, args.daily_budget, args.limit, args.offset, args.pipeline_offset
         )
+    if args.command == "parser-health":
+        from rg.query.parsers import query
+
+        return query(store, {
+            key: str(getattr(args, key))
+            for key in ("project", "limit", "offset", "snapshot", "expected_scope_key")
+            if getattr(args, key) is not None
+        })
     if args.command == "versions":
         from rg.artifacts.views import versions
 
@@ -888,6 +902,7 @@ def main() -> None:
             readonly=args.command
             in {
                 "mcp",
+                "parser-health",
                 "context",
                 "client-pack",
                 "versions",

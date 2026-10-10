@@ -148,6 +148,10 @@ class Handler(BaseHTTPRequestHandler):
             return qa.options(store, values["project"], self.server.qa_config)
         if path == "/api/health":
             return views.health(store, values, self.server.daily_budget)
+        if path == "/api/parser-health":
+            from rg.query.parsers import query
+
+            return query(store, values)
         if path == "/api/versions":
             from rg.artifacts.views import versions
 

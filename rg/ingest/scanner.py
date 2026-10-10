@@ -12,7 +12,7 @@ from rg.store.database import Store, now
 from rg.store.locking import exclusive
 from rg.store.objects import digest
 
-PARSER_VERSION = "1"
+PARSER_VERSION = "2"
 
 
 def _session(store: Store, path: Path, tool: str, project_id: str | None) -> int | None:
@@ -242,16 +242,25 @@ def _scan_file(
                 counts["tail_fragments"] += 1
                 break
             sha = store.objects.put(line)
+            status = "parsed"
             try:
                 record = json.loads(line)
-                if not isinstance(record, dict):
-                    raise ValueError("记录必须是对象")
-                events = parse(tool, record)
-            except (ValueError, UnicodeError, TypeError, AttributeError):
+            except (ValueError, UnicodeError):
                 record = {}
+                status = "bad_json"
+            if not isinstance(record, dict):
+                record = {}
+                status = "invalid_record"
+            try:
+                events = parse(tool, record) if status == "parsed" else []
+            except (ValueError, UnicodeError, TypeError, AttributeError):
+                status = "parser_error"
+                events = []
+            if status != "parsed":
                 events = [Parsed("unknown", excluded="bad_json")]
             end = offset + len(line)
             with store.transaction() as db:
+                event_ids: list[int] = []
                 seq = db.execute(
                     "SELECT coalesce(max(seq), 0) FROM raw_events WHERE session_pk = ?", (session,)
                 ).fetchone()[0]
@@ -299,6 +308,7 @@ def _scan_file(
                     event_id = cursor.lastrowid
                     if event_id is None:
                         raise RuntimeError("未获得事件 ID")
+                    event_ids.append(event_id)
                     if not alias and not event.excluded:
                         _mirror(db, session, event_id, record, event)
                         if event.kind in {"user_msg", "assistant_msg", "plan_update"}:
@@ -316,6 +326,9 @@ def _scan_file(
                         )
                     counts["events"] += 1
                     counts["aliases" if alias else event.kind] += 1
+                from rg.ingest.catalog import append
+
+                append(db, file_id, PARSER_VERSION, tool, record, events, event_ids, status)
                 if fault:
                     fault()
                 prefix_length = min(end, 4096)

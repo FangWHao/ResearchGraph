@@ -438,6 +438,21 @@ uv run rg --data-dir /tmp/rg-demo overview --project PROJECT_ID \
 
 ## 提取健康与每日用量
 
+解析类型与工具版本可单独只读查询，界面的采集健康页使用同一接口：
+
+```bash
+uv run rg --data-dir /tmp/rg-demo parser-health --project PROJECT_ID --limit 20
+# 后续页使用第一页返回的 snapshot_id、scope_key 和 next_offset。
+uv run rg --data-dir /tmp/rg-demo parser-health --project PROJECT_ID --limit 20 \
+  --snapshot SNAPSHOT_ID --expected-scope-key SCOPE_KEY --offset NEXT_OFFSET
+```
+
+`GET /api/parser-health` 需要本机访问令牌，参数与命令一致。每条完整物理日志行追加一次类型观测，内容块出现次数与日志行数分开；副本仍算另一次实际遇到。类型分组保留解析器版本、工具版本、版本来源、未知标记及首次／最近原文事件，可分页查看和跳回已保存原文。已识别只表示解析器识别类型或读取其文字，不表示提取覆盖完整或研究结论确认。
+
+Claude 工具版本只取顶层 `version`，Codex 只取 `session_meta.payload.cli_version`；缺字段只允许继承同一物理文件实例已有的有效声明，显式非法声明清空该上下文。轮换、复制文件及旧库升级均不借用邻近版本；旧记录显示未观测。迁移 19 不读旧日志、不补造统计。命令只读打开当前版本的库；旧库应先经正常导入或扫描入口升级。续页固定观测截止，后来追加不挤动页面；已登记记录的项目归属改变时返回冲突，需重新读取第一页。账本随数据库备份，纳入管理目录的整项目清除。
+
+见[解析账本验收](docs/acceptance/解析器类型与版本账本验收_20261010.md)及[界面验收](docs/acceptance/解析器健康界面验收_20261010.md)。
+
 ```bash
 uv run rg --data-dir /tmp/rg-demo health --project PROJECT_ID \
   --day 2026-10-09 --daily-budget 50000 --limit 20 --offset 0

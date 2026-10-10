@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 18
+LATEST_VERSION = 19
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -345,6 +345,22 @@ MIGRATIONS = {
     ),
     18: (
         "ALTER TABLE source_roots ADD COLUMN git_metadata TEXT NOT NULL DEFAULT '{}'",
+    ),
+    19: (
+        "CREATE TABLE parser_records(record_id INTEGER PRIMARY KEY,event_id INTEGER NOT NULL "
+        "UNIQUE REFERENCES raw_events,file_instance_id INTEGER NOT NULL REFERENCES source_files,"
+        "parser_version TEXT NOT NULL,tool_version TEXT,version_basis TEXT NOT NULL "
+        "CHECK(version_basis IN ('direct_record','file_context','unknown','invalid')),"
+        "status TEXT NOT NULL CHECK(status IN "
+        "('parsed','bad_json','invalid_record','parser_error')),"
+        "types TEXT NOT NULL CHECK(json_valid(types)),unknown_events INTEGER NOT NULL "
+        "CHECK(unknown_events>=0),unknown_types INTEGER NOT NULL CHECK(unknown_types>=0),"
+        "recorded_at TEXT NOT NULL)",
+        "CREATE INDEX parser_records_file ON parser_records(file_instance_id,record_id)",
+        "CREATE TRIGGER parser_record_no_update BEFORE UPDATE ON parser_records BEGIN "
+        "SELECT RAISE(ABORT,'parser record is append-only'); END",
+        "CREATE TRIGGER parser_record_no_delete BEFORE DELETE ON parser_records BEGIN "
+        "SELECT RAISE(ABORT,'parser record is append-only'); END",
     ),
 }
 

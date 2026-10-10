@@ -4,6 +4,7 @@ import { DateText, Empty, Loading } from './components';
 import { ExtractionQueuePanel } from './ExtractionQueuePanel';
 import { PipelineQueuePanel } from './PipelineQueuePanel';
 import { ArtifactHealthPanel } from './ArtifactHealthPanel';
+import { ParserHealthPanel } from './ParserHealthPanel';
 import { healthCount, healthMetrics, percentage } from './health';
 import type { HealthMetric } from './health';
 import type { HealthData } from './types';
@@ -16,11 +17,18 @@ function Metrics({ items }: { items: HealthMetric[] }) {
     </div>)}</dl>;
 }
 
-export function HealthView({ project, epoch, onEvidence, onError, onVersions }: {
+type HealthViewProps = {
   project: string; epoch: number; onEvidence: (target: { event_id: number }) => void;
   onError: (error: unknown) => void;
   onVersions?: () => void;
-}) {
+};
+
+export function HealthView(props: HealthViewProps) {
+  return <><ParserHealthPanel project={props.project} epoch={props.epoch}
+    onEvidence={props.onEvidence} onError={props.onError} /><HealthContent {...props} /></>;
+}
+
+function HealthContent({ project, epoch, onEvidence, onError, onVersions }: HealthViewProps) {
   const [response, setResponse] = useState<{ key: string; data: HealthData } | null>(null);
   const [pages, setPages] = useState({ project, offset: 0, pipelineOffset: 0 });
   const [retry, setRetry] = useState(0);
