@@ -17,11 +17,19 @@ def evidence(store: Store, event_id: int) -> dict[str, Any]:
             "r.requested_at,substr(r.command,1,8000) AS command,"
             "coalesce(length(cast(r.command AS BLOB)),0) AS command_total_bytes "
             "FROM runs r LEFT JOIN run_observations o USING(run_id) "
-            "WHERE r.request_event_id=? OR o.event_id=? ORDER BY r.run_id LIMIT 20",
-            (event_id, event_id),
+            "WHERE r.request_event_id=? OR o.event_id=? OR EXISTS(SELECT 1 FROM run_manifests m "
+            "WHERE m.run_id=r.run_id AND m.project_id=r.project_id AND m.evidence_event_id=?) "
+            "ORDER BY r.run_id LIMIT 20",
+            (event_id, event_id, event_id),
         )
     ]
     for run in runs:
+        from rg.query.reader import Reader
+        from rg.query.runs import manifests
+
+        run["manifests"] = manifests(
+            Reader(store, run["project_id"], {}), run["run_id"], values={"limit": 20}
+        )
         if isinstance(run["command"], str):
             run["command"] = run["command"].encode()[:8000].decode("utf-8", errors="ignore")
         run["command_truncated"] = len((run["command"] or "").encode()) < run["command_total_bytes"]
@@ -71,8 +79,9 @@ def evidence(store: Store, event_id: int) -> dict[str, Any]:
     run_total = store.db.execute(
         "SELECT count(DISTINCT r.run_id) FROM runs r "
         "LEFT JOIN run_observations o USING(run_id) "
-        "WHERE r.request_event_id=? OR o.event_id=?",
-        (event_id, event_id),
+        "WHERE r.request_event_id=? OR o.event_id=? OR EXISTS(SELECT 1 FROM run_manifests m "
+        "WHERE m.run_id=r.run_id AND m.project_id=r.project_id AND m.evidence_event_id=?)",
+        (event_id, event_id, event_id),
     ).fetchone()[0]
     derivation = store.db.execute(
         "SELECT state,error,updated_at FROM l1_derivations WHERE event_id=?", (event_id,)

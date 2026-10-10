@@ -99,6 +99,8 @@ export interface ArtifactObservation {
 export interface FileVersionRecord extends Partial<ArtifactVersion> {
   observations?: Partial<ArtifactObservation>[]; observations_total?: number;
   observations_partial?: boolean;
+  occurred_at?: string | null; recorded_at?: string | null; provenance_warnings?: string[];
+  observation_time_basis?: string;
 }
 export interface VersionsPage {
   revision?: number; versions?: FileVersionRecord[]; total?: number;
@@ -123,7 +125,38 @@ export interface L1Run {
   request_event_id: number | null; requested_at: string | null;
   started_at: string | null; ended_at: string | null;
   observations: RunObservation[]; observations_partial: boolean;
+  manifests?: RunManifestPage | null;
 }
+export type ManifestRole = 'inputs' | 'scripts' | 'patches' | 'environment' | 'outputs';
+export interface ManifestReported {
+  inputs: string[] | null; scripts: string[] | null; patches: string[] | null;
+  environment: string[] | null; outputs: string[] | null; parameters: Record<string, unknown> | null;
+  seed: string | null; started_at: string | null; ended_at: string | null;
+  exit_code: number | null; occurred_at: string | null;
+}
+export interface RunManifestIO {
+  io_id: string; role: ManifestRole; ordinal: number; direction: 'in' | 'out';
+  requested_version_id: string; version: FileVersionRecord | null;
+  resolution: 'visible_version' | 'version_unknown_or_not_visible'; resolved_version_id: string | null;
+  association_state: 'reported_only'; claim_state: 'candidate'; basis: 'direct_record';
+}
+export interface RunManifestIOPage {
+  items: RunManifestIO[]; total: number; offset: number; next_offset: number | null; partial: boolean;
+}
+export interface ManifestSnapshot {
+  snapshot_id: number; root_id: string; taken_at: string | null; recorded_at: string | null;
+  shadow_commit: string | null; head_commit: string | null; branch: string | null;
+  skipped: number | boolean; async_race: number | boolean; dirty: number | boolean;
+}
+export interface RunManifest {
+  request_id: string; run_id: string; project_id: string; attempt_id: string | null; snapshot_id: number | null;
+  evidence_event_id: number; scope: Record<string, string> | null; occurred_at: string | null; recorded_at: string;
+  claim_state: 'candidate'; basis: 'direct_record'; reported: ManifestReported; io: RunManifestIOPage;
+  binding_state: 'native_request' | 'native_request_ambiguous' | 'native_run_unknown_or_not_visible';
+  declared_snapshot: ManifestSnapshot | null; reported_exit_conflicts_with_native: boolean;
+  unknown_fields: string[]; actual_io_completeness: 'unknown';
+}
+export interface RunManifestPage { items: RunManifest[]; total: number; offset: number; next_offset: number | null }
 export interface EditDiff {
   available: boolean; format?: 'reported_versions' | 'patch_only'; text?: string;
   complete_versions?: boolean; gap: string | null; reason: string;

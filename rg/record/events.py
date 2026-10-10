@@ -12,6 +12,7 @@ RECEIPTS = {
     "question": "explicit_records",
     "decide": "decision_requests",
     "resolve": "decision_resolutions",
+    "manifest": "run_manifests",
 }
 
 

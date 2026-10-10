@@ -65,7 +65,7 @@ uv run rg --data-dir /tmp/rg-demo mcp --project PROJECT_ID
 
 工具参数 `occurred_until` 和 `known_until` 分别限定发生时间与已记录时间，均需带时区；未指定时使用本次读取时间。历史审核、人工修改和原文引用也受已知时间约束。分页续读应复用返回的两个截止时间，可带 `expected_revision`，图变化时重新开始；候选、时间未知、同刻冲突和未知范围不会推断为当前采用。对象状态从整个符合截止时间的历史计算，再分页展示，不受界面图的 2000 条限制。
 
-`search` 默认检索 claims，`source=events` 可检索原文正文的字面量预览。原始事件没有统一分析范围，带 scope 的检索使用 claims。引用前缀 `C`、`S`、`E`、`V:` 分别表示记录、片段、事件和文件观察；`evidence` 的参数对应 `claim_id`、`span_id`、`event_id`、`version_id`，一次指定一种。原文窗口带实际字节位置、窗口摘要和下一字节偏移；源文件删除后仍读已复制原件。文件观察保留原算法及候选状态，不读取当前文件补写旧版本。
+`search` 默认检索 claims，`source=events` 可检索原文正文的字面量预览。原始事件没有统一分析范围，带 scope 的检索使用 claims。引用前缀 `C`、`S`、`E`、`V:`、`R:` 分别表示记录、片段、事件、文件观察和运行；`evidence` 的参数对应 `claim_id`、`span_id`、`event_id`、`version_id`、`run_id`，一次指定一种。原文窗口带实际字节位置、窗口摘要和下一字节偏移；源文件删除后仍读已复制原件。文件观察保留原算法及候选状态，不读取当前文件补写旧版本。
 
 支持新版 MCP 2026-07-28 的逐请求元数据和旧版初始化协议；详情与官方客户端复现命令见 [只读 MCP 与状态卡验收](docs/acceptance/M4只读MCP与状态卡验收_20261010.md)。本轮没有修改个人客户端设置；候选写工具 `propose_note` 仍等待 note 类型的明确约定。
 
@@ -229,7 +229,26 @@ uv run rg --data-dir /tmp/rg-demo hash-files --watch
 uv run rg --data-dir /tmp/rg-demo versions --project PROJECT_ID --limit 25 --offset 0
 ```
 
-快照版本保留 git-sha1、原始字节、权限和链接目标文字；不跟随链接。后台大文件版本为 current_file/sha256，仅证明实际读取窗口中的当前普通文件，snapshot_id 保持空；发现它的快照只提供线索，不证明当时字节一致或实际用于运行。复用缓存时保留原完整读取窗口与观察来源，设备、inode、模式、大小、mtime、ctime 是变化提示，不是内容摘要。内容变化后重新读取；读取中发生变化则作废并等待五秒，文件缺失或非普通文件留下失败状态，可用 --retry-failed 明确重试。健康统计中的 running 不证明进程存活，当前版本、工具报告与旧运行 I/O 不互相补写。物理版本可通过 versions CLI/HTTP 及 MCP 双时间入口查看；与研究对象和实际运行输入输出的完整关联后续落实。完整证据见[后台摘要验收](docs/acceptance/M2物理文件版本与后台摘要验收_20261010.md)与[版本界面验收](docs/acceptance/前端物理文件版本验收_20261010.md)。
+快照版本保留 git-sha1、原始字节、权限和链接目标文字；不跟随链接。后台大文件版本为 current_file/sha256，仅证明实际读取窗口中的当前普通文件，snapshot_id 保持空；发现它的快照只提供线索，不证明当时字节一致或实际用于运行。复用缓存时保留原完整读取窗口与观察来源，设备、inode、模式、大小、mtime、ctime 是变化提示，不是内容摘要。内容变化后重新读取；读取中发生变化则作废并等待五秒，文件缺失或非普通文件留下失败状态，可用 --retry-failed 明确重试。健康统计中的 running 不证明进程存活，当前版本、工具报告与旧运行 I/O 不互相补写。物理版本可通过 versions CLI/HTTP 及 MCP 双时间入口查看；显式运行清单可报告与尝试、文件版本的关联，实际输入输出的完整追踪仍待落实。完整证据见[后台摘要验收](docs/acceptance/M2物理文件版本与后台摘要验收_20261010.md)与[版本界面验收](docs/acceptance/前端物理文件版本验收_20261010.md)。
+
+## 离线运行清单
+
+已登记运行或明确的待到运行 ID，可由本地程序用 `record-run` 追加清单；不需要人工确认。入口不执行命令、不打开声明文件、不联网，也不覆盖原生请求或执行器结果。清单原件、候选报告、I/O 行和 UUID 回执同事务提交；重试同一 UUID 和意图返回原回执，换内容或复用人工操作 UUID 会冲突。
+
+```bash
+uv run rg --data-dir /tmp/rg-demo record-run --project PROJECT_ID --input /tmp/run-manifest.json
+uv run rg --data-dir /tmp/rg-demo run-evidence --project PROJECT_ID --run RUN_ID
+uv run rg --data-dir /tmp/rg-demo run-evidence --project PROJECT_ID --run RUN_ID \
+  --manifest-id REQUEST_UUID --io-offset 100 --expected-revision REVISION
+```
+
+清单为有限 UTF8 JSON，文件最多 65536 字节，包含来源元数据的完整原件也受此上限约束。必填 `request_id` 标准 UUID 与 `run_id`；可选 `attempt_id`、`snapshot_id`、`scope`、`parameters`、`seed`、`started_at`、`ended_at`、`exit_code`、`occurred_at`、`expected_revision`。`inputs`、`scripts`、`patches`、`environment`、`outputs` 均为明确版本 ID 列表，合计最多 256 项，保留重复和顺序。省略或 `null` 表示未报告，`[]` 表示明确报告空列表；实际 I/O 完整性仍为未知。种子保存为十进制字符串，避免浏览器丢失整数精度。时间需带时区，未知发生时间保持空。
+
+清单总是 `candidate/direct_record`：直接记录的是本地报告，不能据此确认实际读取、完整环境或运行成功。已存在的运行、尝试、版本和声明快照核对项目；缺失的运行和版本 ID 可先保存，后来只在读取视图中按同项目精确 ID 解析，不改原观察。参数、种子和报告退出码与原生事实分开；退出码矛盾单独显示。绑定明确运行请求也不构成 I/O 使用证明。
+
+`research.evidence(run_id)`、`run-evidence` 和受认证的 `GET /api/run-evidence?project=PROJECT_ID&run_id=RUN_ID` 共用双时间读取：原生状态从截止内的不可变执行观察重新计算，清单与来源原件分别核对截止。`limit/offset` 对清单及原生观察分页，`manifest_id` 可限定一份清单，`io_offset` 对每份清单按 100 项续读；`scope` 只筛选报告范围，不给原生运行补造分析范围。新增原生运行、执行观察或清单会改变修订号，续页提交 `expected_revision`；HTTP 冲突返回 409。版本详情与尝试对象可反查候选报告的运行关联。
+
+本地证据页为已有原生运行把执行事实与候选清单分开展示，保留未知版本、部分列表和声明快照缺口；续页先取得固定修订，冲突后刷新重新读取。没有原生运行的清单仍可通过回执原文、CLI、MCP 或 HTTP 读取，界面暂不创建独立运行卡。详见[运行清单验收](docs/acceptance/M2运行清单与双时间关联验收_20261010.md)。
 
 本机公开源码的 20 次手工引擎基准 p95 为 1426 ms，全部成功；模式仍为异步。157 个路径的影子对象检查未发现实际密钥或私有目录，用户 index 一致。这是引擎基准，尚未验收真实 Claude/Codex 客户端整条钩子耗时。`health.snapshots` 区分 skipped、partial、async_race 和旧元数据缺失；日志错误类名没有被当成完整失败账本。备份避开影子仓库写入，保留队列链接而不读取其目标。完整证据见 [快照与钩子验收](docs/acceptance/M2快照与钩子验收_20261009.md)。
 

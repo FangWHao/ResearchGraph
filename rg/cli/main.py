@@ -66,6 +66,20 @@ def parser() -> argparse.ArgumentParser:
     client_record.add_argument("kind", choices=["question", "decide"])
     client_record.add_argument("--project", required=True)
     client_record.add_argument("--input", required=True, help="UTF8 JSON 文件路径，- 表示标准输入")
+    run_record = commands.add_parser("record-run", help="离线登记候选运行清单，不执行命令")
+    run_record.add_argument("--project", required=True)
+    run_record.add_argument("--input", required=True, help="UTF8 JSON 文件，- 表示标准输入")
+    run_evidence = commands.add_parser("run-evidence", help="只读运行事实与候选 I/O 清单")
+    run_evidence.add_argument("--project", required=True)
+    run_evidence.add_argument("--run", required=True)
+    run_evidence.add_argument("--limit", type=int, default=20)
+    run_evidence.add_argument("--offset", type=int, default=0)
+    run_evidence.add_argument("--io-offset", type=int, default=0)
+    run_evidence.add_argument("--manifest-id")
+    run_evidence.add_argument("--known-until")
+    run_evidence.add_argument("--occurred-until")
+    run_evidence.add_argument("--scope", action="append", default=[])
+    run_evidence.add_argument("--expected-revision", type=int)
     hook_config = commands.add_parser("hook-config", help="生成钩子示例与根目录清单，不安装钩子")
     hook_config.add_argument("--output", type=Path, required=True)
     snapshot = commands.add_parser("snapshot", help="手工拍影子快照，或实测 p95 决定钩子模式")
@@ -241,6 +255,32 @@ def parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace, store: Store) -> object:
+    if args.command == "record-run":
+        from rg.record.manifest import record
+
+        return record(store, args.project, args.manifest_body)
+    if args.command == "run-evidence":
+        from rg.mcp.tools import ToolService
+
+        values = {
+            key: getattr(args, key)
+            for key in (
+                "limit",
+                "offset",
+                "io_offset",
+                "manifest_id",
+                "known_until",
+                "occurred_until",
+                "expected_revision",
+            )
+            if getattr(args, key) is not None
+        }
+        scope = parse_scope(args.scope)
+        if scope is not None:
+            values["scope"] = scope
+        return ToolService(store, args.project).call(
+            "research.evidence", values | {"run_id": args.run}
+        )["content"][0]["text"]
     if args.command == "client-pack":
         from rg.clients.package import package
 
@@ -626,6 +666,14 @@ def main() -> None:
     args = cli.parse_args()
     store = None
     try:
+        if args.command == "record-run":
+            from rg.record.manifest_schema import read
+
+            if args.input == "-":
+                args.manifest_body = read(sys.stdin.buffer)
+            else:
+                with Path(args.input).open("rb") as stream:
+                    args.manifest_body = read(stream)
         if args.command == "client-record":
             from rg.clients.record import read_request
 
@@ -636,7 +684,7 @@ def main() -> None:
                     args.client_body = read_request(stream, args.kind)
         store = Store(
             args.data_dir,
-            readonly=args.command in {"mcp", "context", "client-pack", "versions"}
+            readonly=args.command in {"mcp", "context", "client-pack", "versions", "run-evidence"}
             or (args.command == "ask" and args.retrieve_only),
         )
         if args.command == "mcp":
@@ -656,7 +704,7 @@ def main() -> None:
         result = run(args, store)
         print(
             result
-            if args.command in {"context", "ask"}
+            if args.command in {"context", "ask", "run-evidence"}
             else json.dumps(result, ensure_ascii=False, indent=2)
         )
     except (ValueError, RuntimeError, OSError, sqlite3.Error) as error:

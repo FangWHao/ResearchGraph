@@ -248,6 +248,15 @@ class Store:
             ).fetchone()
         )
         result["l1"] = {
+            "candidate_manifests": self.db.execute(
+                "SELECT count(*) FROM run_manifests WHERE (? IS NULL OR project_id=?)",
+                (project, project),
+            ).fetchone()[0],
+            "reported_io": self.db.execute(
+                "SELECT count(*) FROM run_io i JOIN run_manifests m ON i.manifest_id=m.request_id "
+                "WHERE (? IS NULL OR m.project_id=?)",
+                (project, project),
+            ).fetchone()[0],
             "runs": self.db.execute(
                 "SELECT count(*) FROM runs WHERE (? IS NULL OR project_id=?)", (project, project)
             ).fetchone()[0],

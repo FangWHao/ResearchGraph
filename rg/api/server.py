@@ -144,6 +144,10 @@ class Handler(BaseHTTPRequestHandler):
             from rg.artifacts.views import versions
 
             return versions(store, values)
+        if path == "/api/run-evidence":
+            from rg.api.runs import evidence
+
+            return evidence(store, values)
         if path == "/api/claims":
             return views.claims(store, values)
         if match := re.fullmatch(r"/api/claims/([1-9][0-9]*)", path):
@@ -183,6 +187,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, result)
             except views.NotFound as error:
                 self._json(HTTPStatus.NOT_FOUND, {"error": str(error)})
+            except ConflictError as error:
+                self._json(HTTPStatus.CONFLICT, {"error": str(error)})
             except (ValueError, UnicodeError) as error:
                 self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
             except OSError:

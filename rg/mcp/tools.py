@@ -64,13 +64,17 @@ TOOLS = [
     ),
     definition(
         "evidence",
-        "引用 C=记录、S=片段、E=事件、V:=版本；版本观察按双截止分页，缓存保留原读取窗口。"
+        "引用 C=记录、S=片段、E=事件、V:=版本、R:=运行；运行事实和候选清单分别显示。"
+        "版本观察按双截止分页，缓存保留原读取窗口。"
         "片段偏移相对引用，事件偏移相对原件。",
         {
             "claim_id": {"type": "integer", "minimum": 1},
             "span_id": {"type": "integer", "minimum": 1},
             "event_id": {"type": "integer", "minimum": 1},
             "version_id": {"type": "string", "minLength": 1, "maxLength": 120},
+            "run_id": {"type": "string", "minLength": 1, "maxLength": 120},
+            "manifest_id": {"type": "string", "pattern": "^[0-9a-f-]{36}$"},
+            "io_offset": {"type": "integer", "minimum": 0, "maximum": 2147483647},
             "byte_offset": {"type": "integer", "minimum": 0},
             "max_bytes": {"type": "integer", "minimum": 4, "maximum": 24000},
         },
@@ -99,12 +103,12 @@ TOOLS[2]["inputSchema"]["oneOf"] = [
         "not": {
             "anyOf": [
                 {"required": [other]}
-                for other in ("claim_id", "span_id", "event_id", "version_id")
+                for other in ("claim_id", "span_id", "event_id", "version_id", "run_id")
                 if other != key
             ]
         },
     }
-    for key in ("claim_id", "span_id", "event_id", "version_id")
+    for key in ("claim_id", "span_id", "event_id", "version_id", "run_id")
 ]
 
 
@@ -137,11 +141,14 @@ class ToolService:
             "max_bytes",
             "limit",
             "offset",
+            "io_offset",
             "budget",
             "expected_revision",
         ):
             if key in arguments and type(arguments[key]) is not int:
                 raise ValueError("ID、分页、窗口和预算需为整数")
+        if any(k in arguments for k in ("manifest_id", "io_offset")) and "run_id" not in arguments:
+            raise ValueError("清单选择与 I/O 偏移只适用于运行证据")
         with self.store.snapshot():
             if "expected_revision" in arguments and arguments["expected_revision"] != (
                 self.store.revision()

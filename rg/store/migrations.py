@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 14
+LATEST_VERSION = 15
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -286,6 +286,45 @@ MIGRATIONS = {
         "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
         "CREATE TRIGGER workspace_snapshot_revision AFTER INSERT ON workspace_snapshots BEGIN "
         "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
+    ),
+    15: (
+        "CREATE TABLE run_manifests(request_id TEXT PRIMARY KEY,project_id TEXT NOT NULL "
+        "REFERENCES projects,run_id TEXT NOT NULL,attempt_id TEXT REFERENCES "
+        "entities,snapshot_id INTEGER REFERENCES workspace_snapshots,evidence_event_id INTEGER "
+        "NOT NULL UNIQUE REFERENCES raw_events,intent_sha256 TEXT NOT NULL,scope TEXT,"
+        "payload TEXT NOT NULL,occurred_at TEXT,recorded_at TEXT NOT NULL,"
+        "claim_state TEXT NOT NULL CHECK(claim_state='candidate'),"
+        "basis TEXT NOT NULL CHECK(basis='direct_record'))",
+        "CREATE INDEX run_manifests_run ON run_manifests(run_id,recorded_at)",
+        "CREATE TRIGGER run_manifest_no_update BEFORE UPDATE ON run_manifests BEGIN "
+        "SELECT RAISE(ABORT,'run manifest is append-only'); END",
+        "CREATE TRIGGER run_manifest_no_delete BEFORE DELETE ON run_manifests BEGIN "
+        "SELECT RAISE(ABORT,'run manifest is append-only'); END",
+        "CREATE TRIGGER run_manifest_revision AFTER INSERT ON run_manifests BEGIN "
+        "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
+        "CREATE TRIGGER native_run_revision AFTER INSERT ON runs BEGIN "
+        "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
+        "CREATE TRIGGER native_run_observation_revision AFTER INSERT ON run_observations BEGIN "
+        "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
+        "ALTER TABLE run_io ADD COLUMN io_id TEXT",
+        "ALTER TABLE run_io ADD COLUMN manifest_id TEXT REFERENCES run_manifests(request_id)",
+        "ALTER TABLE run_io ADD COLUMN requested_version_id TEXT",
+        "ALTER TABLE run_io ADD COLUMN role TEXT",
+        "ALTER TABLE run_io ADD COLUMN ordinal INTEGER",
+        "ALTER TABLE run_io ADD COLUMN claim_state TEXT CHECK(claim_state IS NULL OR "
+        "claim_state='candidate')",
+        "ALTER TABLE run_io ADD COLUMN evidence_event_id INTEGER REFERENCES raw_events",
+        "ALTER TABLE run_io ADD COLUMN occurred_at TEXT",
+        "ALTER TABLE run_io ADD COLUMN recorded_at TEXT",
+        "CREATE UNIQUE INDEX run_io_identity ON run_io(io_id) WHERE io_id IS NOT NULL",
+        "CREATE UNIQUE INDEX run_io_manifest_position ON run_io(manifest_id,role,ordinal) "
+        "WHERE manifest_id IS NOT NULL",
+        "CREATE TRIGGER manifest_io_no_update BEFORE UPDATE ON run_io "
+        "WHEN OLD.manifest_id IS NOT NULL BEGIN "
+        "SELECT RAISE(ABORT,'manifest IO is append-only'); END",
+        "CREATE TRIGGER manifest_io_no_delete BEFORE DELETE ON run_io "
+        "WHEN OLD.manifest_id IS NOT NULL BEGIN "
+        "SELECT RAISE(ABORT,'manifest IO is append-only'); END",
     ),
 }
 

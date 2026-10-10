@@ -7,12 +7,14 @@ import json
 import tempfile
 from importlib.metadata import version
 from pathlib import Path
+from uuid import uuid4
 
 from mcp import Client, StdioServerParameters
 
 from rg.artifacts.worker import Worker
 from rg.ingest.spool import consume, register
 from rg.query.tokenizer import LocalCounter
+from rg.record.manifest import record
 from rg.snapshot.capture import MAX_FILE_BYTES, capture
 from rg.store.database import Store
 from tests.golden.test_links_overview import add_object
@@ -45,6 +47,16 @@ async def check() -> None:
             assert Worker(store).run()["done"] == 2
             physical = [dict(row) for row in store.db.execute("SELECT * FROM artifact_versions")]
             assert len(physical) == 2 and all(r["evidence_event_id"] is None for r in physical)
+            manifest_id = str(uuid4())
+            record(
+                store,
+                project,
+                {
+                    "request_id": manifest_id,
+                    "run_id": "synthetic-report-run",
+                    "inputs": [r["version_id"] for r in physical],
+                },
+            )
             before = list(store.db.iterdump())
             parameters = StdioServerParameters(
                 command=str(root / ".venv/bin/rg"),
@@ -56,13 +68,22 @@ async def check() -> None:
                 async with Client(parameters, mode=mode) as client:
                     listed = await client.list_tools()
                     assert len(listed.tools) == 5
-                    for name, arguments in [
-                        ("search", {"query": "方法甲"}),
-                        ("node", {"entity_id": entity}),
-                        ("history", {"entity_id": entity}),
-                        ("evidence", {"event_id": event, "max_bytes": 100}),
-                        ("context", {"budget": 6000}),
-                    ] + [("evidence", {"version_id": r["version_id"]}) for r in physical]:
+                    for name, arguments in (
+                        [
+                            ("search", {"query": "方法甲"}),
+                            ("node", {"entity_id": entity}),
+                            ("history", {"entity_id": entity}),
+                            ("evidence", {"event_id": event, "max_bytes": 100}),
+                            ("context", {"budget": 6000}),
+                        ]
+                        + [("evidence", {"version_id": r["version_id"]}) for r in physical]
+                        + [
+                            (
+                                "evidence",
+                                {"run_id": "synthetic-report-run", "manifest_id": manifest_id},
+                            )
+                        ]
+                    ):
                         result = await client.call_tool("research." + name, arguments)
                         assert not result.is_error
                         block = result.content[0]
@@ -73,6 +94,15 @@ async def check() -> None:
                         if "version_id" in arguments:
                             assert payload["version"]["claim_state"] == "candidate"
                             assert payload["observations"]["total"] == 1
+                            assert (
+                                payload["reported_runs"]["items"][0]["claim_state"] == "candidate"
+                            )
+                        if "run_id" in arguments:
+                            assert payload["run"] is None
+                            report = payload["manifests"]["items"][0]
+                            assert report["claim_state"] == "candidate"
+                            assert report["actual_io_completeness"] == "unknown"
+                            assert report["io"]["total"] == 2
                         if name == "context":
                             assert {r["version_id"] for r in physical} <= {
                                 r.get("version_id") for r in payload["items"]
@@ -94,8 +124,10 @@ async def check() -> None:
                         "queries": calls,
                         "logical_database_unchanged": True,
                         "physical_versions": len(physical),
+                        "candidate_manifests": 1,
+                        "reported_io": 2,
                         "inferred_run_io": store.db.execute(
-                            "SELECT count(*) FROM run_io"
+                            "SELECT count(*) FROM run_io WHERE manifest_id IS NULL"
                         ).fetchone()[0],
                     }
                 )

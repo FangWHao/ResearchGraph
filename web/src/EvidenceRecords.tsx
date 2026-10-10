@@ -2,6 +2,7 @@ import { DateText } from './DateText';
 import { editPresentation, gapText, runStateText, versionMetadata } from './l1';
 import type { ArtifactVersion, EvidenceTarget, L1Evidence } from './types';
 import './l1.css';
+import { RunManifests } from './RunManifests';
 
 function EventLink({ id, label, current, onOpen }: {
   id: number | null; label: string; current: number; onOpen?: (target: EvidenceTarget) => void;
@@ -40,8 +41,8 @@ export function VersionRecords({ versions, partial }: { versions: ArtifactVersio
   </section>;
 }
 
-export function EvidenceRecords({ data, current, onOpen }: {
-  data: L1Evidence | null | undefined; current: number; onOpen?: (target: EvidenceTarget) => void;
+export function EvidenceRecords({ data, current, onOpen, onError }: {
+  data: L1Evidence | null | undefined; current: number; onOpen?: (target: EvidenceTarget) => void; onError?: (error: unknown) => void;
 }) {
   if (!data) return <section className="l1-section" aria-label="运行与编辑证据"><h4>运行与编辑证据</h4>
     <p className="missing-note">接口未提供运行与编辑映射，相关证据是否存在未知。</p></section>;
@@ -58,7 +59,6 @@ export function EvidenceRecords({ data, current, onOpen }: {
     <section className="l1-section" aria-label="运行证据">
       <h4>运行证据 <span>{data.runs.length} 条当前返回记录</span></h4>
       <p className="l1-notice">以下状态来自会话中的原生工具观测。已有启动记录不证明进程现在仍在运行，缺少结束记录不等于失败；入库时间不作为发生时间。</p>
-      <p className="missing-note">运行输入、输出版本未记录，无法据此得到完整复现清单。</p>
       {data.runs_partial === true && <p className="missing-note">运行记录超过接口上限，当前只显示部分，不能视为全部运行。</p>}
       {data.runs_partial == null && <p className="missing-note">接口未提供运行清单完整性标记，无法判断是否还有未显示的运行。</p>}
       {!data.runs.length && <p className="muted small">当前原文未关联到运行记录，不能据此判断整个会话是否执行过命令。</p>}
@@ -84,6 +84,7 @@ export function EvidenceRecords({ data, current, onOpen }: {
             {Object.keys(item.details).length > 0 && <details className="l1-details"><summary>观测关联字段</summary><pre>{JSON.stringify(item.details, null, 2)}</pre></details>}
           </li>)}</ol>
         </details>
+        <RunManifests native={run} current={current} onOpen={onOpen} onError={onError} />
       </article>)}
     </section>
 

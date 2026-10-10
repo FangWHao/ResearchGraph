@@ -437,3 +437,21 @@
 - cd web && pnpm test：7 files/57 passed/651ms；pnpm build：204 modules/1.10s；最终 pnpm test:browser：54 passed/40.2s。十三项前端源码与旧基线一致，截图因新增修订号/合成时间变化，父 agent 实看变更的桌面/390 手机图，最终健康桌面再次实看；无横向溢出。当前十八项冻结全部 OK，SHA256 91a4a1afabe21191467cf08b061028c5fa705a7c02af688969067212c0fd9a26。
 - 下一步：允许清单提交、维护现有草稿 PR，核对新 HEAD 的推送/PR 两种 CI，刷新公开包并独立恢复全部跟踪文件后结束本任务。后续继续版本与研究对象/实际运行 I/O 的直接关联、全图语义、export、临床编号与隐私清除；note 类型、正式参考、真实工具/性能/完整 M0–M4 验收继续保留。
 - 提交前允许清单：tracked_files=271 staged_files=15 actual_secret_matches=0 forbidden_tracked_files=0 spec_unchanged=True frontend_source_unchanged=True；git diff --cached --check 退出码 0。只提交公开源码、合成测试及中文记录，真实材料、凭据、数据库、截图和缓存仍忽略。
+
+
+## 2026-10-10 · 离线运行清单与双时间关联
+
+- 任务：继续 §2/5/7.11/8/9/10 的明确版本关联，原设计 v1 §5 已定义可选 run manifest。开始核对进度末尾、相关规格与决定；5164758 基线恢复包 SHA256 a50d7913f6bbb5c5d9dd485a7a1fe57e19b706d9fcdf709b94cf776d27dda1bd，独立恢复 274 文件均字节一致。按用户既有授权恢复前端子 agent，后端由父 agent 完成，完整 M0–M4 不标完成。
+- 改动的文件：新增 record/manifest.py、manifest_schema.py、query/runs.py、api/runs.py、tests/golden/test_run_manifests.py 及中文验收；修改版本 15 迁移、回执账本、health、reader、derive/views、MCP、CLI、HTTP 与官方 SDK 检查；前端新增运行清单组件、helper、分页 hook、样式、语义案例及合成浏览器验收；更新 README、需求落实、决定、PR 草稿和本文件。
+- 行为：本地 64 KiB 清单原件、报告、最多 256 项角色 I/O 及 UUID 回执原子追加，全部 candidate/direct_record。未报告和明确空列表分开；种子保存十进制字符串；原生执行、报告退出码、尝试和实际 I/O 完整性独立。只保存同项目明确 ID，未知运行/版本可以先报告、读取时解析晚到记录，不回写原观察；已知跨项目拒绝。入口不执行命令、打开声明文件或调用模型。
+- 读取：五个 MCP 增加 R: 运行引用；CLI/HTTP/MCP 共用双时间。原生状态从可见不可变观察重新计算后才分页，清单和来源分别过滤截止，scope 只约束报告。清单、原生运行与观察改变 revision，HTTP 409 拒绝旧修订续页。I/O 每份 100 项按 io_offset 续读、manifest_id 限定清单；版本和尝试反查先筛匹配清单再分页，较早报告不被无关首页遮蔽。
+- uv sync --locked：Resolved 28 packages in 22ms、Checked 27 packages in 76ms；rg --help 退出码 0。专项 uv run pytest tests/golden/test_run_manifests.py -q：41 passed in 7.93s；真实 HTTP 200/401/403/409、修订不变。
+- uv run pytest -q：644 passed in 269.03s (0:04:29)；uv run pytest tests/golden -q：597 passed in 280.79s (0:04:40)。两者并行，不作性能基准；ruff check rg tests scripts：All checks passed!；pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。
+- 验收修复：初次专项的四项失败是测试调用 helper/monkeypatch、缺人工请求修订及误用 Store 上下文协议；修正后通过。另两项分别是 attempt helper 调用错误与 HTTP 冲突落到通用 ValueError 的 400，后者已补 409 并实际网络回归。最终 41 与全量成功，不引用早期失败次数作为验收。
+- 官方 SDK 2.3.0：新版 2026-07-28 和旧版 2025-11-25 各五工具/八查询，含两物理版本、一候选清单/两项报告 I/O，逻辑库不变；Codex/Claude 生成接入包继续通过。MCP 固定 1500 上限已按用户取消；状态卡仍本地精确编码计预算，不为计数外发研究资料。
+- 独立 wheel：108 文件、103 源码资源字节全匹配，缺失/差异/实际密钥/私有路径均 0。仓库外安装模块来自 site-packages；写入提交前真实 SIGKILL 返回 -9，原件/清单/256 I/O 全回滚；同 UUID 重试及重放通过，CLI 精确读取最后 56 项、种子文本保留，报告退出 0 不改变原生 requested。删除工作区后的 SQLite 备份只读查询/MCP 通过，schema=15、完整性 ok、model_attempts=0。读取脚本最末换行拆解曾失败，修正脚本后通过，生产封装未改。
+- 边界：界面为已有原生运行显示清单；暂无原生运行者保留原文和 CLI/MCP/HTTP 读取，不制造执行卡。候选报告不证明系统调用实际 I/O、完整环境或研究结论，不替代 Atlas 正式参考/真实质量/规模性能/完整 M0–M4 验收。
+- 下一步：完成前端浏览器及截图冻结后允许清单提交，维护现有草稿 PR，按新 HEAD 核对推送/PR 两种 CI 并独立恢复全部跟踪文件，然后结束本任务。后续继续完整语义图、报告浏览及实际 I/O 采集、export、临床编号配置与隐私清除；note 类型和正式参考门槛继续保留。
+- 前端最终 cd web && pnpm test：8 files/65 passed/651ms；pnpm build：208 modules/1.06s；pnpm test:browser：60 passed/41.6s，原 54 项保留；专项 6 passed/9.9s。父 agent 实看桌面角色/参数、原生状态与报告冲突同屏、390 手机角色与参数；首次滚动断言过早读取已改等待真实位置，异常版本对象字段保留诊断。最终冻结后停止前端编辑，再统一提交。
+- 前端冻结最终 12 文件/5 图全部 17 项 OK，清单 SHA256 8f0df6b075158fd32875fb3525f4831f85a2d03fd564bf077c64791a9fba5117；父 agent 五图均实看，包括续页后的工具报告文本/未知补丁，随后未再修改前端文件。
+- 提交前允许清单：tracked_files=274、allowed_changed_files=32、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=17。只提交公开源码、中文记录与合成案例；凭据、真实原件、数据库、图片和缓存仍忽略。

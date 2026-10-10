@@ -78,7 +78,7 @@ export function EvidencePanel({ target, onError, compact = false, onEvidence }: 
     <RawWindow event={data.event} focus />
     {data.after.map(event => <RawWindow key={event.event_id} event={event} />)}
     {!compact && <>
-      <EvidenceRecords data={data.l1} current={data.event.event_id} onOpen={onEvidence} />
+      <EvidenceRecords data={data.l1} current={data.event.event_id} onOpen={onEvidence} onError={onError} />
       <VersionRecords versions={data.artifact_versions} partial={data.artifact_versions_partial} />
       {!data.artifact_diff.available && <p className="missing-note">差异缺失：{data.artifact_diff.reason}。</p>}
       {data.artifact_diff.available && !data.l1?.edits.length && <p className="missing-note">接口提示存在差异，但未返回可展示的编辑详情。</p>}

@@ -725,6 +725,225 @@ def seed_decisions(store: Store) -> None:
         persist(store, output, project, run, set(), {event}, output["segment_id"])
 
 
+def seed_run_manifests(store: Store, directory: Path) -> None:
+    """运行清单与版本关联的合成 HTTP 输入，不运行命令或读取研究文件。"""
+    import hashlib
+
+    from rg.record.manifest import record as record_manifest
+
+    project = store.project("验收运行清单项目", [Path("/synthetic/run-manifest")])
+    root = store.db.execute(
+        "SELECT root_id FROM source_roots WHERE project_id=?", (project,)
+    ).fetchone()[0]
+    messages = [
+        {
+            "type": "session_meta",
+            "payload": {"id": "manifest-browser", "cwd": "/synthetic/run-manifest"},
+        },
+        {
+            "type": "response_item",
+            "timestamp": "2026-10-09T08:59:00Z",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "合成运行清单定位锚点"}],
+            },
+        },
+    ]
+    for call, result in (
+        ("manifest-zero", {"exit_code": 0}),
+        ("manifest-unknown", {}),
+        ("manifest-requested", None),
+    ):
+        messages.append(
+            {
+                "type": "response_item",
+                "timestamp": "2026-10-09T09:00:00Z",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "call_id": call,
+                    "arguments": dumps({"cmd": f"合成清单运行 {call}"}),
+                },
+            }
+        )
+        if result is not None:
+            messages.append(
+                {
+                    "type": "response_item",
+                    "timestamp": "2026-10-09T09:01:00Z",
+                    "payload": {
+                        "type": "function_call_output",
+                        "call_id": call,
+                        "output": {
+                            "output": "合成 stdout 文字 exit_code:9 不充当元数据",
+                            "wall_time_seconds": 0.1,
+                            **result,
+                        },
+                    },
+                }
+            )
+    source = directory / "synthetic-run-manifest.jsonl"
+    lines(source, messages)
+    scan_file(store, source, "codex", project)
+    runs = {
+        row["call_id"]: dict(row)
+        for row in store.db.execute("SELECT * FROM runs WHERE project_id=?", (project,))
+    }
+    recorded = now()
+    snapshot = store.db.execute(
+        "INSERT INTO workspace_snapshots(project_id,root_id,trigger,taken_at,recorded_at,"
+        "snapshot_key,shadow_commit,async_race) VALUES (?,?,'synthetic_manifest',?,?,?, ?,0)",
+        (
+            project,
+            root,
+            "2026-10-09T08:00:00Z",
+            recorded,
+            "synthetic-manifest-snapshot",
+            "synthetic-manifest-shadow-commit",
+        ),
+    ).lastrowid
+    assert snapshot is not None
+    attempt = "synthetic-manifest-attempt"
+    store.db.execute(
+        "INSERT INTO entities VALUES (?,?,'attempt',NULL,?)", (attempt, project, recorded)
+    )
+    versions = {}
+    for name, source_kind in (
+        ("input", "shadow_snapshot"),
+        ("script", "agent_edit"),
+        ("environment", "current_file"),
+        ("output", "shadow_snapshot"),
+    ):
+        raw = f"合成版本 {name}\n<script>window.manifestInjected=true</script>".encode()
+        identity = "synthetic-manifest-version:" + name
+        sha = store.objects.put(raw) if source_kind != "current_file" else None
+        algo = (
+            "git-sha1"
+            if source_kind == "shadow_snapshot"
+            else "sha256:tool-utf8"
+            if source_kind == "agent_edit"
+            else "sha256"
+        )
+        content_digest = (
+            hashlib.sha1(
+                b"blob " + str(len(raw)).encode() + b"\0" + raw, usedforsecurity=False
+            ).hexdigest()
+            if algo == "git-sha1"
+            else digest(raw)
+        )
+        store.db.execute(
+            "INSERT INTO artifact_versions(version_id,project_id,path,algo,digest,size,source,"
+            "observed_at,content_sha256,phase,root_id,evidence_event_id,basis,claim_state,"
+            "representation) "
+            "VALUES (?,?,?,?,?,?,?,?,?,'observed',?,?,'direct_record','candidate',?)",
+            (
+                identity,
+                project,
+                f"/synthetic/run-manifest/{name}<img>.txt",
+                algo,
+                content_digest,
+                len(raw),
+                source_kind,
+                "2026-10-09T08:01:00Z",
+                sha,
+                root,
+                runs["manifest-zero"]["request_event_id"],
+                "tool_reported_utf8" if source_kind == "agent_edit" else "physical_file_bytes",
+            ),
+        )
+        versions[name] = identity
+        if source_kind == "agent_edit":
+            continue
+        job = store.db.execute(
+            "INSERT INTO artifact_jobs(job_key,project_id,root_id,snapshot_id,kind,input_json,"
+            "state,created_at,updated_at) VALUES (?,?,?,?,?,'{}','done',?,?)",
+            (
+                "synthetic-manifest-job:" + name,
+                project,
+                root,
+                snapshot,
+                "file_hash" if source_kind == "current_file" else "snapshot_blob",
+                recorded,
+                recorded,
+            ),
+        ).lastrowid
+        store.db.execute(
+            "INSERT INTO artifact_observations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "synthetic-manifest-observation:" + name,
+                identity,
+                job,
+                None if source_kind == "current_file" else snapshot,
+                snapshot,
+                "100644",
+                None,
+                "2026-10-09T08:00:00Z" if source_kind == "current_file" else None,
+                "2026-10-09T08:01:00Z" if source_kind == "current_file" else None,
+                0,
+                None,
+                dumps({"synthetic_fixture": True}),
+                recorded,
+            ),
+        )
+    run_id = runs["manifest-zero"]["run_id"]
+    for index in range(20):
+        record_manifest(
+            store,
+            project,
+            {
+                "request_id": str(uuid4()),
+                "run_id": run_id,
+                "inputs": [],
+                "outputs": [],
+                "parameters": {"synthetic_page": index},
+                "exit_code": 0,
+            },
+        )
+    record_manifest(
+        store,
+        project,
+        {
+            "request_id": str(uuid4()),
+            "run_id": run_id,
+            "attempt_id": attempt,
+            "snapshot_id": snapshot,
+            "scope": {"dataset_version": "manifest_fixture_v1", "analysis_step": "运行清单验收"},
+            "inputs": [versions["input"]] * 97 + ["synthetic-manifest-version:missing"],
+            "scripts": [versions["script"]],
+            "patches": ["synthetic-manifest-version:unknown-patch"],
+            "environment": [versions["environment"]],
+            "outputs": [versions["output"]],
+            "parameters": {
+                "literal": "<script>window.manifestInjected=true</script>",
+                "command": "$(never_execute); /synthetic/no-run",
+            },
+            "seed": "9007199254740993123456789",
+            "started_at": "2026-10-09T09:00:00Z",
+            "ended_at": "2026-10-09T09:01:00Z",
+            "occurred_at": "2026-10-09T09:01:00Z",
+            "exit_code": 2,
+        },
+    )
+    for name in ("manifest-unknown", "manifest-requested"):
+        record_manifest(
+            store,
+            project,
+            {
+                "request_id": str(uuid4()),
+                "run_id": runs[name]["run_id"],
+                "inputs": None,
+                "scripts": [],
+                "patches": None,
+                "environment": None,
+                "outputs": [],
+                "exit_code": 0,
+                "started_at": "2026-10-09T09:00:00Z",
+                "ended_at": "2026-10-09T09:01:00Z",
+            },
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8791)
@@ -738,6 +957,7 @@ def main() -> None:
         store.project("验收新增人工记录项目二", [Path("/synthetic/manual-question-two")])
         seed_decisions(store)
         qa_config = seed_qa(store, directory)
+        seed_run_manifests(store, directory)
         store.close()
         server = LocalServer(
             directory / "store",
