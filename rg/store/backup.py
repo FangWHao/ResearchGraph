@@ -75,7 +75,7 @@ def _copy_backup(store: Store, destination: Path) -> dict[str, int]:
         }
         if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise ValueError("备份数据库完整性检查失败")
-        for name in ["snapshots", "spool", "overviews"]:
+        for name in ["snapshots", "spool", "overviews", "clear-records"]:
             if (store.root / name).exists():
                 shutil.copytree(store.root / name, destination / name, symlinks=True)
         projects = target.execute(

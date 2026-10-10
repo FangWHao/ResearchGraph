@@ -535,3 +535,17 @@
 - 下一步：冻结前端证据、按允许清单提交、维护现有草稿PR，核对当前HEAD两种CI和独立恢复包后结束本任务。下个任务继续整项目清除的只读归属清单及执行恢复，不把系统锁或项目遮盖配置当作隐私清除完成。
 - 前端最终冻结17项全OK，清单SHA256 59a0d1a7cf7a6a34edbe8802f2d3fe7c4d24bc770778c5903c70de13f40f1636；子agent已停止编辑。隔离Vite只加载HEAD旧组件，在9791运行加强案例，切项目后待滚动帧预期0实际1，准确失败；没有回退共享源码或覆盖web/dist。父任务全量89成功使用最终新组件，旧行为反证不计入成功测试数量。
 - 提交前允许清单：baseline=faaface、staged_files=17、tracked_files=335、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=17；暂存差异检查退出0。只提交公开源码、中文说明和合成案例，凭据、原会话、数据库、ZIP、截图和缓存不入仓库。
+
+## 2026-10-10 · 管理目录整项目清除、恢复与前端
+
+- 任务：按用户已选择的整项目粒度继续 §2/11/15 与既有占用保护决定。开始核对末尾进度和对应章节；270b099 基线恢复包 SHA256 80e24c01ebfef0479727a27741c7810f8e96745e2848f1fc1b904f4e93257eb2，独立恢复335个跟踪文件字节一致。整体 M0–M4 保持未完成。
+- 改动的文件：新增 store/clear.py、clear_selection.py、clear_files.py、clear_denials.py、golden/test_project_clear.py、独立前端合成服务与清除组件/状态/样式/单测/浏览器专项、两份中文验收。修改 Store占用屏障、scanner/sources/spool、snapshot/capture、backup、API server、CLI main、前端 App，以及 README、需求落实、决定和本文件；未改源规格、schema17或模型调用合同。
+- 行为：只读预览完整归属和数量，独占写事务复算预览摘要；清除原件与目标派生、模型尝试/输出和队列、索引/缓存、对象、spool、快照/概览与根登记。共享字节保留；跨项目行依赖、命名空间/根冲突、未登记对象、无归属输出和链接路径拒绝执行。不可变触发器在隐私事务内暂停并恢复，两个FTS重建、VACUUM、WAL实际截断和完整性检查后才成功。
+- 行为：持久无原文恢复记录覆盖提交前后和部分文件删除；普通读取/写入/钩子被阻止，状态和恢复独立可用。同一请求UUID幂等回放，最终仅保留计数/身份/时间和来源摘要屏障，扫描/钩子/快照不会重导入，后续备份携带屏障。CLI服务释放初始化Store，中断后可直接启动界面恢复。清除完成页面自动重载，确认区提示未保存草稿丢失；旧回包、切项目、401/409、双击及重试均保留正确意图。
+- uv sync --locked：Resolved28/13ms、Checked27/50ms。清除专项20 passed in11.44s；清除/占用/快照钩子/导出合并80 passed in23.19s。最终 uv run pytest -q：784 passed in310.87s (0:05:10)；uv run pytest tests/golden -q：737 passed in294.95s (0:04:54)。两组全量并行，不作性能基准。ruff：All checks passed!；pyright：0 errors,0 warnings,0 informations；rg帮助、清除帮助及git diff --check退出0。
+- 初轮装配失败及修正：合成模型尝试漏必填segment_id，CLI测试模块没有启动入口且后续漏Path导入；改为实际rg入口并保留真实启动/重启恢复断言。只读预览测试核对业务文件，允许SQLite WAL/SHM协调文件；本地HTTP不继承环境代理。没有放宽归属、原件、完整性或中断保护断言。
+- 隔离wheel：123成员/118运行资源与源码及Python3.12隔离安装逐字一致，实际密钥匹配0。源码不可见的独立测试目录执行清除/恢复/真实CLI/HTTP/钩子及占用28 passed in15.70s；所有清除仅为临时合成项目，外部合成原日志和工作区保留，剩余对象仅共享字节，SQLite/FTS/管理文件无独有标记，原生Windows未验收。
+- 前端按用户既有subagent授权完成：pnpm test 12files/96passed/880ms；build224modules/1.21s；tsc退出0；真实HTTP专项7 passed/15.6s，父任务最终pnpm test:browser 96 passed (1.2m)，原89项未删。首轮专项6/7失败是硬刷新销毁旧页面响应，改独立status核对同请求，不修改产品重载行为。父任务实看桌面预览/完成和390手机预览/恢复四图，无横向溢出；20项冻结全OK，SHA256 f0f304f98427068d1ce9a778993bed39000c31155b9443da585265347d68dca5，子agent停止编辑。
+- 边界：当前仅清除本数据目录管理的整项目资料；外部Claude/Codex原日志、研究工作区及用户保存/分享的备份或导出副本沿用既有保留范围，明确外部副本问题尚无答复。恢复清单4MiB上限，超出在删除前拒绝；不是原生Windows或规模验收，不保证物理介质取证不可恢复。没有执行真实项目清除。实际I/O完整性、影响传播合同、note类型、真实工具/规模、Atlas正式参考及完整M0–M4门槛继续保留。
+- 下一步：按允许清单提交，维护现有草稿PR，核对当前HEAD推送/PR两种CI及独立恢复包后结束本任务；随后继续已授权的开发，不把管理目录清除当作全部外部副本清除或整个目标完成。
+- 提交前允许清单：baseline=270b099、staged_files=27、tracked_files=349、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=20；暂存差异检查退出0。只提交公开源码、中文记录和合成案例，凭据、真实会话、数据库、ZIP、截图和缓存不入仓库。

@@ -36,6 +36,13 @@ def enqueue(root: Path, tool: str, raw: bytes) -> Path:
         raise ValueError("spool 来源必须为 claude 或 codex")
     path = root / "spool" / f"{time.time_ns()}-{os.getpid()}-{uuid.uuid4().hex}-{tool}.json"
     with lease(root, writable=True):
+        from rg.store.clear_denials import check_payload
+
+        try:
+            payload = json.loads(raw)
+        except (ValueError, UnicodeError):
+            payload = None
+        check_payload(root, tool, payload)
         atomic_write(path, raw)
     return path
 
@@ -45,6 +52,9 @@ def enqueue_stream(root: Path, tool: str, stream: BinaryIO, prefix: bytes) -> Pa
         raise ValueError("spool 来源必须为 claude 或 codex")
     path = root / "spool" / f"{time.time_ns()}-{os.getpid()}-{uuid.uuid4().hex}-{tool}.json"
     with lease(root, writable=True):
+        # 已有清除记录时，超大输入无法可靠确定归属，不能重新留下敏感副本。
+        if (root / "clear-records").exists():
+            raise PermissionError("已有隐私清除记录，超大钩子正文不再持久写入")
         atomic_stream(path, stream, prefix)
     return path
 
@@ -64,6 +74,18 @@ def register(store: Store) -> Counter[str]:
         if len(raw) > MAX_BYTES:
             counts["spool_held_files"] += 1
             continue
+        from rg.store.clear_denials import check_payload
+
+        match = re.fullmatch(r"[0-9]+-[0-9]+-[a-f0-9]{32}-(claude|codex)\.json", path.name)
+        tool = match[1] if match else None
+        try:
+            check_payload(store.root, tool, json.loads(raw))
+        except PermissionError:
+            path.unlink()
+            counts["spool_privacy_blocked"] += 1
+            continue
+        except (ValueError, UnicodeError):
+            pass
         sha = store.objects.put(raw)
         key = digest((path.name + "\0" + sha).encode())
         previous = store.db.execute(
@@ -74,8 +96,6 @@ def register(store: Store) -> Counter[str]:
             if previous["state"] == "done":
                 _ack(store, dict(previous))
             continue
-        match = re.fullmatch(r"[0-9]+-[0-9]+-[a-f0-9]{32}-(claude|codex)\.json", path.name)
-        tool = match[1] if match else None
         with store.transaction() as db:
             job = db.execute(
                 "INSERT INTO jobs (kind,payload,state,attempts,updated_at) "

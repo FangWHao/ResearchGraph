@@ -49,6 +49,23 @@ uv run rg --data-dir /tmp/rg-demo review --open --port 8787
 
 服务只监听 `127.0.0.1`。终端返回带本次随机令牌的浏览器链接；页面取得令牌后清除地址中的片段，后续请求同源 API。界面读取指定数据目录，不会自动导入 Atlas。问题页、队列、时间线、健康、搜索与图均可打开记录的原文窗口；复核支持确认、驳回、按片段批量确认，以及保留旧记录的人工修改。
 
+## 清除管理目录中的整个项目
+
+本地界面的“项目清除”先显示数据库记录、对象、快照和概览的清除数量与归属阻碍，再由用户核对项目名称执行。清除完成后页面重新载入，未保存的草稿会丢失。其他项目仍引用的相同字节对象会保留；跨项目记录依赖、未登记对象、无法确定归属的提示或输出会阻止执行。
+
+命令行使用相同预览摘要和幂等请求 UUID：
+
+```bash
+uv run rg --data-dir /tmp/rg-demo project clear-preview PROJECT_ID
+uv run rg --data-dir /tmp/rg-demo project clear PROJECT_ID --request-id REQUEST_UUID --preview-sha256 PREVIEW_SHA256
+uv run rg --data-dir /tmp/rg-demo project clear-status --request-id REQUEST_UUID
+uv run rg --data-dir /tmp/rg-demo project clear-resume REQUEST_UUID
+```
+
+预览不删除资料；执行时会重新核对目标记录、文件清单和修订，变化后需重新预览。清除期间要求整个数据目录没有存活的读取、写入、钩子或备份连接，占用时返回 409。中断后保留不含原文的恢复记录，普通入口暂停访问；界面和 `clear-resume` 可以继续完成数据库、全文索引、WAL、对象、spool、影子快照、概览和根登记清理。
+
+范围是当前数据目录管理的资料。Claude/Codex 原始日志、研究工作区以及用户保存或分享的备份/导出副本保留；本次不会自动寻找或删除这些外部副本。管理的数据清除后只保留无原文记录和来源摘要屏障，阻止扫描、钩子或快照重新导入已清除来源；后续备份也携带该屏障。原生 Windows 清除和大型项目仍待验收，当前恢复清单有 4 MiB 上限，超出时在删除前拒绝。详见[整项目清除验收](docs/acceptance/管理目录整项目清除验收_20261010.md)。
+
 ## Agent 只读查询与状态卡
 
 ```bash

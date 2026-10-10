@@ -62,6 +62,10 @@ def _windows(root: Path, *, exclusive: bool, writable: bool) -> Iterator[None]:
                 raise TaskBusy("数据目录仍有读取、写入或钩子；关闭后重试清除")
             raise native.WinError(error)
         try:
+            if not exclusive and (
+                (root / ".clear-active.json").exists() or (root / ".clear-active.json").is_symlink()
+            ):
+                raise TaskBusy("整项目清除尚未完成；请恢复清除后再访问数据")
             yield
         finally:
             if not library.UnlockFileEx(handle, 0, 1, 0, ctypes.byref(overlapped)):
@@ -90,6 +94,10 @@ def lease(root: Path, *, exclusive: bool = False, writable: bool = False) -> Ite
         except OSError:
             raise TaskBusy("数据目录仍有读取、写入或钩子；关闭后重试清除") from None
         try:
+            if not exclusive and (
+                (root / ".clear-active.json").exists() or (root / ".clear-active.json").is_symlink()
+            ):
+                raise TaskBusy("整项目清除尚未完成；请恢复清除后再访问数据")
             yield
         finally:
             fcntl.flock(descriptor, fcntl.LOCK_UN)

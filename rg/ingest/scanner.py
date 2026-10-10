@@ -15,7 +15,7 @@ from rg.store.objects import digest
 PARSER_VERSION = "1"
 
 
-def _session(store: Store, path: Path, tool: str, project_id: str | None) -> int:
+def _session(store: Store, path: Path, tool: str, project_id: str | None) -> int | None:
     with path.open("rb") as stream:
         first = stream.readline()
     try:
@@ -37,6 +37,16 @@ def _session(store: Store, path: Path, tool: str, project_id: str | None) -> int
     native = native if isinstance(native, str) and native else path.stem
     agent = agent if isinstance(agent, str) else ""
     cwd = cwd if isinstance(cwd, str) else None
+    from rg.store.clear_denials import denied
+
+    if denied(
+        store.root,
+        project=project_id,
+        tool=tool,
+        native=native,
+        paths=[str(path), *([cwd] if cwd else [])],
+    ):
+        return None
     with store.transaction() as db:
         db.execute(
             "INSERT OR IGNORE INTO sessions "
@@ -214,6 +224,8 @@ def _scan_file(
     store: Store, path: Path, tool: str, project_id: str | None, fault: Callable[[], None] | None
 ) -> dict[str, int]:
     session = _session(store, path, tool, project_id)
+    if session is None:
+        return {"privacy_blocked": 1}
     instance = _instance(store, path, tool, session)
     file_id, offset = instance["file_instance_id"], instance["committed_offset"]
     counts: Counter[str] = Counter()

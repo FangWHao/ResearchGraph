@@ -141,6 +141,16 @@ def parser() -> argparse.ArgumentParser:
     privacy.add_argument("--patterns-file", type=Path, help="UTF8 JSON 字符串数组；省略则只读")
     privacy.add_argument("--actor", help="保存时使用 human:<姓名>")
     privacy.add_argument("--expected-revision", type=int, help="保存时使用读取结果的 revision")
+    clear_preview = project_sub.add_parser("clear-preview", help="预览整项目清除，不删除资料")
+    clear_preview.add_argument("project_id")
+    clear = project_sub.add_parser("clear", help="按预览摘要清除本目录管理的整个项目")
+    clear.add_argument("project_id")
+    clear.add_argument("--request-id", required=True, help="规范 UUID；重复执行同一请求不重复删除")
+    clear.add_argument("--preview-sha256", required=True)
+    clear_resume = project_sub.add_parser("clear-resume", help="恢复中断的整项目清除")
+    clear_resume.add_argument("request_id")
+    clear_status = project_sub.add_parser("clear-status", help="读取清除状态，不打开项目数据库")
+    clear_status.add_argument("--request-id")
     imported = commands.add_parser("import", help="按行导入指定文件或目录")
     imported.add_argument("path", type=Path)
     imported.add_argument("--tool", choices=["claude", "codex"], required=True)
@@ -451,30 +461,9 @@ def run(args: argparse.Namespace, store: Store) -> object:
 
         return derive(store, args.limit, args.session, args.retry_failed)
     if args.command == "serve" or (args.command == "review" and args.open):
-        from rg.api.qa import QAConfig
-        from rg.api.server import serve
-
-        base_url = getattr(args, "base_url", os.environ.get("RG_BASE_URL"))
-        model = getattr(args, "model", os.environ.get("RG_MODEL"))
-        key_file = getattr(args, "key_file", None)
-        qa_config = None
-        if base_url or model or key_file:
-            if not base_url or not model:
-                raise ValueError("界面问答需同时配置 base URL 和模型名")
-            qa_config = QAConfig(
-                base_url, model, load_key(key_file), getattr(args, "input_budget", 128000)
-            )
-
-        serve(
-            store.root,
-            args.web_dir,
-            args.port,
-            getattr(args, "daily_budget", 500000),
-            args.open,
-            initial_view="review" if args.command == "review" else "questions",
-            qa_config=qa_config,
-        )
-        return {"server": "stopped"}
+        data_root = store.root
+        store.close()
+        return _serve(args, data_root)
     if args.command == "init":
         from rg.snapshot.config import examples, export_registry
 
@@ -772,11 +761,58 @@ def _ask_values(args: argparse.Namespace) -> dict:
     return values | ({"scope": scope} if scope is not None else {})
 
 
+def _serve(args: argparse.Namespace, data_root: Path) -> dict:
+    from rg.api.qa import QAConfig
+    from rg.api.server import serve
+
+    base_url = getattr(args, "base_url", os.environ.get("RG_BASE_URL"))
+    model = getattr(args, "model", os.environ.get("RG_MODEL"))
+    key_file = getattr(args, "key_file", None)
+    config = None
+    if base_url or model or key_file:
+        if not base_url or not model:
+            raise ValueError("界面问答需同时配置 base URL 和模型名")
+        config = QAConfig(
+            base_url, model, load_key(key_file), getattr(args, "input_budget", 128000)
+        )
+    serve(
+        data_root,
+        args.web_dir,
+        args.port,
+        getattr(args, "daily_budget", 500000),
+        args.open,
+        initial_view="review" if args.command == "review" else "questions",
+        qa_config=config,
+    )
+    return {"server": "stopped"}
+
+
 def main() -> None:
     cli = parser()
     args = cli.parse_args()
     store = None
     try:
+        if args.command == "serve" or (args.command == "review" and args.open):
+            # 服务仅在请求期间打开数据库；启动时的连接不能永久占住清除。
+            if not (args.data_dir / ".clear-active.json").exists():
+                Store(args.data_dir).close()
+            print(json.dumps(_serve(args, args.data_dir), ensure_ascii=False))
+            return
+        if args.command == "project" and args.project_command.startswith("clear"):
+            from rg.store.clear import execute, preview, resume, status
+
+            if args.project_command == "clear-preview":
+                result = preview(args.data_dir, args.project_id)
+            elif args.project_command == "clear":
+                result = execute(
+                    args.data_dir, args.project_id, args.request_id, args.preview_sha256
+                )
+            elif args.project_command == "clear-resume":
+                result = resume(args.data_dir, args.request_id)
+            else:
+                result = status(args.data_dir, args.request_id)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return
         if args.command == "verify-export":
             from rg.export.package import verify
 

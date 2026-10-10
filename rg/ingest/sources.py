@@ -18,6 +18,10 @@ def register(store: Store, path: Path, tool: str, project: str | None = None) ->
     if tool not in {"claude", "codex"}:
         raise ValueError("扫描来源必须为 claude 或 codex")
     path = path.expanduser().resolve()
+    from rg.store.clear_denials import denied
+
+    if denied(store.root, project=project, paths=[str(path)]):
+        raise PermissionError("该来源已整项目清除，停止重新登记")
     if not path.is_file() and not path.is_dir():
         raise ValueError("首次登记的来源必须是已有文件或目录")
     if path.is_file() and path.suffix != ".jsonl":

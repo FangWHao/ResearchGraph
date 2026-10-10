@@ -197,6 +197,13 @@ class Handler(BaseHTTPRequestHandler):
                 if any(len(items) != 1 for items in raw_values.values()):
                     raise ValueError("查询参数不得重复")
                 values = {key: items[0] for key, items in raw_values.items()}
+                if parsed.path == "/api/project-clear/status":
+                    from rg.store.clear import status
+
+                    if set(values) - {"request_id"}:
+                        raise ValueError("清除状态查询参数无效")
+                    self._json(HTTPStatus.OK, status(self.server.root, values.get("request_id")))
+                    return
                 store = Store(self.server.root, readonly=True)
                 try:
                     store.db.execute("BEGIN")
@@ -254,7 +261,7 @@ class Handler(BaseHTTPRequestHandler):
             raw = self.rfile.read(length)
             self._unread_body = False
             path = urlsplit(self.path).path
-            if path in {"/api/exports", "/api/privacy"}:
+            if path in {"/api/exports", "/api/privacy"} or path.startswith("/api/project-clear/"):
                 from rg.clients.record import unique_pairs
 
                 body = json.loads(raw, object_pairs_hook=unique_pairs)
@@ -262,6 +269,31 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.loads(raw)
             if not isinstance(body, dict):
                 raise ValueError("请求体需为 JSON 对象")
+            if path.startswith("/api/project-clear/"):
+                from rg.store.clear import execute, preview, resume
+
+                required = {
+                    "/api/project-clear/preview": {"project_id"},
+                    "/api/project-clear/execute": {"project_id", "request_id", "preview_sha256"},
+                    "/api/project-clear/resume": {"request_id"},
+                }.get(path)
+                if required is None:
+                    raise views.NotFound("清除接口不存在")
+                if set(body) != required:
+                    raise ValueError("清除请求字段无效")
+                if path.endswith("/preview"):
+                    result = preview(self.server.root, body["project_id"])
+                elif path.endswith("/execute"):
+                    result = execute(
+                        self.server.root,
+                        body["project_id"],
+                        body["request_id"],
+                        body["preview_sha256"],
+                    )
+                else:
+                    result = resume(self.server.root, body["request_id"])
+                self._json(HTTPStatus.OK, result)
+                return
             store = Store(
                 self.server.root,
                 readonly=path in {"/api/qa/retrieve", "/api/qa/preview", "/api/exports"},

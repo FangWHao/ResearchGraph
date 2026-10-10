@@ -135,6 +135,16 @@ def capture(
     seconds: float = 2,
 ) -> dict[str, Any]:
     with lease(data_root, writable=True):
+        from rg.store.clear_denials import denied
+
+        if denied(
+            data_root,
+            project=project_id,
+            tool=tool,
+            native=native_session_id,
+            paths=[str(worktree)],
+        ):
+            raise PermissionError("该项目已清除，停止创建影子快照")
         return _capture(
             data_root,
             project_id,
@@ -249,5 +259,8 @@ def publish(data_root: Path, tool: str, record: dict[str, Any]) -> Path:
     filename = f"{time.time_ns()}-{os.getpid()}-{record['snapshot_key']}-{tool}.json"
     path = data_root / "snapshots" / "pending" / filename
     with lease(data_root, writable=True):
+        from rg.store.clear_denials import check_payload
+
+        check_payload(data_root, tool, record)
         atomic_write(path, json.dumps(record, ensure_ascii=True, sort_keys=True).encode())
     return path
