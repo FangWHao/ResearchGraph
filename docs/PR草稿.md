@@ -26,6 +26,8 @@ cd web && pnpm test:browser               170 passed(4.6m)，退出0，实际进
 
 148包成员／143运行资源与源码及实际安装逐字一致，实际凭据／私有文件0，wheel SHA bd24e2aee90deff2251184da0277fd2dfc3477b8ca91200b7fedbccd7b31e8dd。前端153项稳定证据冻结及七文件独立恢复已由父核对，六图已原尺寸查看。原生首轮1 failed／134 passed和前端两轮语义红灯保留，未扩大超时、增加重试或全局切换编码。完整后端1430项与完整浏览器170项实际通过，完整浏览器在后端退出后串行运行。首轮浏览器缺本机libasound.so.2，实际中断退出130，失败证据保留；只修执行环境，不调产品、超时或重试。
 
+本批首轮a0b5f17双CI其余13类全部通过，旧个人视图综合浏览器场景耗尽30秒，均169 passed／1 failed(5.9m)，失败保留。独立迟到条件已拆为六项，文件专项10 passed(1.0m)、类型0；原四项前缀和原全部动作／断言保留，30秒与零重试不变。一文件恢复和16项冻结父核对；父串行完整浏览器175 passed(4.6m)、退出0，实际进程277.143s，三端口释放。生产与原前端冻结保持不变；精确追加提交和新HEAD双CI另核对，不把首轮冒充整套成功。
+
 基线e47134b推送／PR双CI均实际成功：完整后端1395、golden1348、前端182、浏览器166、构建245模块、Windows100，各30步骤／14类检查通过；494文件全历史独立恢复相同，凭据及私有路径0。本批精确草稿、独立恢复及两类持续验收按对应提交核对，机器结果保存在本机缓存；草稿保持未合并，不把基线结果冒充本批终态。
 
 证据见[历史规则证明验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/历史规则证明资格验收_20261011.md)、[独立原话确认验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/独立原话确认版本与范围验收_20261011.md)及[需求落实与剩余项](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。

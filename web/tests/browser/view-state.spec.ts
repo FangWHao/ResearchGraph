@@ -168,34 +168,51 @@ test('图变化真实409及旧保存记录仍保留，不能自动恢复或用�
   await page.getByRole('button', { name: '重新读取研究图', exact: true }).click(); await ready(page); const current = await save(page); expect(current.view!.reading.revision).toBe(still.current_revision);
 });
 
-test('受控transport晚200和401在条件、姓名、项目、页面与epoch变化后不误报成功或登出', async ({ page }) => {
+async function lateTransport(page: Page) {
   await page.addInitScript(() => { const actual = window.fetch.bind(window); (window as unknown as { personalLate: string[] }).personalLate = []; window.fetch = async (input, options) => { if (!/\/api\/(view-state|semantic-graph)/.test(String(input))) return actual(input, options); const response = await actual(input, { ...options, signal: undefined }); const parse = response.json.bind(response); response.json = async () => { const data = await parse(), marker = response.headers.get('x-synthetic-late'); if (marker) (window as unknown as { personalLate: string[] }).personalLate.push(marker); return data; }; return response; }; });
-  const variants = [{ method: 'POST', status: 200, action: '条件' }, { method: 'GET', status: 401, action: '姓名' }, { method: 'GET', status: 200, action: '项目' }, { method: 'GET', status: 401, action: '页面' }, { method: 'GET', status: 200, action: 'epoch' }];
-  for (const [index, item] of variants.entries()) {
+}
+
+const lateVariants = [
+  { method: 'POST', status: 200, action: '条件' },
+  { method: 'GET', status: 401, action: '姓名' },
+  { method: 'GET', status: 200, action: '项目' },
+  { method: 'GET', status: 401, action: '页面' },
+  { method: 'GET', status: 200, action: 'epoch' },
+];
+for (const [index, item] of lateVariants.entries()) {
+  test(`受控transport晚${item.status}在${item.action}变化后不误报成功或登出`, async ({ page }) => {
+    await lateTransport(page);
     await open(page, `晚回包${item.action}`); const saved = await save(page);
     let release = () => {}, readyHeld = () => {}, first = true; const held = new Promise<void>(resolve => { release = resolve; }), started = new Promise<void>(resolve => { readyHeld = resolve; });
     await page.route('**/api/view-state**', async route => { if (!first || route.request().method() !== item.method) { await route.continue(); return; } first = false; const response = await route.fetch(item.status === 401 ? { headers: { ...route.request().headers(), Authorization: 'Bearer synthetic-wrong-token' } } : {}); expect(response.status()).toBe(item.status); readyHeld(); await held; await route.fulfill({ response, headers: { ...response.headers(), 'x-synthetic-late': `late-${index}` } }); });
-    await page.getByRole('button', { name: item.method === 'POST' ? '保存个人视图' : '读取已保存视图', exact: true }).click(); await started;
-    if (item.action === '条件') await page.getByLabel('研究图发生时间截止', { exact: true }).fill('2026-01-01T00:00:00Z');
-    if (item.action === '姓名') await page.getByLabel('个人视图标识', { exact: true }).fill('晚回包新姓名');
-    if (item.action === '项目') await page.getByLabel('当前项目', { exact: true }).selectOption({ label: '验收个人视图项目二' });
-    if (item.action === '页面') await page.getByRole('button', { name: '研究问题', exact: true }).click();
-    if (item.action === 'epoch') await page.getByRole('button', { name: '刷新数据', exact: true }).click();
-    release(); await expect.poll(() => page.evaluate(marker => (window as unknown as { personalLate: string[] }).personalLate.includes(marker), `late-${index}`)).toBe(true);
-    await expect(page.getByRole('heading', { name: '打开你的研究决定史', exact: true })).toHaveCount(0);
-    if (item.action === '条件') { await expect(page.locator('[data-view-id]')).toHaveAttribute('data-view-id', String(saved.view_id)); await expect(page.locator('[data-personal-info]')).not.toContainText('个人视图已保存'); }
-    if (item.action === '姓名') await expect(page.getByLabel('个人视图标识', { exact: true })).toHaveValue('晚回包新姓名');
-    if (item.action === '项目') { await ready(page); expect((await reading(page)).project_id).not.toBe(saved.project_id); }
-    if (item.action === '页面') await expect(page.getByRole('region', { name: '个人研究图视图' })).toHaveCount(0);
-    if (item.action === 'epoch') { await ready(page); await expect(page.locator('.graph-notice').filter({ hasText: '恢复个人布局' })).toHaveCount(0); }
-    await page.unroute('**/api/view-state**');
-  }
+    try {
+      await page.getByRole('button', { name: item.method === 'POST' ? '保存个人视图' : '读取已保存视图', exact: true }).click(); await started;
+      if (item.action === '条件') await page.getByLabel('研究图发生时间截止', { exact: true }).fill('2026-01-01T00:00:00Z');
+      if (item.action === '姓名') await page.getByLabel('个人视图标识', { exact: true }).fill('晚回包新姓名');
+      if (item.action === '项目') await page.getByLabel('当前项目', { exact: true }).selectOption({ label: '验收个人视图项目二' });
+      if (item.action === '页面') await page.getByRole('button', { name: '研究问题', exact: true }).click();
+      if (item.action === 'epoch') await page.getByRole('button', { name: '刷新数据', exact: true }).click();
+      release(); await expect.poll(() => page.evaluate(marker => (window as unknown as { personalLate: string[] }).personalLate.includes(marker), `late-${index}`)).toBe(true);
+      await expect(page.getByRole('heading', { name: '打开你的研究决定史', exact: true })).toHaveCount(0);
+      if (item.action === '条件') { await expect(page.locator('[data-view-id]')).toHaveAttribute('data-view-id', String(saved.view_id)); await expect(page.locator('[data-personal-info]')).not.toContainText('个人视图已保存'); }
+      if (item.action === '姓名') await expect(page.getByLabel('个人视图标识', { exact: true })).toHaveValue('晚回包新姓名');
+      if (item.action === '项目') { await ready(page); expect((await reading(page)).project_id).not.toBe(saved.project_id); }
+      if (item.action === '页面') await expect(page.getByRole('region', { name: '个人研究图视图' })).toHaveCount(0);
+      if (item.action === 'epoch') { await ready(page); await expect(page.locator('.graph-notice').filter({ hasText: '恢复个人布局' })).toHaveCount(0); }
+    } finally { release(); await page.unroute('**/api/view-state**'); }
+  });
+}
+
+test('受控transport恢复途中显示版本修改，迟到真实图页不覆盖新选择', async ({ page }) => {
+  await lateTransport(page);
   await open(page, '恢复途中版本修改'); await save(page);
   const selector = page.locator('.node-version select').first(), previous = await selector.inputValue();
   const option = (await selector.locator('option').evaluateAll(nodes => nodes.map(node => (node as HTMLOptionElement).value))).find(value => value && value !== previous)!;
   let release = () => {}, began = () => {}; const held = new Promise<void>(resolve => { release = resolve; }), started = new Promise<void>(resolve => { began = resolve; });
   await page.route('**/api/semantic-graph?*', async route => { if (new URL(route.request().url()).searchParams.get('offset') !== '100') { await route.continue(); return; } const response = await route.fetch(); expect(response.status()).toBe(200); began(); await held; await route.fulfill({ response, headers: { ...response.headers(), 'x-synthetic-late': 'restore-page' } }); });
-  await page.getByRole('button', { name: '读取已保存视图', exact: true }).click(); await started;
-  await selector.selectOption(option); release(); await expect.poll(() => page.evaluate(() => (window as unknown as { personalLate: string[] }).personalLate.includes('restore-page'))).toBe(true);
-  await expect(selector).toHaveValue(option); await expect(page.locator('.graph-notice').filter({ hasText: '恢复个人布局' })).toHaveCount(0); await page.unroute('**/api/semantic-graph?*');
+  try {
+      await page.getByRole('button', { name: '读取已保存视图', exact: true }).click(); await started;
+    await selector.selectOption(option); release(); await expect.poll(() => page.evaluate(() => (window as unknown as { personalLate: string[] }).personalLate.includes('restore-page'))).toBe(true);
+    await expect(selector).toHaveValue(option); await expect(page.locator('.graph-notice').filter({ hasText: '恢复个人布局' })).toHaveCount(0);
+  } finally { release(); await page.unroute('**/api/semantic-graph?*'); }
 });
