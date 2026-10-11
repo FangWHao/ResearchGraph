@@ -67,7 +67,7 @@ class Stages:
     def _recover(self) -> int:
         with self.store.transaction() as db:
             rows = db.execute(
-                "SELECT queue_id,owner_id FROM pipeline_queue WHERE state='running'"
+                "SELECT queue_id,owner_id FROM effective_pipeline_queue WHERE state='running'"
             ).fetchall()
             for row in rows:
                 db.execute(
@@ -92,7 +92,7 @@ class Stages:
                     list(r)
                     for r in self.store.db.execute(
                         "SELECT version_id,path,algo,digest,evidence_event_id "
-                        "FROM artifact_versions "
+                        "FROM effective_artifact_versions "
                         "WHERE project_id=? ORDER BY version_id",
                         (project,),
                     ).fetchall()
@@ -102,7 +102,7 @@ class Stages:
                     for r in self.store.db.execute(
                         "SELECT ce.claim_id,es.span_id,es.quote_sha256,r.object_sha256,"
                         "r.exclude_reason,d.alias_id FROM claim_evidence ce "
-                        "JOIN claims c USING(claim_id) JOIN entities e "
+                        "JOIN claims c USING(claim_id) JOIN effective_entities e "
                         "USING(entity_id) JOIN evidence_spans es USING(span_id) JOIN "
                         "effective_raw_events r "
                         "USING(event_id) LEFT JOIN effective_dedupe_links d ON "
@@ -119,7 +119,8 @@ class Stages:
     def _retry_plan(self, project: str) -> dict[str, int]:
         return dict(
             self.store.db.execute(
-                "SELECT job_key,attempts FROM link_progress WHERE project_id=? AND provider=? "
+                "SELECT job_key,attempts FROM effective_link_progress "
+                "WHERE project_id=? AND provider=? "
                 "AND model=? AND state='failed'",
                 (project, self.worker.provider.provider, self.worker.provider.model),
             ).fetchall()
@@ -144,7 +145,7 @@ class Stages:
             input_key = self._input(project, stage, session)
             task_key = digest(dumps([config, project, target, input_key]).encode())
             previous = db.execute(
-                "SELECT * FROM pipeline_queue WHERE task_key=?", (task_key,)
+                "SELECT * FROM effective_pipeline_queue WHERE task_key=?", (task_key,)
             ).fetchone()
             published = previous is None or self._published(previous)
             retained = previous and not (
@@ -154,7 +155,8 @@ class Stages:
                 and previous["state"] == "partial"
             )
             old = db.execute(
-                "SELECT * FROM pipeline_queue WHERE project_id=? AND stage=? AND target_key=? "
+                "SELECT * FROM effective_pipeline_queue WHERE project_id=? "
+                "AND stage=? AND target_key=? "
                 "AND scope IS ? AND state IN ('queued','paused','blocked') AND queue_id!=?",
                 (
                     project,
@@ -238,7 +240,9 @@ class Stages:
 
     def _claim(self, queue: int) -> tuple[sqlite3.Row, str] | None:
         with self.store.transaction() as db:
-            row = db.execute("SELECT * FROM pipeline_queue WHERE queue_id=?", (queue,)).fetchone()
+            row = db.execute(
+                "SELECT * FROM effective_pipeline_queue WHERE queue_id=?", (queue,)
+            ).fetchone()
             if (
                 row is None
                 or row["state"] not in {"queued", "paused"}
@@ -246,7 +250,8 @@ class Stages:
             ):
                 return None
             permission = db.execute(
-                "SELECT remote_model_allowed FROM projects WHERE project_id=?", (row["project_id"],)
+                "SELECT remote_model_allowed FROM active_projects WHERE project_id=?",
+                (row["project_id"],),
             ).fetchone()
             if self.worker.provider.remote and (permission is None or not permission[0]):
                 db.execute(
@@ -259,7 +264,7 @@ class Stages:
             if (
                 row["stage"] == "overview"
                 and db.execute(
-                    "SELECT 1 FROM pipeline_queue WHERE project_id=? "
+                    "SELECT 1 FROM effective_pipeline_queue WHERE project_id=? "
                     "AND stage='link' AND config_key=? "
                     "AND state IN ('queued','running','paused','blocked') LIMIT 1",
                     (row["project_id"], self.configs["link"]),
@@ -374,10 +379,11 @@ class Stages:
 
     def _process(self, stage: str, limit: int, counts: Counter) -> None:
         rows = self.store.db.execute(
-            "SELECT q.queue_id FROM pipeline_queue q WHERE q.stage=? AND q.config_key=? "
+            "SELECT q.queue_id FROM effective_pipeline_queue q WHERE q.stage=? AND q.config_key=? "
             "AND (? IS NULL OR q.project_id=?) AND q.state IN ('queued','paused') "
             "AND (q.next_attempt_at IS NULL OR q.next_attempt_at<=?) "
-            "AND (q.stage!='overview' OR NOT EXISTS (SELECT 1 FROM pipeline_queue l WHERE "
+            "AND (q.stage!='overview' OR NOT EXISTS (SELECT 1 FROM "
+            "effective_pipeline_queue l WHERE "
             "l.project_id=q.project_id AND l.stage='link' AND l.config_key=? "
             "AND l.state IN ('queued','running','paused','blocked'))) "
             "ORDER BY q.updated_at,q.queue_id LIMIT ?",
@@ -421,7 +427,7 @@ class Stages:
             counts: Counter = Counter()
             counts["pipeline_recovered"] = self._recover()
             projects = self.store.db.execute(
-                "SELECT project_id,remote_model_allowed FROM projects WHERE (? IS NULL OR "
+                "SELECT project_id,remote_model_allowed FROM active_projects WHERE (? IS NULL OR "
                 "project_id=?) ORDER BY project_id",
                 (self.project, self.project),
             ).fetchall()
@@ -437,7 +443,7 @@ class Stages:
             for project in eligible:
                 # 部分关系可进入概览；还在分页、等待额度或服务恢复时不提前发布概览。
                 waiting = self.store.db.execute(
-                    "SELECT 1 FROM pipeline_queue WHERE project_id=? AND stage='link' "
+                    "SELECT 1 FROM effective_pipeline_queue WHERE project_id=? AND stage='link' "
                     "AND config_key=? AND state IN ('queued','running','paused','blocked') LIMIT 1",
                     (project, self.configs["link"]),
                 ).fetchone()

@@ -89,7 +89,8 @@ def register(store: Store) -> Counter[str]:
         sha = store.objects.put(raw)
         key = digest((path.name + "\0" + sha).encode())
         previous = store.db.execute(
-            "SELECT r.*,j.state FROM spool_receipts r JOIN jobs j USING(job_id) WHERE receipt_id=?",
+            "SELECT r.*,j.state FROM spool_receipts r JOIN effective_jobs "
+            "j USING(job_id) WHERE receipt_id=?",
             (key,),
         ).fetchone()
         if previous:
@@ -157,7 +158,7 @@ def consume(
         raise ValueError("spool 消费页长必须为正整数")
     counts: Counter[str] = Counter()
     rows = store.db.execute(
-        "SELECT r.*,j.state FROM spool_receipts r JOIN jobs j USING(job_id) "
+        "SELECT r.*,j.state FROM spool_receipts r JOIN effective_jobs j USING(job_id) "
         "WHERE j.kind='spool_hint' AND "
         "(j.state IN ('queued','running') OR (? AND j.state='failed')) "
         "ORDER BY j.updated_at,r.recorded_at,r.receipt_id LIMIT ?",
@@ -168,7 +169,7 @@ def consume(
         if state == "done":
             counts["spool_done"] += 1
     for state, count in store.db.execute(
-        "SELECT state,count(*) FROM jobs WHERE kind='spool_hint' "
+        "SELECT state,count(*) FROM effective_jobs WHERE kind='spool_hint' "
         "AND state IN ('queued','running','failed') GROUP BY state"
     ):
         counts["spool_failed" if state == "failed" else "spool_waiting"] += count

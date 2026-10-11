@@ -134,7 +134,8 @@ def parser() -> argparse.ArgumentParser:
     add.add_argument("--root", type=Path, required=True)
     add.add_argument("--alias", type=Path, action="append", default=[])
     add.add_argument(
-        "--follow-worktrees", action="store_true",
+        "--follow-worktrees",
+        action="store_true",
         help="持续登记归属唯一的同仓库工作树并允许其快照",
     )
     root_add = project_sub.add_parser("root-add", help="给已有项目追加本机根目录，不改变会话归属")
@@ -153,9 +154,7 @@ def parser() -> argparse.ArgumentParser:
     worktrees.add_argument("--limit", type=int, default=100)
     worktrees.add_argument("--offset", type=int, default=0)
     worktrees.add_argument("--expected-revision", type=int)
-    fragments = project_sub.add_parser(
-        "fragments", help="只读检查物理片段、目录线索与正式归属"
-    )
+    fragments = project_sub.add_parser("fragments", help="只读检查物理片段、目录线索与正式归属")
     fragments.add_argument("--session", type=int, required=True)
     fragments.add_argument("--source", type=int, required=True)
     fragments.add_argument("--project")
@@ -172,6 +171,10 @@ def parser() -> argparse.ArgumentParser:
         "fragment-plan", help="只读核对完整片段的科研依赖，不执行迁移"
     )
     fragment_plan.add_argument("--request-file", type=Path, required=True)
+    fragment_migrate = project_sub.add_parser(
+        "fragment-migrate", help="按已核对摘要迁移完整科研依赖"
+    )
+    fragment_migrate.add_argument("--request-file", type=Path, required=True)
     fragment_backfill = project_sub.add_parser(
         "fragment-backfill", help="有界补记已保存物理记录的目录线索，不读取原路径"
     )
@@ -650,7 +653,7 @@ def run(args: argparse.Namespace, store: Store) -> object:
                     if getattr(args, name) is not None
                 },
             )
-        if args.project_command in {"fragment-assign", "fragment-plan"}:
+        if args.project_command in {"fragment-assign", "fragment-plan", "fragment-migrate"}:
             from rg.clients.record import unique_pairs
             from rg.store.fragments import assign
 
@@ -665,6 +668,10 @@ def run(args: argparse.Namespace, store: Store) -> object:
                 from rg.store.fragment_dependencies import preview
 
                 return preview(store, body)
+            if args.project_command == "fragment-migrate":
+                from rg.store.science_migration import migrate
+
+                return migrate(store, body)
             return assign(store, body)
         if args.project_command == "fragment-backfill":
             from rg.ingest.project_context import backfill_file
@@ -754,11 +761,14 @@ def run(args: argparse.Namespace, store: Store) -> object:
     if args.command == "parser-health":
         from rg.query.parsers import query
 
-        return query(store, {
-            key: str(getattr(args, key))
-            for key in ("project", "limit", "offset", "snapshot", "expected_scope_key")
-            if getattr(args, key) is not None
-        })
+        return query(
+            store,
+            {
+                key: str(getattr(args, key))
+                for key in ("project", "limit", "offset", "snapshot", "expected_scope_key")
+                if getattr(args, key) is not None
+            },
+        )
     if args.command == "source-audit":
         from rg.query.source_audit import query
 
@@ -773,23 +783,30 @@ def run(args: argparse.Namespace, store: Store) -> object:
     if args.command == "hook-errors":
         from rg.query.hook_errors import query
 
-        return query(store, {
-            key: str(getattr(args, key))
-            for key in ("project", "limit", "offset", "snapshot")
-            if getattr(args, key) is not None
-        })
+        return query(
+            store,
+            {
+                key: str(getattr(args, key))
+                for key in ("project", "limit", "offset", "snapshot")
+                if getattr(args, key) is not None
+            },
+        )
     if args.command == "event-chain":
         from rg.query.event_chain import query
 
-        return query(store, {"event": str(args.event)} | (
-            {"project": args.project} if args.project is not None else {}
-        ))
+        return query(
+            store,
+            {"event": str(args.event)}
+            | ({"project": args.project} if args.project is not None else {}),
+        )
     if args.command == "session-parent":
         from rg.query.session_parent import query
 
-        return query(store, {"session": str(args.session)} | (
-            {"project": args.project} if args.project is not None else {}
-        ))
+        return query(
+            store,
+            {"session": str(args.session)}
+            | ({"project": args.project} if args.project is not None else {}),
+        )
     if args.command == "versions":
         from rg.artifacts.views import versions
 
@@ -1129,11 +1146,7 @@ def main() -> None:
             )
             return
         result = run(args, store)
-        print(
-            result
-            if args.command in {"context", "ask", "run-evidence"}
-            else json_output(result)
-        )
+        print(result if args.command in {"context", "ask", "run-evidence"} else json_output(result))
     except (ValueError, RuntimeError, OSError, sqlite3.Error) as error:
         cli.exit(1, f"错误：{error}\n")
     finally:

@@ -38,6 +38,15 @@ export interface FragmentDependencies {
   required_records: FragmentDependencyRecord[]; required_records_total: number;
   next_offset: number | null; issues: string[]; migration_applied: false;
 }
+export interface FragmentMigrationIntent extends FragmentAssignmentIntent {
+  project_id: string; expected_plan_sha256: string; include_required_records: true;
+}
+export interface FragmentMigrationReceipt {
+  request_id: string; revision: number; replayed: boolean; migration_applied: true; assignments_applied: true;
+  project_id: string; session_pk: number; file_instance_id: number; first_event_id: number; last_event_id: number;
+  plan_sha256: string; records_assigned: number; selected_records: number; required_records_included: number;
+  partitions_created: number; dependencies_migrated: Record<string, number>; model_calls: 0; scientific_records_rewritten: 0;
+}
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const integer = (value: unknown, min = 0): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= min;
 const textOrNull = (value: unknown) => value === null || typeof value === 'string';
@@ -104,6 +113,13 @@ export function parseFragmentDependencies(raw: unknown, page: FragmentPage, sele
   return raw as unknown as FragmentDependencies;
 }
 const stableCounts = (value: Record<string, number>) => JSON.stringify(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
+export function canMigrateFragments(page: FragmentPage, plan: FragmentDependencies | null, selected: number, target: string | null): boolean {
+  return canAssignFragments(page) && !!target && target !== 'inbox' && selected > 0 && !!plan && plan.complete && plan.issues.length === 0 && plan.write_mode === 'dependency_migration' && !plan.assignment_available && plan.revision === page.revision && plan.scope_key === page.scope_key && plan.snapshot === page.snapshot && plan.observation_snapshot === page.observation_snapshot && plan.selected_records === selected && plan.next_offset === null && plan.required_records.length === plan.required_records_total;
+}
+export function parseFragmentMigrationReceipt(raw: unknown, intent: FragmentMigrationIntent, plan: FragmentDependencies): FragmentMigrationReceipt {
+  if (!object(raw) || raw.request_id !== intent.request_id || !integer(raw.revision) || typeof raw.replayed !== 'boolean' || raw.migration_applied !== true || raw.assignments_applied !== true || raw.project_id !== intent.project_id || raw.session_pk !== intent.session || raw.file_instance_id !== intent.source || raw.first_event_id !== intent.first_event || raw.last_event_id !== intent.last_event || raw.plan_sha256 !== intent.expected_plan_sha256 || raw.plan_sha256 !== plan.plan_sha256 || raw.selected_records !== plan.selected_records || raw.required_records_included !== plan.required_records_total || raw.records_assigned !== plan.selected_records + plan.required_records_total || !integer(raw.partitions_created) || !counts(raw.dependencies_migrated) || stableCounts(raw.dependencies_migrated) !== stableCounts(plan.dependencies) || raw.model_calls !== 0 || raw.scientific_records_rewritten !== 0) throw new Error('迁移回执与完整计划、范围或目标不一致，未更新页面；请重新读取核对实际结果。');
+  return raw as unknown as FragmentMigrationReceipt;
+}
 export function appendFragmentDependencies(first: FragmentDependencies, next: FragmentDependencies): FragmentDependencies {
   for (const key of ['revision', 'scope_key', 'snapshot', 'observation_snapshot', 'plan_sha256', 'complete', 'closure_closed', 'assignment_available', 'write_mode', 'selected_records', 'required_records_total', 'migration_applied'] as const) {
     if (first[key] !== next[key]) throw new Error('科研依赖摘要或读取条件已变化，未混合续页；请主动重新预检。');

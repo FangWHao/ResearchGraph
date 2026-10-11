@@ -11,6 +11,7 @@ from rg.query.time import canonical_times, instant
 from rg.record.schema import validate_scope
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
+from rg.store.ownership import entity_owner, event_owner, historical_source, record_owner
 from rg.store.scopes import known_scope
 
 
@@ -119,7 +120,7 @@ class Reader:
             not isinstance(project, str)
             or not project
             or not store.db.execute(
-                "SELECT 1 FROM projects WHERE project_id=?", (project,)
+                "SELECT 1 FROM active_projects WHERE project_id=?", (project,)
             ).fetchone()
         ):
             raise NotFound("项目不存在")
@@ -157,24 +158,40 @@ class Reader:
             "unknown_recorded_time_excluded": len(self.unknown_recorded),
         }
 
+    def belongs(self, table: str, key: str, value: str | int | None) -> bool:
+        if value is None:
+            return False
+        return record_owner(self.store.db, table, key, value, self.known_until) == self.project
+
+    def event_belongs(self, identity: int) -> bool:
+        return event_owner(self.store.db, identity, self.known_until) == self.project
+
+    def source(self, row: dict[str, Any]) -> dict[str, Any]:
+        return historical_source(self.store.db, row, self.known_until)
+
     def claims(self) -> list[dict[str, Any]]:
         if self._cached is not None:
             return self._cached
         reviews: dict[int, dict[str, Any]] = {}
         for row in self.store.db.execute(
-            "SELECT a.* FROM review_actions a JOIN claims c USING(claim_id) "
-            "JOIN entities e USING(entity_id) WHERE e.project_id=? ORDER BY a.action_id",
-            (self.project,),
+            "SELECT a.*,c.entity_id AS owner_entity FROM review_actions "
+            "a JOIN claims c USING(claim_id) "
+            "ORDER BY a.action_id",
         ):
+            if entity_owner(self.store.db, row["owner_entity"], self.known_until) != self.project:
+                continue
             recorded = instant(row["recorded_at"])
             if recorded is not None and recorded <= self.known_cutoff:
-                reviews[row["claim_id"]] = dict(row)
+                saved = dict(row)
+                saved.pop("owner_entity")
+                reviews[row["claim_id"]] = saved
         result = []
         for row in self.store.db.execute(
-            "SELECT c.*,e.kind FROM claims c JOIN entities e USING(entity_id) "
-            "WHERE e.project_id=? ORDER BY c.claim_id",
-            (self.project,),
+            "SELECT c.*,e.kind FROM claims c JOIN effective_entities e USING(entity_id) "
+            "ORDER BY c.claim_id",
         ):
+            if entity_owner(self.store.db, row["entity_id"], self.known_until) != self.project:
+                continue
             if not self.visible(row["occurred_at"], row["recorded_at"], ("C", row["claim_id"])):
                 continue
             item = dict(row)
@@ -196,6 +213,7 @@ class Reader:
                     ),
                     review=review,
                     selected=True,
+                    known_at=self.known_until,
                 )
             )
             item["occurred_time_unknown"] = instant(row["occurred_at"]) is None
@@ -222,10 +240,12 @@ class Reader:
         for row in self.store.db.execute(
             "SELECT s.*,ce.role,r.occurred_at,r.recorded_at FROM claim_evidence ce "
             "JOIN evidence_spans s USING(span_id) JOIN effective_raw_events r USING(event_id) "
-            "JOIN sessions se USING(session_pk) WHERE ce.claim_id=? AND se.project_id=? "
+            "WHERE ce.claim_id=? "
             "ORDER BY s.span_id",
-            (claim_id, self.project),
+            (claim_id,),
         ):
+            if event_owner(self.store.db, row["event_id"], self.known_until) != self.project:
+                continue
             if self.visible(row["occurred_at"], row["recorded_at"], ("E", row["event_id"])):
                 rows.append(dict(row) | {"citation_id": f"S{row['span_id']}"})
         return page(rows, values or {})
@@ -237,10 +257,7 @@ class Reader:
         }
 
     def entity(self, entity_id: str) -> None:
-        if not self.store.db.execute(
-            "SELECT 1 FROM entities WHERE entity_id=? AND project_id=?",
-            (entity_id, self.project),
-        ).fetchone():
+        if entity_owner(self.store.db, entity_id, self.known_until) != self.project:
             raise NotFound("当前项目中没有这个对象")
 
     def related(self, entity_id: str) -> list[dict[str, Any]]:
@@ -327,11 +344,16 @@ class Reader:
         hits = []
         for row in self.store.db.execute(
             "SELECT r.*,x.text FROM event_search x JOIN effective_raw_events r USING(event_id) "
-            "JOIN sessions s USING(session_pk) WHERE s.project_id=? AND instr(x.text,?)>0 "
-            "AND r.exclude_reason IS NULL AND r.alias_of IS NULL ORDER BY r.event_id",
-            (self.project, text),
+            "WHERE instr(x.text,?)>0 ORDER BY r.event_id",
+            (text,),
         ):
-            if not self.visible(row["occurred_at"], row["recorded_at"], ("E", row["event_id"])):
+            row = self.source(dict(row))
+            if (
+                not self.event_belongs(row["event_id"])
+                or row["alias_of"] is not None
+                or row["exclude_reason"] is not None
+                or not self.visible(row["occurred_at"], row["recorded_at"], ("E", row["event_id"]))
+            ):
                 continue
             position = row["text"].find(text)
             hits.append(
@@ -359,10 +381,15 @@ class Reader:
             if self.scope_filter:
                 raise ValueError("文件观察没有统一范围，请先查看关联记录")
             version = self.store.db.execute(
-                "SELECT v.* FROM artifact_versions v WHERE v.version_id=? AND v.project_id=?",
-                (values["version_id"], self.project),
+                "SELECT v.* FROM effective_artifact_versions v WHERE v.version_id=?",
+                (values["version_id"],),
             ).fetchone()
-            record = version_record(self, dict(version)) if version is not None else None
+            record = (
+                version_record(self, dict(version))
+                if version is not None
+                and self.belongs("artifact_versions", "version_id", version["version_id"])
+                else None
+            )
             if record is None:
                 raise NotFound("当前查询中没有这个版本观察")
             card, observed = record
@@ -385,10 +412,10 @@ class Reader:
         if "span_id" in values:
             span = self.store.db.execute(
                 "SELECT s.* FROM evidence_spans s JOIN effective_raw_events r USING(event_id) "
-                "JOIN sessions se USING(session_pk) WHERE s.span_id=? AND se.project_id=?",
-                (values["span_id"], self.project),
+                "WHERE s.span_id=?",
+                (values["span_id"],),
             ).fetchone()
-            if span is None:
+            if span is None or not self.event_belongs(span["event_id"]):
                 raise NotFound("当前项目中没有这个引用")
             event_id = span["event_id"]
         else:
@@ -396,13 +423,16 @@ class Reader:
         row = self.store.db.execute(
             "SELECT r.*,f.parser FROM effective_raw_events r JOIN sessions s USING(session_pk) "
             "JOIN source_files f USING(file_instance_id) "
-            "WHERE r.event_id=? AND s.project_id=?",
-            (event_id, self.project),
+            "WHERE r.event_id=?",
+            (event_id,),
         ).fetchone()
-        if row is None or not self.visible(
-            row["occurred_at"], row["recorded_at"], ("E", row["event_id"])
+        if (
+            row is None
+            or not self.event_belongs(event_id)
+            or not self.visible(row["occurred_at"], row["recorded_at"], ("E", row["event_id"]))
         ):
             raise NotFound("当前查询中没有这个原文事件")
+        row = self.source(dict(row))
         raw = self.store.raw(event_id)
         left, right = (span["byte_start"], span["byte_end"]) if span else (0, len(raw))
         if span:
@@ -450,13 +480,18 @@ class Reader:
             "window_truncated": start > left or end < right,
             "artifact_versions": page(
                 [
-                    dict(version) | {"citation_id": f"V:{version['version_id']}"}
+                    dict(version)
+                    | {
+                        "project_id": self.project,
+                        "citation_id": f"V:{version['version_id']}",
+                    }
                     for version in self.store.db.execute(
-                        "SELECT * FROM artifact_versions "
-                        "WHERE evidence_event_id=? AND project_id=? "
+                        "SELECT * FROM effective_artifact_versions "
+                        "WHERE evidence_event_id=? "
                         "ORDER BY version_id",
-                        (event_id, self.project),
+                        (event_id,),
                     )
+                    if self.belongs("artifact_versions", "version_id", version["version_id"])
                 ],
                 values,
             ),

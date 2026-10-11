@@ -42,7 +42,8 @@ class Files:
         self.blockers: list[str] = []
         self.remove: list[str] = []
         self.signatures: list[tuple] = []
-        self.roots = list(db.execute("SELECT path,project_id FROM source_roots"))
+        self.prune_shadow: list[str] = []
+        self.roots = list(db.execute("SELECT path,project_id,root_id FROM effective_source_roots"))
         self.sources: dict[str, set[str | None]] = {}
         fragmented_paths = {
             r[0]
@@ -81,14 +82,15 @@ class Files:
             for key, owners in self.sessions.items()
         ):
             self.blockers.append("来源命名空间同时属于多个项目或未分配会话")
-        for path, owner in self.roots:
+        for path, owner, root_id in self.roots:
             if owner == self.project and any(
                 other != owner
+                and other_root != root_id
                 and (
                     Path(path).resolve().is_relative_to(Path(p).resolve())
                     or Path(p).resolve().is_relative_to(Path(path).resolve())
                 )
-                for p, other in self.roots
+                for p, other, other_root in self.roots
             ):
                 self.blockers.append("项目根目录与其他项目重叠，不能建立清除来源屏障")
         self.denials = {
@@ -113,7 +115,14 @@ class Files:
                     if self.sources.get(r[0], {self.project}) == {self.project}
                 }
             ),
-            "prefixes": sorted({path_hash(r[0]) for r in self.roots if r[1] == self.project}),
+            "prefixes": sorted(
+                {
+                    path_hash(r[0])
+                    for r in self.roots
+                    if r[1] == self.project
+                    and not any(o[2] == r[2] and o[1] != self.project for o in self.roots)
+                }
+            ),
         }
 
     def owner(self, payload: Any, tool: str | None) -> str | None:
@@ -133,7 +142,7 @@ class Files:
         if isinstance(cwd, str) and Path(cwd).is_absolute():
             matches = {
                 project
-                for path, project in self.roots
+                for path, project, _root in self.roots
                 if Path(cwd).resolve().is_relative_to(Path(path).resolve())
             }
             owners.update(matches)
@@ -218,7 +227,25 @@ class Files:
             entries = read_json(registry, 1024 * 1024)
             if not isinstance(entries, list) or any(not isinstance(e, dict) for e in entries):
                 raise ValueError("快照根登记格式无效")
-        self.tree(self.root / "snapshots" / (self.project + ".git"), remove=True)
+        storages = {self.project} | {
+            r[0]
+            for r in self.db.execute(
+                "SELECT DISTINCT c.project_id FROM workspace_snapshots c WHERE "
+                + self.selection.selected("workspace_snapshots")
+            )
+        }
+        for storage in sorted(storages):
+            retained = self.db.execute(
+                "SELECT 1 FROM workspace_snapshots c WHERE project_id=? "
+                "AND NOT ("
+                + self.selection.selected("workspace_snapshots")
+                + ") AND shadow_commit IS NOT NULL LIMIT 1",
+                (storage,),
+            ).fetchone()
+            path = self.root / "snapshots" / (storage + ".git")
+            self.tree(path, remove=not retained)
+            if retained and path.exists():
+                self.prune_shadow.append(storage)
         self.tree(self.root / "overviews" / digest(self.project.encode()), remove=True)
 
     def object_files(self, removed: set[str], shared: set[str]) -> None:

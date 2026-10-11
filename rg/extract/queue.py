@@ -26,14 +26,14 @@ def sessions(
     if (
         project is not None
         and not store.db.execute(
-            "SELECT 1 FROM projects WHERE project_id=?",
+            "SELECT 1 FROM active_projects WHERE project_id=?",
             (project,),
         ).fetchone()
     ):
         raise ValueError("项目不存在")
     rows = store.db.execute(
         "SELECT s.session_pk,s.project_id,max(r.event_id) AS max_event_id,p.remote_model_allowed "
-        "FROM sessions s JOIN effective_raw_events r USING(session_pk) LEFT JOIN projects "
+        "FROM sessions s JOIN effective_raw_events r USING(session_pk) LEFT JOIN active_projects "
         "p USING(project_id) "
         "WHERE s.tool IN ('claude','codex') AND (? IS NULL OR s.project_id=?) "
         "GROUP BY s.session_pk ORDER BY s.session_pk",
@@ -73,7 +73,7 @@ class Queue:
         if (
             project is not None
             and not self.store.db.execute(
-                "SELECT 1 FROM projects WHERE project_id=?", (project,)
+                "SELECT 1 FROM active_projects WHERE project_id=?", (project,)
             ).fetchone()
         ):
             raise ValueError("项目不存在")
@@ -86,7 +86,7 @@ class Queue:
         # 仅在取得 extract-queue.lock 后调用；running 的记录本身不是进程存活证明。
         with self.store.transaction() as db:
             rows = db.execute(
-                "SELECT queue_id,owner_id FROM extraction_queue WHERE state='running'"
+                "SELECT queue_id,owner_id FROM effective_extraction_queue WHERE state='running'"
             ).fetchall()
             for row in rows:
                 db.execute(
@@ -125,7 +125,7 @@ class Queue:
                     dumps([self.config, row["project_id"], row["session_pk"], input_key]).encode()
                 )
                 previous = db.execute(
-                    "SELECT * FROM extraction_queue WHERE task_key=?", (task_key,)
+                    "SELECT * FROM effective_extraction_queue WHERE task_key=?", (task_key,)
                 ).fetchone()
                 if previous and not (
                     previous["state"] in {"blocked", "cancelled"}
@@ -135,7 +135,7 @@ class Queue:
                     continue
                 # 新内容替代尚未执行的旧任务；日额度的等待时间不能因追加事件被绕过。
                 old = db.execute(
-                    "SELECT * FROM extraction_queue WHERE session_pk=? "
+                    "SELECT * FROM effective_extraction_queue WHERE session_pk=? "
                     "AND state IN ('queued','paused','blocked') AND queue_id!=?",
                     (row["session_pk"], previous["queue_id"] if previous else -1),
                 ).fetchall()
@@ -221,7 +221,7 @@ class Queue:
     def _claim(self, queue_id: int) -> tuple[sqlite3.Row, str] | None:
         with self.store.transaction() as db:
             row = db.execute(
-                "SELECT * FROM extraction_queue WHERE queue_id=?", (queue_id,)
+                "SELECT * FROM effective_extraction_queue WHERE queue_id=?", (queue_id,)
             ).fetchone()
             if (
                 row is None
@@ -231,7 +231,8 @@ class Queue:
             ):
                 return None
             permission = db.execute(
-                "SELECT remote_model_allowed FROM projects WHERE project_id=?", (row["project_id"],)
+                "SELECT remote_model_allowed FROM active_projects WHERE project_id=?",
+                (row["project_id"],),
             ).fetchone()
             if self.worker.provider.remote and (not permission or not permission[0]):
                 db.execute(
@@ -311,7 +312,7 @@ class Queue:
         counts: Counter[str] = Counter(self._discover(retry_failed))
         counts["recovered"] = recovered
         rows = self.store.db.execute(
-            "SELECT queue_id FROM extraction_queue WHERE config_key=? AND (? IS "
+            "SELECT queue_id FROM effective_extraction_queue WHERE config_key=? AND (? IS "
             "NULL OR project_id=?) "
             "AND state IN ('queued','paused') AND (next_attempt_at IS NULL OR next_attempt_at<=?) "
             "ORDER BY updated_at,queue_id LIMIT ?",
@@ -321,7 +322,7 @@ class Queue:
             policy = privacy_policy(
                 self.store,
                 self.store.db.execute(
-                    "SELECT project_id FROM extraction_queue WHERE queue_id=?", (row[0],)
+                    "SELECT project_id FROM effective_extraction_queue WHERE queue_id=?", (row[0],)
                 ).fetchone()[0],
             )
             claimed = self._claim(row[0])

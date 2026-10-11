@@ -64,7 +64,7 @@ def intent(body: dict[str, Any]) -> tuple[str, dict[str, Any], int]:
 
 def receipt(store: Store, request_id: str, replayed: bool) -> dict[str, Any]:
     row = store.db.execute(
-        "SELECT * FROM decision_requests WHERE request_id=?", (request_id,)
+        "SELECT * FROM effective_decision_requests WHERE request_id=?", (request_id,)
     ).fetchone()
     if row is None:
         raise RuntimeError("人工决定回执缺失")
@@ -92,7 +92,7 @@ def decide(store: Store, body: dict[str, Any]) -> dict[str, Any]:
         if expected != store.revision():
             raise ConflictError("图版本已变化，请刷新后再保存决定")
         if not db.execute(
-            "SELECT 1 FROM projects WHERE project_id=?", (data["project_id"],)
+            "SELECT 1 FROM active_projects WHERE project_id=?", (data["project_id"],)
         ).fetchone():
             raise ValueError("项目不存在")
         target = unique_target(store, data["project_id"], data["selector"], data["scope"])

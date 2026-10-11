@@ -45,7 +45,7 @@ def records(
         if not owner or owner[0] != project:
             raise ValueError("会话不属于指定项目")
     rows = store.db.execute(
-        "SELECT c.* FROM claims c WHERE EXISTS (SELECT 1 FROM entities e "
+        "SELECT c.* FROM claims c WHERE EXISTS (SELECT 1 FROM effective_entities e "
         "WHERE e.entity_id=c.entity_id AND e.project_id=?) OR EXISTS "
         "(SELECT 1 FROM claim_evidence ce JOIN evidence_spans es USING(span_id) "
         "JOIN effective_raw_events r USING(event_id) JOIN sessions s USING(session_pk) "

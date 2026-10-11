@@ -33,14 +33,16 @@ def page(values: dict[str, str], maximum: int = 200) -> tuple[int, int]:
 def project_exists(store: Store, project: str | None) -> None:
     if (
         project
-        and not store.db.execute("SELECT 1 FROM projects WHERE project_id=?", (project,)).fetchone()
+        and not store.db.execute(
+            "SELECT 1 FROM active_projects WHERE project_id=?", (project,)
+        ).fetchone()
     ):
         raise NotFound("项目不存在")
 
 
 def projects(store: Store) -> dict[str, Any]:
     result = []
-    for row in store.db.execute("SELECT * FROM projects ORDER BY name, project_id"):
+    for row in store.db.execute("SELECT * FROM active_projects ORDER BY name, project_id"):
         project = dict(row)
         count = "SELECT count(*) FROM sessions WHERE project_id=?"
         if store.db.execute("PRAGMA user_version").fetchone()[0] >= 31:
@@ -51,7 +53,8 @@ def projects(store: Store) -> dict[str, Any]:
             )
         project["sessions"] = store.db.execute(count, (row["project_id"],)).fetchone()[0]
         project["claims"] = store.db.execute(
-            "SELECT count(*) FROM claims c JOIN entities e USING(entity_id) WHERE e.project_id=?",
+            "SELECT count(*) FROM claims c JOIN effective_entities "
+            "e USING(entity_id) WHERE e.project_id=?",
             (row["project_id"],),
         ).fetchone()[0]
         result.append(project)
@@ -162,7 +165,7 @@ def claims(store: Store, values: dict[str, str]) -> dict[str, Any]:
         raise ValueError("会话 ID 无效")
     # 最新追加的人工/规则操作决定有效审核状态，不改写模型原行。
     query = (
-        "FROM claims c LEFT JOIN entities e USING(entity_id) "
+        "FROM claims c LEFT JOIN effective_entities e USING(entity_id) "
         "LEFT JOIN review_actions a ON a.action_id=(SELECT max(action_id) "
         "FROM review_actions WHERE claim_id=c.claim_id) "
         "WHERE (? IS NULL OR e.project_id=?) AND (?='all' OR "
@@ -280,7 +283,7 @@ def evidence(store: Store, event_id: int, values: dict[str, str]) -> dict[str, A
         dict(row)
         for row in store.db.execute(
             "SELECT version_id,path,algo,digest,size,source,observed_at,phase,basis,claim_state,"
-            "representation FROM artifact_versions "
+            "representation FROM effective_artifact_versions "
             "WHERE evidence_event_id=? ORDER BY observed_at,version_id LIMIT 40",
             (event_id,),
         )
@@ -298,7 +301,8 @@ def evidence(store: Store, event_id: int, values: dict[str, str]) -> dict[str, A
         "after": [_event(store, row[0], None, None) for row in after],
         "artifact_versions": versions,
         "artifact_versions_partial": store.db.execute(
-            "SELECT count(*) FROM artifact_versions WHERE evidence_event_id=?", (event_id,)
+            "SELECT count(*) FROM effective_artifact_versions WHERE evidence_event_id=?",
+            (event_id,),
         ).fetchone()[0]
         > 40,
         "artifact_diff": {
@@ -567,7 +571,7 @@ def graph(store: Store, project: str) -> dict[str, Any]:
         raise ValueError("研究图需指定项目")
     project_exists(store, project)
     rows = store.db.execute(
-        "SELECT c.* FROM claims c JOIN entities e USING(entity_id) WHERE e.project_id=? "
+        "SELECT c.* FROM claims c JOIN effective_entities e USING(entity_id) WHERE e.project_id=? "
         "ORDER BY c.claim_id LIMIT ?",
         (project, MAX_GRAPH_CLAIMS + 1),
     ).fetchall()
@@ -580,7 +584,8 @@ def graph(store: Store, project: str) -> dict[str, Any]:
         "run_states": [
             dict(row)
             for row in store.db.execute(
-                "SELECT run_id,state,exit_code,started_at,ended_at FROM runs WHERE project_id=?",
+                "SELECT run_id,state,exit_code,started_at,ended_at FROM "
+                "effective_runs WHERE project_id=?",
                 (project,),
             )
         ],

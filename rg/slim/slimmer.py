@@ -61,7 +61,7 @@ def slim_session(
     from rg.extract.privacy import ProjectCounter
 
     permission = store.db.execute(
-        "SELECT p.remote_model_allowed,p.project_id FROM sessions s JOIN projects p "
+        "SELECT p.remote_model_allowed,p.project_id FROM sessions s JOIN active_projects p "
         "USING(project_id) WHERE session_pk = ?",
         (session_id,),
     ).fetchone()

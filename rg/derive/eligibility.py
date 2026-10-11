@@ -20,8 +20,9 @@ def recorded(
     *,
     review: Mapping[str, Any] | None = None,
     selected: bool = False,
+    known_at: str | None = None,
 ) -> dict[str, Any]:
-    source = claim_sources.recorded(store, claim, visible)
+    source = claim_sources.recorded(store, claim, visible, known_at=known_at)
     rule = rule_references.recorded(store, claim, review, selected=selected)
     return {
         "source_qualification": source,

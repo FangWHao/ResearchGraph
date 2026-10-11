@@ -25,7 +25,7 @@ REFERENCES = (
     "f.parser,(SELECT action FROM review_actions a WHERE a.claim_id=c.claim_id "
     "ORDER BY a.action_id DESC LIMIT 1) AS review_action,"
     "EXISTS(SELECT 1 FROM effective_dedupe_links d WHERE d.alias_id=r.event_id) AS duplicate "
-    "FROM claims c JOIN entities e USING(entity_id) "
+    "FROM claims c JOIN effective_entities e USING(entity_id) "
     "LEFT JOIN claim_evidence ce USING(claim_id) LEFT JOIN evidence_spans s USING(span_id) "
     "LEFT JOIN effective_raw_events r USING(event_id) LEFT JOIN sessions se USING(session_pk) "
     "LEFT JOIN source_files f USING(file_instance_id) "
@@ -91,7 +91,9 @@ def query(store: Store, values: dict[str, Any]) -> dict[str, Any]:
     project = values.get("project")
     if (
         not isinstance(project, str)
-        or not store.db.execute("SELECT 1 FROM projects WHERE project_id=?", (project,)).fetchone()
+        or not store.db.execute(
+            "SELECT 1 FROM active_projects WHERE project_id=?", (project,)
+        ).fetchone()
     ):
         raise NotFound("项目不存在")
     limit, offset = pagination(values)

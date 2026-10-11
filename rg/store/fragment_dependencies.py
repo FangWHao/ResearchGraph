@@ -20,6 +20,7 @@ from rg.store.fragment_dependency_contract import (
 )
 from rg.store.fragments import FIELDS, _protect_science, _validate, selection
 from rg.store.objects import digest
+from rg.store.ownership import entity_owner
 
 MAX_NODES = 4000
 MAX_ROW_BYTES = 1024 * 1024
@@ -127,6 +128,7 @@ class Closure:
             table, rowid = node
             row = self.rows[node]
             if table == "raw_events":
+                self.processing_context(row, node)
                 for sibling in self.db.execute(
                     "SELECT event_id FROM raw_events WHERE file_instance_id=? AND byte_start=? "
                     "AND byte_end=? ORDER BY event_id LIMIT ?",
@@ -143,6 +145,12 @@ class Closure:
                         (rowid, row["call_id"], MAX_NODES + 1),
                     ):
                         self.add("raw_events", call[0], node)
+            if (
+                table == "review_actions"
+                and row["actor"].startswith("rule:")
+                and row["action"] == "confirm"
+            ):
+                self.rule_context(row, node)
             for child, column, parent, key in self.links:
                 if child == table:
                     self.find(parent, key, row[column], node)
@@ -171,6 +179,51 @@ class Closure:
                         (link.value_type, row[link.key], MAX_NODES + 1),
                     ):
                         self.add(link.table, ref[0], node)
+
+    def processing_context(self, row: dict[str, Any], node: Node) -> None:
+        session = self.db.execute(
+            "SELECT session_pk FROM effective_raw_events WHERE event_id=?", (row["event_id"],)
+        ).fetchone()[0]
+        found = False
+        for table in ("extraction_queue", "pipeline_queue", "extraction_plans"):
+            for task in self.db.execute(
+                f"SELECT p.rowid FROM {table} p JOIN effective_{table} e ON "
+                + (
+                    "e.queue_id=p.queue_id"
+                    if table.endswith("queue")
+                    else "e.config_key=p.config_key AND e.segment_id=p.segment_id"
+                )
+                + " WHERE e.session_pk=? ORDER BY p.rowid LIMIT ?",
+                (session, MAX_NODES + 1),
+            ):
+                self.add(table, task[0], node)
+                found = True
+        if found:
+            for event in self.db.execute(
+                "SELECT event_id FROM effective_raw_events WHERE session_pk=? "
+                "ORDER BY event_id LIMIT ?",
+                (session, MAX_NODES + 1),
+            ):
+                self.add("raw_events", event[0], node)
+
+    def rule_context(self, review: dict[str, Any], node: Node) -> None:
+        claim = self.db.execute(
+            "SELECT entity_id FROM claims WHERE claim_id=?", (review["claim_id"],)
+        ).fetchone()
+        project = entity_owner(self.db, claim[0], review["recorded_at"]) if claim else None
+        if project is None:
+            self.issues.add("rule_project_unknown")
+            return
+        # 原审核命名空间中的完整定义集合也参与唯一性证明，不能事后拿目标项目替代。
+        for definition in self.db.execute(
+            "SELECT rowid AS record_rowid,entity_id,recorded_at FROM "
+            "claims WHERE claim_type='entity_version' ORDER BY claim_id"
+        ):
+            if (
+                definition["recorded_at"] <= review["recorded_at"]
+                and entity_owner(self.db, definition["entity_id"], review["recorded_at"]) == project
+            ):
+                self.add("claims", definition["record_rowid"], node)
 
 
 def preview(store: Store, body: dict[str, Any]) -> dict[str, Any]:
@@ -232,7 +285,7 @@ def _preview(
     plan = digest(
         dumps(
             {
-                "policy": ["fragment-dependencies/v1", SCIENCE_SCHEMA_SHA256],
+                "policy": ["fragment-dependencies/v2", SCIENCE_SCHEMA_SHA256],
                 "request": {k: v for k, v in request.items() if k not in {"request_id", "actor"}},
                 "nodes": sorted((*node, sha) for node, sha in graph.nodes.items()),
                 "edges": sorted(graph.edges),

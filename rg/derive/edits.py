@@ -11,6 +11,7 @@ from rg.derive.multiedit import MAX_CONTENT_BYTES, expected_multiedit, project_e
 from rg.derive.records import Event, arguments, block, bound_path, cwd, native_patch
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
+from rg.store.ownership import read_table
 
 
 @dataclass(frozen=True)
@@ -332,7 +333,9 @@ def _diff(store: Store, row: dict[str, Any]) -> dict[str, Any]:
         contents = []
         for identity in (before, after):
             saved = store.db.execute(
-                "SELECT content_sha256 FROM artifact_versions WHERE version_id=?", (identity,)
+                f"SELECT content_sha256 FROM {read_table(store.db, 'artifact_versions')} "
+                "WHERE version_id=?",
+                (identity,),
             ).fetchone()
             if saved is None:
                 raise ValueError("version_missing")
@@ -351,7 +354,9 @@ def _diff(store: Store, row: dict[str, Any]) -> dict[str, Any]:
         kind = "reported_versions"
     elif before or after:
         saved = store.db.execute(
-            "SELECT content_sha256 FROM artifact_versions WHERE version_id=?", (before or after,)
+            f"SELECT content_sha256 FROM {read_table(store.db, 'artifact_versions')} "
+            "WHERE version_id=?",
+            (before or after,),
         ).fetchone()
         if saved is None:
             raise ValueError("version_missing")

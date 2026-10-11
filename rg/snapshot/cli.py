@@ -14,7 +14,7 @@ def snapshot(store: Store, project: str, root: Path, benchmark: int | None) -> d
     if benchmark is not None and (type(benchmark) is not int or not 5 <= benchmark <= 100):
         raise ValueError("p95 基准须至少 5 次、最多 100 次")
     rows = store.db.execute(
-        "SELECT root_id,path FROM source_roots WHERE project_id=? AND host_id='local'",
+        "SELECT root_id,path FROM effective_source_roots WHERE project_id=? AND host_id='local'",
         (project,),
     ).fetchall()
     chosen = [row for row in rows if Path(row["path"]).resolve() == root.resolve()]

@@ -11,7 +11,8 @@ def health(store: Store, project: str | None, limit: int, offset: int) -> dict[s
     counts.update(
         dict(
             store.db.execute(
-                "SELECT state,count(*) FROM extraction_queue WHERE (? IS NULL OR project_id=?) "
+                "SELECT state,count(*) FROM effective_extraction_queue "
+                "WHERE (? IS NULL OR project_id=?) "
                 "GROUP BY state",
                 (project, project),
             ).fetchall()
@@ -20,7 +21,7 @@ def health(store: Store, project: str | None, limit: int, offset: int) -> dict[s
     total = sum(counts.values())
     rows = store.db.execute(
         "SELECT queue_id,session_pk,project_id,model,max_event_id,state,attempts,error,"
-        "defer_reason,next_attempt_at,created_at,updated_at FROM extraction_queue "
+        "defer_reason,next_attempt_at,created_at,updated_at FROM effective_extraction_queue "
         "WHERE (? IS NULL OR project_id=?) ORDER BY updated_at DESC,queue_id DESC LIMIT ? OFFSET ?",
         (project, project, limit, offset),
     ).fetchall()
@@ -40,7 +41,7 @@ def pipeline_health(store: Store, project: str | None, limit: int, offset: int) 
     counts.update(
         dict(
             store.db.execute(
-                "SELECT state,count(*) FROM pipeline_queue "
+                "SELECT state,count(*) FROM effective_pipeline_queue "
                 "WHERE (? IS NULL OR project_id=?) GROUP BY state",
                 (project, project),
             ).fetchall()
@@ -49,7 +50,8 @@ def pipeline_health(store: Store, project: str | None, limit: int, offset: int) 
     total = sum(counts.values())
     rows = store.db.execute(
         "SELECT queue_id,project_id,session_pk,stage,target_key,state,attempts,error,defer_reason,"
-        "next_attempt_at,created_at,updated_at,result FROM pipeline_queue WHERE (? IS NULL OR "
+        "next_attempt_at,created_at,updated_at,result FROM "
+        "effective_pipeline_queue WHERE (? IS NULL OR "
         "project_id=?) ORDER BY updated_at DESC,queue_id DESC LIMIT ? OFFSET ?",
         (project, project, limit, offset),
     ).fetchall()

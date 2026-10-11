@@ -28,13 +28,14 @@ def _consume_record(store: Store, payload: dict[str, Any], tool: str, sha: str) 
             raise ValueError("快照缺少项目或根目录")
     project, root = identifier(payload["project_id"]), identifier(payload["root_id"])
     registered = store.db.execute(
-        "SELECT path FROM source_roots WHERE root_id=? AND project_id=? AND host_id='local'",
+        "SELECT path FROM effective_source_roots WHERE root_id=? "
+        "AND project_id=? AND host_id='local'",
         (root, project),
     ).fetchone()
     if not registered or str(Path(registered[0])) != payload.get("worktree"):
         raise ValueError("快照根目录未明确登记")
     previous = store.db.execute(
-        "SELECT record_sha256 FROM workspace_snapshots WHERE snapshot_key=?", (key,)
+        "SELECT record_sha256 FROM effective_workspace_snapshots WHERE snapshot_key=?", (key,)
     ).fetchone()
     if previous:
         if previous[0] != sha:

@@ -15,12 +15,18 @@ RECEIPTS = {
     "resolve": "decision_resolutions",
     "manifest": "run_manifests",
     "fragment": "fragment_assignments",
+    "science_migration": "science_migrations",
 }
 
 
 def previous(store: Store, request_id: str, kind: str, intent_sha: str) -> bool:
     for candidate, table in RECEIPTS.items():
         if candidate == "fragment" and store.db.execute("PRAGMA user_version").fetchone()[0] < 31:
+            continue
+        if (
+            candidate == "science_migration"
+            and store.db.execute("PRAGMA user_version").fetchone()[0] < 33
+        ):
             continue
         row = store.db.execute(
             f"SELECT intent_sha256 FROM {table} WHERE request_id=?", (request_id,)
@@ -59,7 +65,8 @@ def original(
     sha = store.objects.put(raw)
     native_session = f"{'model' if model_generated else 'manual'}:{data['project_id']}"
     session = db.execute(
-        "SELECT session_pk FROM sessions WHERE tool='rg' AND native_session_id=? AND agent_id=''",
+        "SELECT session_pk FROM sessions WHERE tool='rg' AND native_session_id=? AND agent_id=''"
+        + (" AND fragment_id=''" if db.execute("PRAGMA user_version").fetchone()[0] >= 31 else ""),
         (native_session,),
     ).fetchone()
     session_id = (

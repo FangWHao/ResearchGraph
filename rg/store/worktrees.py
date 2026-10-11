@@ -35,7 +35,9 @@ def configure(store: Store, project: str, follow: bool, expected: int) -> dict[s
     if type(follow) is not bool or type(expected) is not int or expected < 0:
         raise ValueError("跟踪开关及修订参数非法")
     with store.transaction() as db:
-        if not db.execute("SELECT 1 FROM projects WHERE project_id=?", (project,)).fetchone():
+        if not db.execute(
+            "SELECT 1 FROM active_projects WHERE project_id=?", (project,)
+        ).fetchone():
             raise ValueError("项目不存在")
         if store.revision() != expected:
             raise ConflictError("记录已变化，请重新读取项目工作树")
@@ -62,7 +64,9 @@ def listing(
     ):
         raise ValueError("工作树修订参数非法")
     with store.snapshot():
-        if not store.db.execute("SELECT 1 FROM projects WHERE project_id=?", (project,)).fetchone():
+        if not store.db.execute(
+            "SELECT 1 FROM active_projects WHERE project_id=?", (project,)
+        ).fetchone():
             raise ValueError("项目不存在")
         revision = store.revision()
         if expected_revision is not None and expected_revision != revision:
@@ -73,11 +77,12 @@ def listing(
             (project,),
         ).fetchone()
         total = store.db.execute(
-            "SELECT count(*) FROM source_roots WHERE project_id=? AND kind IN ('repo','worktree')",
+            "SELECT count(*) FROM effective_source_roots WHERE project_id=? "
+            "AND kind IN ('repo','worktree')",
             (project,),
         ).fetchone()[0]
         rows = store.db.execute(
-            "SELECT * FROM source_roots WHERE project_id=? "
+            "SELECT * FROM effective_source_roots WHERE project_id=? "
             "AND kind IN ('repo','worktree') ORDER BY root_id LIMIT ? OFFSET ?",
             (project, limit, offset),
         ).fetchall()
@@ -317,7 +322,9 @@ def discover(store: Store, project: str | None = None, limit: int = 4) -> dict[s
         raise ValueError("工作树发现批量需为1至20")
     if (
         project is not None
-        and not store.db.execute("SELECT 1 FROM projects WHERE project_id=?", (project,)).fetchone()
+        and not store.db.execute(
+            "SELECT 1 FROM active_projects WHERE project_id=?", (project,)
+        ).fetchone()
     ):
         raise ValueError("项目不存在")
     with exclusive(store.root / "locks" / "worktrees.lock", "工作树发现正在运行"):

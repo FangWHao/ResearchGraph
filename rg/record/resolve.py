@@ -14,7 +14,8 @@ from rg.store.objects import digest
 
 def pending(store: Store, claim_id: int) -> dict[str, Any] | None:
     row = store.db.execute(
-        "SELECT r.*,c.payload,c.scope FROM decision_requests r JOIN claims c USING(claim_id) "
+        "SELECT r.*,c.payload,c.scope FROM effective_decision_requests "
+        "r JOIN claims c USING(claim_id) "
         "WHERE r.claim_id=? AND r.target_id IS NULL",
         (claim_id,),
     ).fetchone()
@@ -39,7 +40,7 @@ def pending(store: Store, claim_id: int) -> dict[str, Any] | None:
 def receipt(store: Store, request_id: str, replayed: bool) -> dict[str, Any]:
     row = store.db.execute(
         "SELECT r.*,d.event_id AS original_event_id FROM decision_resolutions r "
-        "JOIN decision_requests d ON d.claim_id=r.original_claim_id WHERE r.request_id=?",
+        "JOIN effective_decision_requests d ON d.claim_id=r.original_claim_id WHERE r.request_id=?",
         (request_id,),
     ).fetchone()
     if row is None:
@@ -76,7 +77,7 @@ def resolve(store: Store, claim_id: int, body: dict[str, Any]) -> dict[str, Any]
             raise ConflictError("图版本已变化，请刷新后再选择对象")
         row = db.execute(
             "SELECT c.*,r.project_id,r.event_id,r.selector,r.target_id FROM claims c "
-            "JOIN decision_requests r USING(claim_id) WHERE claim_id=?",
+            "JOIN effective_decision_requests r USING(claim_id) WHERE claim_id=?",
             (claim_id,),
         ).fetchone()
         if row is None:

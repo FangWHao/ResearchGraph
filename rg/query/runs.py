@@ -17,14 +17,15 @@ def unique_call(reader: Reader, run: dict[str, Any]) -> bool:
         "kind='meta' AND tool_name='exec_command' AND exclude_reason='execution_metadata'",
     ):
         rows = reader.store.db.execute(
-            "SELECT event_id,occurred_at,recorded_at FROM effective_raw_events WHERE session_pk=? "
-            "AND call_id=? AND alias_of IS NULL AND " + condition,
-            (run["session_pk"], run["call_id"]),
+            "SELECT * FROM effective_raw_events WHERE call_id=? AND " + condition,
+            (run["call_id"],),
         )
         visible = [
             r
-            for r in rows
-            if reader.visible(r["occurred_at"], r["recorded_at"], ("E", r["event_id"]))
+            for r in (reader.source(dict(saved)) for saved in rows)
+            if r["session_pk"] == run["session_pk"]
+            and r["alias_of"] is None
+            and reader.visible(r["occurred_at"], r["recorded_at"], ("E", r["event_id"]))
         ]
         if visible:
             return len(visible) == 1
@@ -33,19 +34,23 @@ def unique_call(reader: Reader, run: dict[str, Any]) -> bool:
 
 def native(reader: Reader, identity: str) -> dict[str, Any] | None:
     row = reader.store.db.execute(
-        "SELECT * FROM runs WHERE run_id=? AND project_id=?",
-        (identity, reader.project),
+        "SELECT * FROM effective_runs WHERE run_id=?",
+        (identity,),
     ).fetchone()
-    if row is None:
+    if row is None or not reader.belongs("runs", "run_id", identity):
         return None
     run = dict(row)
+    run["project_id"] = reader.project
     request = reader.store.db.execute(
-        "SELECT r.* FROM effective_raw_events r JOIN sessions s USING(session_pk) "
-        "WHERE event_id=? AND s.project_id=?",
-        (run["request_event_id"], reader.project),
+        "SELECT r.* FROM effective_raw_events r JOIN sessions s USING(session_pk) WHERE event_id=?",
+        (run["request_event_id"],),
     ).fetchone()
+    if request is not None:
+        request = reader.source(dict(request))
+        run["session_pk"] = request["session_pk"]
     if (
         request is None
+        or not reader.event_belongs(run["request_event_id"])
         or request["tool_name"] not in EXEC_TOOLS
         or request["alias_of"] is not None
         or not (
@@ -64,10 +69,12 @@ def native(reader: Reader, identity: str) -> dict[str, Any] | None:
         "SELECT o.*,r.occurred_at AS source_occurred_at,r.recorded_at AS source_recorded_at "
         "FROM run_observations o JOIN effective_raw_events r USING(event_id) "
         "JOIN sessions s USING(session_pk) "
-        "WHERE o.run_id=? AND s.project_id=? ORDER BY o.event_id,o.observation_id",
-        (identity, reader.project),
+        "WHERE o.run_id=? ORDER BY o.event_id,o.observation_id",
+        (identity,),
     ):
         item = dict(observed)
+        if not reader.event_belongs(item["event_id"]):
+            continue
         if reader.visible(
             item["occurred_at"], item["recorded_at"], ("N", item["observation_id"])
         ) and reader.visible(
@@ -139,10 +146,15 @@ def io(reader: Reader, manifest: dict[str, Any]) -> dict[str, Any]:
     result = []
     for value in selected["items"]:
         version = reader.store.db.execute(
-            "SELECT * FROM artifact_versions WHERE version_id=? AND project_id=?",
-            (value["requested_version_id"], reader.project),
+            "SELECT * FROM effective_artifact_versions WHERE version_id=?",
+            (value["requested_version_id"],),
         ).fetchone()
-        record = version_record(reader, dict(version)) if version is not None else None
+        record = (
+            version_record(reader, dict(version))
+            if version is not None
+            and reader.belongs("artifact_versions", "version_id", version["version_id"])
+            else None
+        )
         # 只有明确 ID 匹配可以在后来入库后显示版本；不修改原观察或猜路径。
         result.append(
             value
@@ -171,15 +183,14 @@ def manifests(
     run = native(reader, identity)
     for row in reader.store.db.execute(
         "SELECT m.*,r.occurred_at AS source_occurred_at,r.recorded_at AS source_recorded_at "
-        "FROM run_manifests m JOIN effective_raw_events r ON r.event_id=m.evidence_event_id "
-        "JOIN sessions s USING(session_pk) WHERE m.run_id=? AND m.project_id=? AND s.project_id=? "
+        "FROM effective_run_manifests m JOIN effective_raw_events "
+        "r ON r.event_id=m.evidence_event_id "
+        "JOIN sessions s USING(session_pk) WHERE m.run_id=? "
         "AND (? IS NULL OR m.attempt_id=?) AND (? IS NULL OR EXISTS(SELECT 1 FROM run_io i "
         "WHERE i.manifest_id=m.request_id AND i.requested_version_id=?)) "
         "AND (? IS NULL OR m.request_id=?)",
         (
             identity,
-            reader.project,
-            reader.project,
             attempt,
             attempt,
             version,
@@ -189,6 +200,11 @@ def manifests(
         ),
     ):
         item = dict(row)
+        if not reader.belongs(
+            "run_manifests", "request_id", item["request_id"]
+        ) or not reader.event_belongs(item["evidence_event_id"]):
+            continue
+        item["project_id"] = reader.project
         scope = json.loads(item["scope"]) if item["scope"] else None
         if reader.scope_filter and scope != reader.scope:
             continue
@@ -205,8 +221,8 @@ def manifests(
     for item in selected["items"]:
         payload = json.loads(item.pop("payload"))
         captured = reader.store.db.execute(
-            "SELECT root_id FROM workspace_snapshots WHERE snapshot_id=? AND project_id=?",
-            (item["snapshot_id"], reader.project),
+            "SELECT root_id FROM effective_workspace_snapshots WHERE snapshot_id=?",
+            (item["snapshot_id"],),
         ).fetchone()
         item |= {
             "reported": payload,
@@ -248,14 +264,14 @@ def associations(
 ) -> dict[str, Any]:
     if attempt is not None:
         rows = reader.store.db.execute(
-            "SELECT DISTINCT run_id FROM run_manifests WHERE project_id=? AND attempt_id=?",
-            (reader.project, attempt),
+            "SELECT DISTINCT run_id FROM effective_run_manifests WHERE attempt_id=?",
+            (attempt,),
         )
     else:
         rows = reader.store.db.execute(
-            "SELECT DISTINCT m.run_id FROM run_manifests m JOIN run_io i "
-            "ON i.manifest_id=m.request_id WHERE m.project_id=? AND i.requested_version_id=?",
-            (reader.project, version),
+            "SELECT DISTINCT m.run_id FROM effective_run_manifests m JOIN run_io i "
+            "ON i.manifest_id=m.request_id WHERE i.requested_version_id=?",
+            (version,),
         )
     result = []
     for row in rows:

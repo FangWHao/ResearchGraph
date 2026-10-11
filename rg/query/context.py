@@ -67,9 +67,10 @@ def context(reader: Reader) -> dict[str, Any]:
             entry["resolution"] = "unknown"
         entries.append(entry)
     for row in reader.store.db.execute(
-        "SELECT v.* FROM artifact_versions v WHERE v.project_id=? ORDER BY v.version_id",
-        (reader.project,),
+        "SELECT v.* FROM effective_artifact_versions v ORDER BY v.version_id",
     ):
+        if not reader.belongs("artifact_versions", "version_id", row["version_id"]):
+            continue
         if reader.scope_filter:
             # 文件观察没有完整 claim 范围；不按路径或时间猜测归属。
             continue

@@ -17,6 +17,7 @@ from rg.ingest.spans import event_span
 from rg.query.time import instant
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
+from rg.store.ownership import entity_owner, read_table
 from rg.store.scopes import known_scope
 
 POLICY_VERSION = "1"
@@ -44,32 +45,41 @@ def _known(value: Any, cutoff: Any) -> bool:
 
 
 def _sources(store: Store, claim: int, cutoff: Any) -> list[dict[str, Any]]:
-    _, _, rows = claim_sources.inputs(store, claim)
+    _, _, rows = claim_sources.inputs(store, claim, cutoff.isoformat() if cutoff else None)
     for row in rows:
         row["calls"] = [c for c in row["calls"] if _known(c["recorded_at"], cutoff)]
     return rows
 
 
 def inputs(store: Store, review: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
-    _, claim, _ = claim_sources.inputs(store, review["claim_id"])
+    from rg.store.ownership import entity_owner
+
+    _, claim, _ = claim_sources.inputs(store, review["claim_id"], review["recorded_at"])
     cutoff = instant(review["recorded_at"])
     rows = [
         dict(row)
         for row in store.db.execute(
-            "SELECT c.*,e.kind FROM claims c JOIN entities e USING(entity_id) "
-            "WHERE e.project_id=? ORDER BY c.claim_id DESC",
-            (claim["project_id"],),
+            f"SELECT c.*,e.kind FROM claims c JOIN {read_table(store.db, 'entities')} "
+            f"e USING(entity_id) "
+            "ORDER BY c.claim_id DESC",
         )
         if _known(row["recorded_at"], cutoff)
+        and entity_owner(store.db, row["entity_id"], review["recorded_at"]) == claim["project_id"]
     ]
     reviews: dict[int, dict[str, Any]] = {}
     for row in store.db.execute(
-        "SELECT a.* FROM review_actions a JOIN claims c USING(claim_id) "
-        "JOIN entities e USING(entity_id) WHERE e.project_id=? ORDER BY a.action_id",
-        (claim["project_id"],),
+        "SELECT a.*,c.entity_id AS owner_entity FROM review_actions "
+        "a JOIN claims c USING(claim_id) "
+        "ORDER BY a.action_id",
     ):
-        if _known(row["recorded_at"], cutoff):
-            reviews[row["claim_id"]] = dict(row)
+        if (
+            _known(row["recorded_at"], cutoff)
+            and entity_owner(store.db, row["owner_entity"], review["recorded_at"])
+            == claim["project_id"]
+        ):
+            saved = dict(row)
+            saved.pop("owner_entity")
+            reviews[row["claim_id"]] = saved
     replaced = {r["replaces_claim"] for r in rows if r["replaces_claim"] is not None}
     definitions = []
     for row in rows:
@@ -111,7 +121,8 @@ def recorded(
     assert review is not None
     signature, _ = inputs(store, review)
     saved = store.db.execute(
-        "SELECT payload,recorded_at FROM rule_reference_checks WHERE review_action_id=? "
+        f"SELECT payload,recorded_at FROM "
+        f"{read_table(store.db, 'rule_reference_checks')} WHERE review_action_id=? "
         "AND input_signature=? ORDER BY check_id DESC LIMIT 1",
         (review["action_id"], signature),
     ).fetchone()
@@ -311,7 +322,8 @@ def assess(
     ):
         signature, data = inputs(store, review)
         previous = store.db.execute(
-            "SELECT payload FROM rule_reference_checks WHERE review_action_id=? "
+            f"SELECT payload FROM {read_table(store.db, 'rule_reference_checks')} "
+            f"WHERE review_action_id=? "
             "AND input_signature=? ORDER BY check_id DESC LIMIT 1",
             (review["action_id"], signature),
         ).fetchone()
@@ -333,7 +345,7 @@ def assess(
                 (
                     review["action_id"],
                     claim,
-                    data["claim"]["project_id"],
+                    entity_owner(store.db, data["claim"]["entity_id"]),
                     signature,
                     encoded,
                     now(),
@@ -344,7 +356,8 @@ def assess(
 
 def check_batch(store: Store, limit: int = 100) -> dict[str, int]:
     row = store.db.execute(
-        "SELECT job_id,payload FROM jobs WHERE kind=? ORDER BY job_id LIMIT 1",
+        f"SELECT job_id,payload FROM {read_table(store.db, 'jobs')} "
+        f"WHERE kind=? ORDER BY job_id LIMIT 1",
         ("rule_reference_cursor",),
     ).fetchone()
     cursor = json.loads(row["payload"])["last_review"] if row else 0

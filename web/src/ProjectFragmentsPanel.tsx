@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, query } from './api';
 import { DateText, Icon } from './components';
 import type { Project } from './types';
-import { appendFragmentDependencies, assertFragmentContinuation, canAssignFragments, contextNames, dependencyIssueNames, directorySources, fragmentDependencyGroups, fragmentSelection, hintNames, hintReasons, parseFragmentDependencies, parseFragmentPage, parseFragmentReceipt, selectedFragmentRange } from './projectFragments';
-import type { FragmentAssignmentIntent, FragmentDependencies, FragmentPage } from './projectFragments';
+import { appendFragmentDependencies, assertFragmentContinuation, canAssignFragments, canMigrateFragments, contextNames, dependencyIssueNames, directorySources, fragmentDependencyGroups, fragmentSelection, hintNames, hintReasons, parseFragmentDependencies, parseFragmentMigrationReceipt, parseFragmentPage, parseFragmentReceipt, selectedFragmentRange } from './projectFragments';
+import type { FragmentAssignmentIntent, FragmentDependencies, FragmentMigrationIntent, FragmentMigrationReceipt, FragmentPage } from './projectFragments';
 import './projectFragments.css';
 
 export interface FragmentSource { session_pk: number; file_instance_id: number; path: string; tool: string }
@@ -20,12 +20,16 @@ export function ProjectFragmentsPanel({ project, epoch, actor, projects, source,
   const [error, setError] = useState<{ key: string; message: string } | null>(null);
   const [selection, setSelection] = useState<{ key: string; anchor: number | null; ids: number[] }>({ key, anchor: null, ids: [] });
   const [target, setTarget] = useState(''), [confirmed, setConfirmed] = useState(false), [saving, setSaving] = useState('');
+  const [migrationConfirmed, setMigrationConfirmed] = useState(false);
+  const [migrationReceipt, setMigrationReceipt] = useState<{ context: string; receipt: FragmentMigrationReceipt } | null>(null);
+  const receiptContext = JSON.stringify([project, actor, source.session_pk, source.file_instance_id]);
   const [dependency, setDependency] = useState<{ identity: string; data: FragmentDependencies } | null>(null);
   const [dependencyError, setDependencyError] = useState<{ identity: string; message: string } | null>(null), [inspecting, setInspecting] = useState('');
   const current = useRef(''), readKey = useRef(key), first = useRef<{ context: string; data: FragmentPage } | null>(null);
   readKey.current = key;
   const action = useRef<{ controller: AbortController; identity: string } | null>(null);
   const intended = useRef<{ identity: string; value: FragmentAssignmentIntent } | null>(null);
+  const intendedMigration = useRef<{ identity: string; value: FragmentMigrationIntent } | null>(null);
   const data = response?.context === context ? response.data : null, failure = error?.key === key ? error.message : '';
   const ids = selection.key === key ? selection.ids : [], range = selectedFragmentRange(data?.records ?? [], ids);
   const identity = JSON.stringify([key, actor, ids, target]); current.current = identity;
@@ -33,7 +37,7 @@ export function ProjectFragmentsPanel({ project, epoch, actor, projects, source,
   const dependencies = dependency?.identity === identity ? dependency.data : null;
   const dependencyFailure = dependencyError?.identity === identity ? dependencyError.message : '';
   const checking = inspecting === identity, dependencyBlocked = !!dependencyFailure || dependencies?.assignment_available === false;
-  function cancel(clearDependencies = true) { action.current?.controller.abort(); action.current = null; setSaving(''); setInspecting(''); if (clearDependencies) { setDependency(null); setDependencyError(null); } }
+  function cancel(clearDependencies = true) { action.current?.controller.abort(); action.current = null; setSaving(''); setInspecting(''); setMigrationConfirmed(false); if (clearDependencies) { setDependency(null); setDependencyError(null); } }
   function refresh() { cancel(); setConfirmed(false); setSelection({ key: '', anchor: null, ids: [] }); setPaging({ context, anchors: [0], index: 0, retry: page.retry + 1 }); }
   useEffect(() => {
     const controller = new AbortController(); cancel(); setError(null); setConfirmed(false);
@@ -55,7 +59,7 @@ export function ProjectFragmentsPanel({ project, epoch, actor, projects, source,
   }, [key, context, after, source.session_pk, source.file_instance_id, onError]);
   useEffect(() => { const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); }; window.addEventListener('keydown', escape); return () => window.removeEventListener('keydown', escape); }, [onClose]);
   function select(eventId: number) {
-    cancel(); setConfirmed(false);
+    cancel(); setConfirmed(false); setMigrationReceipt(null);
     const anchor = selection.key === key ? selection.anchor : null;
     const next = fragmentSelection(data?.records ?? [], anchor, eventId);
     setSelection({ key, anchor: anchor ?? eventId, ids: next });
@@ -101,6 +105,24 @@ export function ProjectFragmentsPanel({ project, epoch, actor, projects, source,
       if (error instanceof ApiError && error.status === 401) onError(error);
     } finally { if (action.current === operation) { action.current = null; setSaving(''); } }
   }
+  const migrationReady = !!data && !!range && canMigrateFragments(data, dependencies, range.records, target) && projects.some(p => p.project_id === target) && !busy && !writing && !checking && !failure && !dependencyFailure;
+  async function migrate() {
+    if (!data || !range || !dependencies || !migrationReady || !migrationConfirmed) return;
+    const business = JSON.stringify([source.session_pk, source.file_instance_id, range.first.first_event_id, range.last.first_event_id, target, actor, dependencies.plan_sha256, true]);
+    if (intendedMigration.current?.identity !== business) intendedMigration.current = { identity: business, value: { request_id: crypto.randomUUID(), session: source.session_pk, source: source.file_instance_id, first_event: range.first.first_event_id, last_event: range.last.first_event_id, project_id: target, actor, expected_plan_sha256: dependencies.plan_sha256, include_required_records: true } };
+    const intent = intendedMigration.current.value, plan = dependencies;
+    const controller = new AbortController(), operation = { controller, identity }; action.current = operation; setSaving(identity);
+    try {
+      const raw = await api<unknown>('/project-fragments/migrate', { ...intent, expected_revision: data.revision, expected_scope_key: data.scope_key, snapshot: data.snapshot, observation_snapshot: data.observation_snapshot }, controller.signal);
+      if (controller.signal.aborted || current.current !== identity || action.current !== operation) return;
+      const receipt = parseFragmentMigrationReceipt(raw, intent, plan); refresh(); setMigrationReceipt({ context: receiptContext, receipt }); onAssigned(receipt.revision);
+    } catch (error) {
+      if (controller.signal.aborted || current.current !== identity || action.current !== operation) return;
+      setMigrationConfirmed(false);
+      setError({ key, message: error instanceof ApiError && error.status === 404 ? '此服务尚未提供科研依赖迁移；没有采用迁移回执。' : error instanceof Error ? error.message : '迁移结果未知，请重新读取核对实际归属后再主动操作。' });
+      if (error instanceof ApiError && error.status === 401) onError(error);
+    } finally { if (action.current === operation) { action.current = null; setSaving(''); } }
+  }
   function navigate(index: number) {
     cancel(); setConfirmed(false); setSelection({ key: '', anchor: null, ids: [] });
     const anchors = [...page.anchors]; if (index > page.index && data?.next_after_event != null) anchors[index] = data.next_after_event;
@@ -112,6 +134,7 @@ export function ProjectFragmentsPanel({ project, epoch, actor, projects, source,
     <div className="drawer-content"><p className="path">{source.path}</p>
       <p className="notice">查看选定物理来源的完整记录。目录只是线索，不自动决定项目；归属不表示已提取、人工确认或当前采用。原文和既有审核记录保留。</p>
       <button className="button secondary" onClick={refresh}>重新读取片段第一页</button>
+      {migrationReceipt?.context === receiptContext && <p data-fragment-migration-receipt className="notice">迁移回执：已将 {migrationReceipt.receipt.selected_records} 条选定记录、{migrationReceipt.receipt.required_records_included} 条必需记录及预检科研依赖归属至 {projectName(migrationReceipt.receipt.project_id)}；修订 {migrationReceipt.receipt.revision}{migrationReceipt.receipt.replayed && '（原回执重放）'}。原科学记录改写 0，模型调用 0；不表示新科研确认或提取完成。</p>}
       {failure && <p className="error-message" role="alert">{failure} {data && '保留上次成功页，操作已停用。'} 409 后需主动重新读取，再核对并提交。</p>}
       {busy && <p role="status">正在读取物理片段…</p>}
       {data?.available === false && <p className="missing-note">当前接口没有可用的片段账本（{data.reason}），无法判断记录边界或保存归属。</p>}
@@ -135,7 +158,7 @@ export function ProjectFragmentsPanel({ project, epoch, actor, projects, source,
         </li>)}</ol>
         <div className="pagination"><button className="button secondary" disabled={busy || writing || !!failure || page.index === 0} onClick={() => navigate(page.index - 1)}>上一页片段</button><span>第 {page.index + 1} 页</span><button className="button secondary" disabled={busy || writing || !!failure || data.next_after_event == null} onClick={() => navigate(page.index + 1)}>下一页片段</button></div>
         <section className="fragment-confirm" aria-label="明确指定归属"><h3>明确指定归属</h3>
-          <label>目标项目<select aria-label="片段目标项目" value={target} disabled={writing} onChange={e => { cancel(); setTarget(e.target.value); setConfirmed(false); }}><option value="">请选择，不按路径自动决定</option><option value="inbox">收件箱（未指定项目）</option>{projects.map(p => <option key={p.project_id} value={p.project_id}>{p.name}</option>)}</select></label>
+          <label>目标项目<select aria-label="片段目标项目" value={target} disabled={writing} onChange={e => { cancel(); setTarget(e.target.value); setConfirmed(false); setMigrationReceipt(null); }}><option value="">请选择，不按路径自动决定</option><option value="inbox">收件箱（未指定项目）</option>{projects.map(p => <option key={p.project_id} value={p.project_id}>{p.name}</option>)}</select></label>
           {range ? <p data-fragment-selected-range>将修改 {range.records} 条完整物理记录、{range.events} 个解析事件；首事件 #{range.first.first_event_id} 至 #{range.last.first_event_id}，来源文件字节 [{range.first.byte_start}, {range.last.byte_end})。目标：{target ? projectName(target === 'inbox' ? null : target) : '尚未选择'}。</p> : <p data-fragment-invalid-range className="missing-note">{ids.length ? '所选记录之间不连续或存在字节缺口，不能跨缺口指定归属；请清除选择后，只选同一侧连续的完整记录。' : '尚未选择本页连续的完整记录范围。'}</p>}
           <section className="fragment-dependencies" aria-label="科研依赖只读预检">
             <h4>科研依赖只读预检</h4><p className="small muted">核对选定范围关联的证据、科研记录与处理上下文，列出片段外必需的完整记录。只读预检不保存归属、不迁移科研历史、不占用提交编号。</p>
@@ -147,10 +170,16 @@ export function ProjectFragmentsPanel({ project, epoch, actor, projects, source,
               {!Object.keys(dependencies.dependencies).length && <p className="small muted">本次未发现科研依赖记录。</p>}
               {!!Object.keys(dependencies.shared_context).length && <p className="small muted">关联上下文：{Object.entries(dependencies.shared_context).map(([kind, count]) => `${({ project_id: '项目', session_pk: '会话', physical_session_pk: '物理会话', root_id: '已登记根目录' } as Record<string, string>)[kind] ?? `未知资源类别（${kind}）`} ${count}`).join('、')}。资源数量不等于科研记录数量。</p>}
               {!!dependencies.issues.length && <ul className="missing-note">{dependencies.issues.map(issue => <li key={issue}>{dependencyIssueNames[issue] ?? `尚无法核对的依赖问题（${issue}）`}</li>)}</ul>}
-              <h5>片段外必需记录</h5><p className="small muted">已读 {dependencies.required_records.length} / {dependencies.required_records_total} 条；不会自动扩大已选范围或移动这些记录。</p>
+              <h5>片段外必需记录</h5><p className="small muted">已读 {dependencies.required_records.length} / {dependencies.required_records_total} 条；预检不会扩大已选范围或移动记录，只有明确同意完整迁移计划后才提交。</p>
               <ol className="fragment-required-records">{dependencies.required_records.map(record => <li key={record.first_event_id} data-required-record={record.first_event_id}><strong>完整记录 #{record.first_event_id}</strong><p>物理会话 #{record.session_pk} · 来源 #{record.file_instance_id} · 来源文件字节 [{record.byte_start}, {record.byte_end})</p><p>当前项目：{projectName(record.project_id)}</p><button className="text-button" onClick={() => onEvidence({ event_id: record.first_event_id })}>打开必需记录原文</button></li>)}</ol>
               {dependencies.next_offset !== null && <button className="button secondary" disabled={checking || writing || !!failure || !!dependencyFailure} onClick={() => { void inspect(dependencies.next_offset!); }}>读取后续必需记录</button>}
               <details><summary>预检读取标识</summary><p className="small muted">修订 {dependencies.revision} · 原文截止 #{dependencies.snapshot} · 观测截止 #{dependencies.observation_snapshot}</p><p className="mono small">依赖摘要 {dependencies.plan_sha256}</p></details>
+              {dependencies.write_mode === 'dependency_migration' && <section className="fragment-migration" aria-label="明确迁移科研依赖">
+                <h5>明确迁移科研依赖</h5><p data-fragment-migration-range>选定 {dependencies.selected_records} 条完整记录，加上全部 {dependencies.required_records_total} 条必需记录，共 {dependencies.selected_records + dependencies.required_records_total} 条；同时迁移上方预检列出的全部科研依赖。目标：{target && target !== 'inbox' ? projectName(target) : '尚未选择正式项目'}。操作人：{actor}。</p>
+                <p className="small muted">仅另存当前归属，原科学记录、原文和审核历史不改写；不调用模型，不产生科研确认。收件箱不能接收科学记录迁移。需完整读完必需记录后明确同意，不会自动扩大选择或自动提交。</p>
+                <button className="button secondary" aria-pressed={migrationConfirmed} disabled={!migrationReady} onClick={() => setMigrationConfirmed(value => !value)}>同意包含全部必需记录与科研依赖</button>
+                <button className="button primary" disabled={!migrationReady || !migrationConfirmed} onClick={() => { void migrate(); }}>迁移依赖并修改归属</button>
+              </section>}
             </>}
           </section>
           <label className="fragment-check"><input type="checkbox" checked={confirmed} disabled={!range || !target || busy || writing || checking || dependencyBlocked || !!failure || !canAssignFragments(data)} onChange={e => setConfirmed(e.target.checked)} />我已核对完整范围与目标；仅保存项目归属，保留原件和审核历史。</label>

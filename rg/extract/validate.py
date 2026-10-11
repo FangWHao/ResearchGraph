@@ -18,6 +18,7 @@ from rg.ingest.common import RG_BLOCK
 from rg.ingest.exclusion import current_exclusion
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
+from rg.store.ownership import read_table
 from rg.store.privacy import read as privacy_policy
 
 
@@ -57,7 +58,8 @@ def validate(
             raise InvalidClaim("工作集范围映射与对象集合不一致")
     for entity_id in allowed_ids:
         row = store.db.execute(
-            "SELECT kind, project_id FROM entities WHERE entity_id = ?", (entity_id,)
+            f"SELECT kind, project_id FROM {read_table(store.db, 'entities')} WHERE entity_id = ?",
+            (entity_id,),
         ).fetchone()
         if not row or row["project_id"] != project_id:
             raise InvalidClaim("工作集对象不存在或来自其他项目")

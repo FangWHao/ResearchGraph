@@ -35,7 +35,7 @@ def complete(store: Store, config: str | None, segment_id: str, outcome: str) ->
     if updated.rowcount != 1:
         raise RuntimeError("当前片段缺少持久计划，不能提交完成状态")
     for row in store.db.execute(
-        "SELECT job_id,payload FROM jobs WHERE kind='manual_review' "
+        "SELECT job_id,payload FROM effective_jobs WHERE kind='manual_review' "
         "AND state IN ('failed','queued')"
     ).fetchall():
         data = json.loads(row["payload"])
@@ -50,7 +50,9 @@ def inventory(store: Store, config: str) -> list[dict[str, Any]]:
     return [
         dict(row)
         for row in store.db.execute(
-            "SELECT * FROM extraction_plans WHERE config_key=? ORDER BY rowid", (config,)
+            "SELECT * FROM effective_extraction_plans WHERE config_key=? "
+            "ORDER BY created_at,segment_id",
+            (config,),
         )
     ]
 
@@ -121,7 +123,7 @@ def restore(
 
 def legacy_project(store: Store, session: int, project: str) -> bool:
     rows = store.db.execute(
-        "SELECT DISTINCT m.project_id FROM model_attempts m JOIN extraction_runs e "
+        "SELECT DISTINCT m.project_id FROM effective_model_attempts m JOIN extraction_runs e "
         "USING(extraction_run_id) WHERE m.stage IN ('pass1','pass2') AND EXISTS "
         "(SELECT 1 FROM json_each(e.input_event_ids) x JOIN effective_raw_events r "
         "ON r.event_id=x.value WHERE r.session_pk=?)",
@@ -142,7 +144,7 @@ def manual(store: Store, config: str | None, item: Segment, failures: int, error
     )
     with store.transaction() as db:
         existing = db.execute(
-            "SELECT job_id FROM jobs WHERE kind='manual_review' AND payload=?", (payload,)
+            "SELECT job_id FROM effective_jobs WHERE kind='manual_review' AND payload=?", (payload,)
         ).fetchone()
         if existing:
             db.execute(

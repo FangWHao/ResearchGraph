@@ -27,7 +27,8 @@ def propose_note(store: Store, project: str, arguments: dict[str, Any]) -> dict[
 
 def _receipt(store: Store, request_id: str, replayed: bool) -> dict[str, Any]:
     row = store.db.execute(
-        "SELECT r.*,c.entity_id,c.claim_state FROM note_requests r JOIN claims c USING(claim_id) "
+        "SELECT r.*,c.entity_id,c.claim_state FROM effective_note_requests "
+        "r JOIN claims c USING(claim_id) "
         "WHERE request_id=?",
         (request_id,),
     ).fetchone()
@@ -60,13 +61,13 @@ def _write(store: Store, body: dict[str, Any], *, model_generated: bool) -> dict
         if store.revision() != expected:
             raise ConflictError("图版本已变化，请刷新后再保存笔记")
         if not db.execute(
-            "SELECT 1 FROM projects WHERE project_id=?", (data["project_id"],)
+            "SELECT 1 FROM active_projects WHERE project_id=?", (data["project_id"],)
         ).fetchone():
             raise ValueError("项目不存在")
         if (
             about is not None
             and not db.execute(
-                "SELECT 1 FROM entities WHERE entity_id=? AND project_id=?",
+                "SELECT 1 FROM effective_entities WHERE entity_id=? AND project_id=?",
                 (about, data["project_id"]),
             ).fetchone()
         ):

@@ -83,9 +83,12 @@ def guard(root: Path) -> Iterator[Callable[[str, str], bool] | None]:
 
         def contains(tool: str, sha: str) -> bool:
             try:
-                return db.execute(
-                    "SELECT 1 FROM record_denials WHERE record_key=?", (key(tool, sha),)
-                ).fetchone() is not None
+                return (
+                    db.execute(
+                        "SELECT 1 FROM record_denials WHERE record_key=?", (key(tool, sha),)
+                    ).fetchone()
+                    is not None
+                )
             except sqlite3.DatabaseError:
                 raise ValueError("清除摘要索引不可读取，停止采集并保留恢复记录") from None
 

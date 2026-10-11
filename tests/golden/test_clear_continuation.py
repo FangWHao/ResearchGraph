@@ -360,7 +360,7 @@ def test_v32_migration_rolls_back_both_tables_and_views_without_changing_origina
         assert db.execute("PRAGMA user_version").fetchone()[0] == 31
     with closing(Store(root)) as store:
         assert store.raw(1) == raw
-        assert store.db.execute("PRAGMA user_version").fetchone()[0] == 32
+        assert store.db.execute("PRAGMA user_version").fetchone()[0] == migrations.LATEST_VERSION
         assert store.db.execute("SELECT count(*) FROM source_record_skips").fetchone()[0] == 0
 
 

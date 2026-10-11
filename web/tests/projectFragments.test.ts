@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendFragmentDependencies, assertFragmentContinuation, canAssignFragments, fragmentDependencyGroups, fragmentSelection, parseFragmentDependencies, parseFragmentPage, parseFragmentReceipt, selectedFragmentRange } from '../src/projectFragments';
+import { appendFragmentDependencies, assertFragmentContinuation, canAssignFragments, canMigrateFragments, fragmentDependencyGroups, fragmentSelection, parseFragmentDependencies, parseFragmentMigrationReceipt, parseFragmentPage, parseFragmentReceipt, selectedFragmentRange } from '../src/projectFragments';
 import type { FragmentDependencies, FragmentPage, PhysicalFragment } from '../src/projectFragments';
 const record = (id: number, start: number, events = 1): PhysicalFragment => ({ first_event_id: id, byte_start: start, byte_end: start + 30, object_sha256: 'a'.repeat(64), first_seq: id, last_seq: id + events - 1, event_count: events, has_user_turn: true, observation_state: 'absent', observed_at: null, context: { state: 'declared', source: 'codex_turn_context', cwd: '/public/project', cwd_sha256: 'b'.repeat(64), reason: 'native', origin_event_id: 1 }, project_hint: { state: 'candidate_path', basis: 'path_hint', projects: ['project-b'], matching_root_ids: ['root-b'], candidates_partial: false, reason: 'registered_path_hint' }, assignment: { project_id: 'project-a', logical_session_pk: 1, basis: 'session_manual', partition_id: null } });
 const records = [record(1, 0, 3), record(5, 30), record(6, 60)];
@@ -93,5 +93,31 @@ describe('科研依赖只读预检', () => {
     const values = { entities: 2, claims: 3, review_actions: 1, run_io: 4, future_dependency: 5 };
     const groups = fragmentDependencyGroups(values);
     expect(Object.fromEntries(groups.flatMap(group => group.items.map(item => [item.key, item.count])))).toEqual(values);
+  });
+});
+
+describe('明确迁移完整科研依赖', () => {
+  const plan = () => ({ ...dependency(), required_records: [dependencyRecord(8, 0), dependencyRecord(9, 30)], next_offset: null });
+  const intent = { request_id: 'migration-id', session: 1, source: 2, first_event: 1, last_event: 1, project_id: 'project-b', actor: 'human:合成', expected_plan_sha256: 'e'.repeat(64), include_required_records: true as const };
+  const receipt = () => ({ request_id: intent.request_id, revision: 4, replayed: true, migration_applied: true, assignments_applied: true, project_id: intent.project_id, session_pk: 1, file_instance_id: 2, first_event_id: 1, last_event_id: 1, plan_sha256: intent.expected_plan_sha256, records_assigned: 3, selected_records: 1, required_records_included: 2, partitions_created: 1, dependencies_migrated: plan().dependencies, model_calls: 0, scientific_records_rewritten: 0 });
+  it('外部必需记录全部读完且计划身份吻合后才可迁移，不要求原选择已闭合', () => {
+    expect(canMigrateFragments(page(), dependency(), 1, 'project-b')).toBe(false);
+    expect(canMigrateFragments(page(), plan(), 1, 'project-b')).toBe(true);
+    for (const change of [{ next_offset: 2 }, { required_records: [] }, { complete: false }, { issues: ['missing_reference'] }, { revision: 10 }, { scope_key: 'f'.repeat(64) }, { selected_records: 2 }, { write_mode: 'unverifiable' as const }]) expect(canMigrateFragments(page(), { ...plan(), ...change }, 1, 'project-b')).toBe(false);
+  });
+  it('收件箱、空目标、旧接口与无范围不能迁移科学记录，普通无依赖归属另行保留', () => {
+    for (const target of [null, '', 'inbox']) expect(canMigrateFragments(page(), plan(), 1, target)).toBe(false);
+    expect(canMigrateFragments({ ...page(), assignment_supported: false }, plan(), 1, 'project-b')).toBe(false);
+    expect(canMigrateFragments(page(), plan(), 0, 'project-b')).toBe(false);
+    expect(canMigrateFragments(page(), null, 1, 'project-b')).toBe(false);
+  });
+  it('幂等回放旧修订仍核对全部依赖、原选择与外部记录，不能偷换目标或计划', () => {
+    expect(parseFragmentMigrationReceipt(receipt(), intent, plan())).toMatchObject({ revision: 4, replayed: true, required_records_included: 2 });
+    for (const change of [{ request_id: 'other' }, { project_id: 'project-a' }, { first_event_id: 5 }, { plan_sha256: 'f'.repeat(64) }, { records_assigned: 1 }, { selected_records: 2 }, { required_records_included: 0 }, { dependencies_migrated: { claims: 2 } }, { dependencies_migrated: { ...plan().dependencies, future_dependency: 1 } }]) expect(() => parseFragmentMigrationReceipt({ ...receipt(), ...change }, intent, plan())).toThrow();
+  });
+  it('回执不得将科学改写、模型调用或缺失迁移字段冒充本合同成功', () => {
+    for (const change of [{ migration_applied: false }, { assignments_applied: false }, { scientific_records_rewritten: 1 }, { model_calls: 1 }, { partitions_created: -1 }, { replayed: null }]) expect(() => parseFragmentMigrationReceipt({ ...receipt(), ...change }, intent, plan())).toThrow();
+    const old = receipt() as Record<string, unknown>; delete old.migration_applied;
+    expect(() => parseFragmentMigrationReceipt(old, intent, plan())).toThrow();
   });
 });

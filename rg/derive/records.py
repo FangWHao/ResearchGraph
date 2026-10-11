@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from rg.store.database import Store
+from rg.store.ownership import read_table
 
 Event = dict[str, Any]
 
@@ -86,7 +87,8 @@ def bound_path(
     roots = [
         row
         for row in store.db.execute(
-            "SELECT root_id,path FROM source_roots WHERE project_id=? AND host_id='local'",
+            f"SELECT root_id,path FROM {read_table(store.db, 'source_roots')} WHERE "
+            "project_id=? AND host_id='local'",
             (project,),
         )
         if absolute == row["path"] or absolute.startswith(row["path"].rstrip("/") + "/")

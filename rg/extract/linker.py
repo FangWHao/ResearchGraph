@@ -116,10 +116,12 @@ def pairs(
 
 
 def iter_pairs(store: Store, project: str, scope: dict[str, str] | None = None) -> Iterator[Pair]:
-    if not store.db.execute("SELECT 1 FROM projects WHERE project_id=?", (project,)).fetchone():
+    if not store.db.execute(
+        "SELECT 1 FROM active_projects WHERE project_id=?", (project,)
+    ).fetchone():
         raise ValueError("项目不存在")
     rows = store.db.execute(
-        "SELECT c.*, e.kind FROM claims c JOIN entities e USING(entity_id) "
+        "SELECT c.*, e.kind FROM claims c JOIN effective_entities e USING(entity_id) "
         "WHERE e.project_id = ? AND e.kind!='note' AND c.claim_type='entity_version' "
         "ORDER BY c.claim_id DESC",
         (project,),
@@ -167,7 +169,7 @@ def iter_pairs(store: Store, project: str, scope: dict[str, str] | None = None) 
         versions[row["claim_id"]] = {
             tuple(r)
             for r in store.db.execute(
-                "SELECT av.path, av.algo, av.digest FROM artifact_versions av "
+                "SELECT av.path, av.algo, av.digest FROM effective_artifact_versions av "
                 "JOIN evidence_spans es ON es.event_id=av.evidence_event_id "
                 "JOIN claim_evidence ce USING(span_id) WHERE ce.claim_id=? AND av.project_id=?",
                 (row["claim_id"], project),
@@ -251,7 +253,7 @@ def _schedule(
     for pair in iter_pairs(store, project, scope):
         key = digest(dumps([processing, pair.pair_id]).encode())
         previous = store.db.execute(
-            "SELECT * FROM link_progress WHERE job_key=?", (key,)
+            "SELECT * FROM effective_link_progress WHERE job_key=?", (key,)
         ).fetchone()
         if previous and previous["state"] == "done":
             stats["pairs"] += 1
@@ -418,7 +420,7 @@ def _schedule(
                 )
             with store.transaction() as db:
                 row = db.execute(
-                    "SELECT review_job_id FROM link_progress WHERE job_key=?", (key,)
+                    "SELECT review_job_id FROM effective_link_progress WHERE job_key=?", (key,)
                 ).fetchone()
                 review = row[0]
                 if review is None:
@@ -456,7 +458,7 @@ def _schedule(
 def _done(store: Store, key: str, run: int) -> None:
     with store.transaction() as db:
         row = db.execute(
-            "SELECT review_job_id FROM link_progress WHERE job_key=?", (key,)
+            "SELECT review_job_id FROM effective_link_progress WHERE job_key=?", (key,)
         ).fetchone()
         if row[0] is not None:
             db.execute(

@@ -129,7 +129,7 @@ def current_file(store: Store, root: Path, relative: str, root_id: str) -> dict[
             cached = store.db.execute(
                 "SELECT o.*,v.digest,v.size,v.content_sha256,v.observed_at FROM file_hash_cache f "
                 "JOIN artifact_observations o USING(observation_id) "
-                "JOIN artifact_versions v USING(version_id) WHERE f.cache_key=?",
+                "JOIN effective_artifact_versions v USING(version_id) WHERE f.cache_key=?",
                 (key,),
             ).fetchone()
             started = now()

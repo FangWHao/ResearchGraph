@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import sqlite3
 
+from rg.store.ownership import relation
+from rg.store.ownership_schema import OWNED_TABLES
+
 TABLES = frozenset(
     """
 artifact_discoveries artifact_discovery_attempts artifact_job_events artifact_jobs
@@ -20,6 +23,7 @@ remote_previews review_actions run_io
 run_manifests run_observations runs segment_coverage session_parent_observations session_results
 sessions slim_events
 source_files source_roots source_record_skips source_continuations
+science_migrations science_ownership source_project_history project_tombstones
 spool_receipts token_cache view_states workspace_snapshots
 worktree_follow_actions worktree_discovery_observations
 worktree_discovery_progress worktree_discovery_cursors
@@ -62,6 +66,7 @@ class Selection:
             for t, rows in self.columns.items()
             if any(r[5] == 1 for r in rows)
         }
+        self.relations = {t: relation(db, t) for t in TABLES}
         self.foreign = [
             (t, r[3], r[2], r[4] or self.keys[r[2]])
             for t in TABLES
@@ -70,9 +75,18 @@ class Selection:
         db.execute("DROP TABLE IF EXISTS temp.clear_rows")
         db.execute("CREATE TEMP TABLE clear_rows(t TEXT,n INTEGER,PRIMARY KEY(t,n))")
         for table, cols in self.columns.items():
+            if table in {
+                "science_migrations",
+                "science_ownership",
+                "source_project_history",
+                "project_tombstones",
+            }:
+                continue
             if any(c[1] == "project_id" for c in cols):
                 self.add(
-                    table, f"SELECT rowid FROM {identifier(table)} WHERE project_id=?", (project,)
+                    table,
+                    f"SELECT rowid FROM {self.relations[table]} WHERE project_id=?",
+                    (project,),
                 )
         self.add(
             "raw_events",
@@ -95,10 +109,12 @@ class Selection:
         return f"{alias}.rowid IN (SELECT n FROM temp.clear_rows WHERE t='{table}')"
 
     def join(self, child: str, column: str, parent: str, key: str) -> None:
+        if child in OWNED_TABLES and parent in {"projects", "source_roots"}:
+            return
         self.add(
             child,
-            f"SELECT c.rowid AS n FROM {identifier(child)} c "
-            f"JOIN {identifier(parent)} p ON c.{identifier(column)}=p.{identifier(key)} "
+            f"SELECT c.rowid AS n FROM {self.relations[child]} c "
+            f"JOIN {self.relations[parent]} p ON c.{identifier(column)}=p.{identifier(key)} "
             f"JOIN temp.clear_rows s ON s.t=? AND s.n=p.rowid",
             (parent,),
         )
@@ -148,7 +164,7 @@ class Selection:
             )
             self.add(
                 "jobs",
-                "SELECT c.rowid AS n FROM jobs c WHERE "
+                f"SELECT c.rowid AS n FROM {self.relations['jobs']} c WHERE "
                 "json_valid(c.payload) AND (json_extract(c.payload,'$.project_id')=? OR "
                 "json_extract(c.payload,'$.session_pk') IN (SELECT session_pk FROM sessions p "
                 "JOIN temp.clear_rows s ON s.t='sessions' AND s.n=p.rowid) OR "
@@ -192,14 +208,58 @@ class Selection:
             )
             if self.db.total_changes == before:
                 break
+        self._ownership()
+        self._retain_context()
+
+    def _ownership(self) -> None:
+        for table in (*OWNED_TABLES, "raw_events"):
+            self.add(
+                "science_ownership",
+                "SELECT o.rowid AS n FROM science_ownership o "
+                "JOIN temp.clear_rows s ON s.t=o.table_name AND "
+                "s.n=o.record_rowid WHERE o.table_name=?",
+                (table,),
+            )
+        self.add(
+            "science_migrations",
+            "SELECT c.rowid AS n FROM science_migrations c WHERE NOT EXISTS "
+            "(SELECT 1 FROM science_ownership o WHERE o.migration_id=c.migration_id AND "
+            "o.rowid NOT IN (SELECT n FROM temp.clear_rows WHERE t='science_ownership'))",
+        )
+
+    def _retain_context(self) -> None:
+        # 科学行的原外键仍证明存储来源；外项目正在使用的来源身份不能删。
+        for child, column, parent, key in self.foreign + [
+            ("workspace_snapshots", "root_id", "source_roots", "root_id"),
+        ]:
+            if parent not in {"sessions", "source_roots", "projects"}:
+                continue
+            self.db.execute(
+                "DELETE FROM temp.clear_rows WHERE t=? AND n IN ("
+                f"SELECT p.rowid FROM {identifier(parent)} p JOIN {identifier(child)} c "
+                f"ON c.{identifier(column)}=p.{identifier(key)} WHERE NOT "
+                f"({self.selected(child)}))",
+                (parent,),
+            )
+        # 保留根或会话可能刚移除；再检查项目的物理来源外键。
+        for child, column, parent, key in self.foreign:
+            if parent == "projects":
+                self.db.execute(
+                    "DELETE FROM temp.clear_rows WHERE t='projects' AND n IN ("
+                    f"SELECT p.rowid FROM projects p JOIN {identifier(child)} c ON "
+                    f"c.{identifier(column)}=p.{identifier(key)} WHERE NOT "
+                    f"({self.selected(child)}))"
+                )
 
     def blockers(self) -> list[str]:
         issues = []
         for table, cols in self.columns.items():
             if (
                 any(c[1] == "project_id" for c in cols)
+                and table
+                not in {"science_ownership", "science_migrations", "source_project_history"}
                 and self.db.execute(
-                    f"SELECT 1 FROM {identifier(table)} c WHERE {self.selected(table)} "
+                    f"SELECT 1 FROM {self.relations[table]} c WHERE {self.selected(table)} "
                     "AND project_id IS NOT NULL AND project_id!=? LIMIT 1",
                     (self.project,),
                 ).fetchone()
@@ -215,9 +275,10 @@ class Selection:
             ).fetchone():
                 issues.append("保留记录仍引用待清除记录：" + child + "." + column)
             if (
-                any(c[1] == "project_id" for c in self.columns[parent])
+                not (child in OWNED_TABLES and parent in {"projects", "source_roots"})
+                and any(c[1] == "project_id" for c in self.columns[parent])
                 and self.db.execute(
-                    f"SELECT 1 FROM {identifier(child)} c JOIN {identifier(parent)} p "
+                    f"SELECT 1 FROM {self.relations[child]} c JOIN {self.relations[parent]} p "
                     f"ON c.{identifier(column)}=p.{identifier(key)} "
                     f"WHERE {self.selected(child)} AND p.project_id IS NOT NULL "
                     "AND p.project_id!=? LIMIT 1",
@@ -229,7 +290,9 @@ class Selection:
             ("input_event_ids", "raw_events", "event_id"),
             ("working_set_ids", "entities", "entity_id"),
         ):
-            effective_parent = "effective_raw_events" if parent == "raw_events" else parent
+            effective_parent = (
+                "effective_raw_events" if parent == "raw_events" else self.relations[parent]
+            )
             owner = "JOIN sessions o ON o.session_pk=p.session_pk" if parent == "raw_events" else ""
             condition = "o.project_id" if owner else "p.project_id"
             if self.db.execute(
@@ -246,11 +309,14 @@ class Selection:
             ("context_event_ids", "raw_events", "event_id"),
             ("entity_ids", "entities", "entity_id"),
         ):
-            effective_parent = "effective_raw_events" if parent == "raw_events" else parent
+            effective_parent = (
+                "effective_raw_events" if parent == "raw_events" else self.relations[parent]
+            )
             owner = "JOIN sessions o ON o.session_pk=p.session_pk" if parent == "raw_events" else ""
             condition = "o.project_id" if owner else "p.project_id"
             if self.db.execute(
-                "SELECT 1 FROM jobs c JOIN json_each(CASE WHEN json_valid(c.payload) "
+                f"SELECT 1 FROM {self.relations['jobs']} c JOIN json_each(CASE "
+                f"WHEN json_valid(c.payload) "
                 "THEN json_extract(c.payload,?) ELSE '[]' END) j "
                 f"JOIN {effective_parent} p ON p.{key}=j.value {owner} "
                 f"WHERE {self.selected('jobs')} AND {condition} IS NOT NULL "

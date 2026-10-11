@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from rg.api.server import Handler, LocalServer
+from rg.api.views import review as api_review
 from rg.ingest.scanner import scan_file
 from rg.query.project_fragments import query
 from rg.store import clear
@@ -158,9 +159,20 @@ def continue_clear_source(directory: Path, project: str, prepared: dict) -> dict
     }
 
 
-def dependency_source(store: Store, directory: Path, project: str, root: Path) -> dict:
+def dependency_source(
+    store: Store,
+    directory: Path,
+    project: str,
+    root: Path,
+    name: str = "public-dependencies.jsonl",
+    record_count: int = 26,
+    production_review: bool = False,
+) -> dict:
     """真实扫描额外来源，保存公开科研引用以验收只读依赖闭包。"""
-    path = directory / "public-dependencies.jsonl"
+    path = directory / name
+    prefix = (
+        "公开科研依赖记录" if name == "public-dependencies.jsonl" else f"公开迁移 {path.stem} 记录"
+    )
     records = [{"type": "session_meta", "payload": {"id": str(uuid4()), "cwd": str(root)}}]
     records.extend(
         {
@@ -168,10 +180,10 @@ def dependency_source(store: Store, directory: Path, project: str, root: Path) -
             "payload": {
                 "type": "message",
                 "role": "user",
-                "content": [{"type": "input_text", "text": f"公开科研依赖记录 {n}"}],
+                "content": [{"type": "input_text", "text": f"{prefix} {n}"}],
             },
         }
-        for n in range(1, 27)
+        for n in range(1, record_count + 1)
     )
     path.write_text(
         "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
@@ -194,7 +206,18 @@ def dependency_source(store: Store, directory: Path, project: str, root: Path) -
     ]
     entity, candidate = original(store, project)
     confirmed_entity, confirmed = original(store, project)
-    review(store, confirmed, "confirm")
+    if production_review:
+        api_review(
+            store,
+            {
+                "claim_ids": [confirmed],
+                "action": "confirm",
+                "actor": "human:公开科研迁移验收",
+                "expected_revision": store.revision(),
+            },
+        )
+    else:
+        review(store, confirmed, "confirm")
     # 两条科研记录引用全部已存物理记录；请求预检时不执行任何模型调用。
     for event in source["events"]:
         raw = store.raw(event["event_id"])
@@ -311,6 +334,18 @@ def seed(directory: Path) -> dict:
                 )
             ]
         dependent = dependency_source(store, directory, first, root_a)
+        migrations = {
+            name: dependency_source(
+                store,
+                directory,
+                first,
+                root_a,
+                f"public-migration-{name}.jsonl",
+                26 if name == "complete" else 2,
+                True,
+            )
+            for name in ("complete", "stale", "late", "late401")
+        }
         clear_source = prepare_clear_source(store, directory, first, root_a)
         index = {
             "first_project": first,
@@ -319,6 +354,7 @@ def seed(directory: Path) -> dict:
             "candidate": candidate,
             "confirmed": confirmed,
             "dependency_source": dependent,
+            "migration_sources": migrations,
         }
     index["privacy_source"] = continue_clear_source(directory, first, clear_source)
     (directory / "index.json").write_text(dumps(index), encoding="utf-8")
@@ -326,6 +362,7 @@ def seed(directory: Path) -> dict:
 
 
 def audit(directory: Path) -> dict:
+    dependent = json.loads((directory / "index.json").read_text())["dependency_source"]
     with closing(Store(directory / "store")) as store:
         tables = (
             "raw_events",
@@ -369,26 +406,32 @@ def audit(directory: Path) -> dict:
                         "status": row[2],
                     }
                     for row in store.db.execute(
-                        "SELECT input_event_ids,working_set_ids,status FROM extraction_runs"
+                        "SELECT input_event_ids,working_set_ids,status FROM extraction_runs "
+                        "WHERE input_event_ids=?",
+                        (dumps([e["event_id"] for e in dependent["events"]]),),
                     )
                 ],
                 "run_io": [
                     list(row)
                     for row in store.db.execute(
-                        "SELECT run_id,version_id,direction,basis FROM run_io"
+                        "SELECT run_id,version_id,direction,basis FROM run_io WHERE run_id=?",
+                        (dependent["run_id"],),
                     )
                 ],
                 "runs": [
                     list(row)
                     for row in store.db.execute(
-                        "SELECT run_id,project_id,session_pk,state,request_event_id FROM runs"
+                        "SELECT run_id,project_id,session_pk,state,request_event_id FROM runs "
+                        "WHERE run_id=?",
+                        (dependent["run_id"],),
                     )
                 ],
                 "edits": [
                     list(row)
                     for row in store.db.execute(
                         "SELECT edit_id,project_id,session_pk,request_event_id,result_event_id,"
-                        "after_version FROM edit_records"
+                        "after_version FROM edit_records WHERE edit_id=?",
+                        (dependent["edit_id"],),
                     )
                 ],
             },
@@ -397,6 +440,12 @@ def audit(directory: Path) -> dict:
                     list(row) for row in store.db.execute(f"SELECT * FROM {name} ORDER BY rowid")
                 ]
                 for name in ("source_record_skips", "source_continuations")
+            },
+            "qualification_metadata": {
+                name: [
+                    list(row) for row in store.db.execute(f"SELECT * FROM {name} ORDER BY rowid")
+                ]
+                for name in ("claim_source_checks", "rule_reference_checks")
             },
         }
     result["input_files"] = {
@@ -416,7 +465,7 @@ def main() -> None:
     cache.mkdir(exist_ok=True)
     if args.prepare:
         index = seed(args.fixture_dir)
-        (cache / "frontend-clear-continuation-index.json").write_text(
+        (cache / "frontend-fragment-migration-index.json").write_text(
             json.dumps(index, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
         print("两个公开项目与额外27条依赖记录已真实扫描；科研引用仅为公开合成。", flush=True)
@@ -449,16 +498,29 @@ def main() -> None:
             "privacy_metadata",
         ]
         intact = all(before[key] == after[key] for key in protected)
-        (cache / "frontend-clear-continuation-audit.json").write_text(
+        diagnostic_history = all(
+            after["qualification_metadata"][name][: len(rows)] == rows
+            for name, rows in before["qualification_metadata"].items()
+        )
+        (cache / "frontend-fragment-migration-audit.json").write_text(
             json.dumps(
-                {"服务前": before, "服务后": after, "原件候选审核未改写": intact},
+                {
+                    "服务前": before,
+                    "服务后": after,
+                    "原件候选审核未改写": intact,
+                    "原诊断历史未改写": diagnostic_history,
+                    "诊断追加数量": {
+                        name: len(after["qualification_metadata"][name]) - len(rows)
+                        for name, rows in before["qualification_metadata"].items()
+                    },
+                },
                 ensure_ascii=False,
                 indent=2,
             )
             + "\n",
             encoding="utf-8",
         )
-        if not intact:
+        if not intact or not diagnostic_history:
             raise RuntimeError("原件、候选或审核历史被改写")
 
 

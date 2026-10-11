@@ -18,7 +18,8 @@ from rg.store.objects import digest
 MAX_LINE = 4096
 MAX_RECORDS = 1000
 SAFE_CLASSES = frozenset(
-    name for name, value in vars(builtins).items()
+    name
+    for name, value in vars(builtins).items()
     if isinstance(value, type) and issubclass(value, BaseException)
 ) | {"TaskBusy", "Deadline", "JSONDecodeError"}
 STAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})")
@@ -34,18 +35,24 @@ def metadata(raw: bytes) -> tuple[str, str | None, str | None, str | None, str |
     except (ValueError, UnicodeError, OverflowError):
         return "unknown_record", None, None, None, None
     return (
-        "reported", timestamp, "hook", kind if kind in SAFE_CLASSES else None,
+        "reported",
+        timestamp,
+        "hook",
+        kind if kind in SAFE_CLASSES else None,
         digest(kind.encode()) if kind not in SAFE_CLASSES else None,
     )
 
 
 def _check(
-    db: sqlite3.Connection, status: str, source: int | None = None,
-    size: int | None = None, offset: int | None = None,
+    db: sqlite3.Connection,
+    status: str,
+    source: int | None = None,
+    size: int | None = None,
+    offset: int | None = None,
 ) -> None:
-    highwater = db.execute(
-        "SELECT coalesce(max(report_id),0) FROM hook_error_reports"
-    ).fetchone()[0]
+    highwater = db.execute("SELECT coalesce(max(report_id),0) FROM hook_error_reports").fetchone()[
+        0
+    ]
     values = (source, status, size, offset, highwater)
     previous = db.execute(
         "SELECT source_id,status,source_bytes,committed_offset,report_highwater "
@@ -54,7 +61,8 @@ def _check(
     if previous is None or tuple(previous) != values:
         db.execute(
             "INSERT INTO hook_error_checks(source_id,status,source_bytes,committed_offset,"
-            "report_highwater,recorded_at) VALUES (?,?,?,?,?,?)", (*values, now()),
+            "report_highwater,recorded_at) VALUES (?,?,?,?,?,?)",
+            (*values, now()),
         )
 
 
@@ -68,7 +76,8 @@ def _batch(store: Store, stream: BinaryIO, fault: Callable[[], None] | None) -> 
         "SELECT status FROM hook_error_checks ORDER BY check_id DESC LIMIT 1"
     ).fetchone()
     same = (
-        previous is not None and previous["file_token"] == token
+        previous is not None
+        and previous["file_token"] == token
         and (last_check is None or last_check[0] != "missing")
     )
     if same:
@@ -106,7 +115,9 @@ def _batch(store: Store, stream: BinaryIO, fault: Callable[[], None] | None) -> 
     boundary = stream.read(min(offset, MAX_LINE))
     after = os.fstat(stream.fileno())
     if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
-        after.st_size, after.st_mtime_ns, after.st_ctime_ns,
+        after.st_size,
+        after.st_mtime_ns,
+        after.st_ctime_ns,
     ):
         with store.transaction() as db:
             _check(db, "changed_during_read")
@@ -133,7 +144,8 @@ def _batch(store: Store, stream: BinaryIO, fault: Callable[[], None] | None) -> 
             fault()
         db.execute(
             "UPDATE hook_error_sources SET committed_offset=?,boundary_sha256=?,boundary_length=? "
-            "WHERE source_id=?", (offset, digest(boundary), len(boundary), source),
+            "WHERE source_id=?",
+            (offset, digest(boundary), len(boundary), source),
         )
         _check(db, status, source, before.st_size, offset)
     return len(records)
@@ -149,10 +161,12 @@ def collect(store: Store, *, fault: Callable[[], None] | None = None) -> dict[st
             if not hasattr(os, "O_NOFOLLOW") or os.open not in os.supports_dir_fd:
                 raise ValueError("unsafe")
             directory_fd = os.open(
-                store.root / "logs", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                store.root / "logs",
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
             )
             descriptor = os.open(
-                "hook-errors.log", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                "hook-errors.log",
+                os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
                 dir_fd=directory_fd,
             )
             with os.fdopen(descriptor, "rb") as stream:

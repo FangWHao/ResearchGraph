@@ -128,7 +128,9 @@ def _view(row: sqlite3.Row) -> dict[str, Any]:
 def register(store: Store, project: str, path: Path, kind: str = "auto") -> dict[str, Any]:
     if kind not in KINDS:
         raise ValueError("根目录类型非法")
-    if not store.db.execute("SELECT 1 FROM projects WHERE project_id=?", (project,)).fetchone():
+    if not store.db.execute(
+        "SELECT 1 FROM active_projects WHERE project_id=?", (project,)
+    ).fetchone():
         raise ValueError("项目不存在")
     path = _path(store, path, project)
 
@@ -173,16 +175,19 @@ def listing(
     if not 1 <= limit <= 200 or offset < 0:
         raise ValueError("根目录分页参数非法")
     with store.snapshot():
-        if not store.db.execute("SELECT 1 FROM projects WHERE project_id=?", (project,)).fetchone():
+        if not store.db.execute(
+            "SELECT 1 FROM active_projects WHERE project_id=?", (project,)
+        ).fetchone():
             raise ValueError("项目不存在")
         revision = store.revision()
         if expected_revision is not None and expected_revision != revision:
             raise ConflictError("记录已变化，请重新读取根目录清单")
         total = store.db.execute(
-            "SELECT count(*) FROM source_roots WHERE project_id=?", (project,)
+            "SELECT count(*) FROM effective_source_roots WHERE project_id=?", (project,)
         ).fetchone()[0]
         rows = store.db.execute(
-            "SELECT * FROM source_roots WHERE project_id=? ORDER BY root_id LIMIT ? OFFSET ?",
+            "SELECT * FROM effective_source_roots WHERE project_id=? "
+            "ORDER BY root_id LIMIT ? OFFSET ?",
             (project, limit, offset),
         ).fetchall()
         return {

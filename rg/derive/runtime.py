@@ -221,7 +221,9 @@ def reduce(store: Store, identity: str, value: Event) -> None:
         else None
     )
     if gap is None:
-        root = store.db.execute("SELECT root_id FROM runs WHERE run_id=?", (identity,)).fetchone()
+        root = store.db.execute(
+            "SELECT root_id FROM effective_runs WHERE run_id=?", (identity,)
+        ).fetchone()
         gap = None if root[0] else "cwd_root_unknown"
     store.db.execute(
         "UPDATE runs SET state=?,exit_code=?,ended_at=?,gap=? WHERE run_id=?",
@@ -237,7 +239,8 @@ def apply_result(store: Store, call: Event, value: Event) -> str | None:
         handle = arguments(call).get("session_id")
         matches = (
             store.db.execute(
-                "SELECT DISTINCT o.run_id FROM run_observations o JOIN runs r USING(run_id) "
+                "SELECT DISTINCT o.run_id FROM run_observations o JOIN "
+                "effective_runs r USING(run_id) "
                 "WHERE r.session_pk=? AND o.executor_session_id=? AND o.state='started'",
                 (call["session_pk"], handle),
             ).fetchall()
@@ -252,7 +255,7 @@ def apply_result(store: Store, call: Event, value: Event) -> str | None:
     assert identity is not None
     observe(store, identity, value, result_for(value), {"call_event_id": call["event_id"]})
     owner = store.db.execute(
-        "SELECT request_event_id FROM runs WHERE run_id=?", (identity,)
+        "SELECT request_event_id FROM effective_runs WHERE run_id=?", (identity,)
     ).fetchone()
     from rg.derive.records import event
 

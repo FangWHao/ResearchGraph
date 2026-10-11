@@ -36,7 +36,9 @@ def _coordinate(value: Any) -> bool:
 def _identity(store: Store, project: Any, user: Any) -> tuple[str, str]:
     if not _text(project, 100) or not _text(user, 100) or not user.strip():
         raise ValueError("需指定项目及有效的本机个人视图标识")
-    if not store.db.execute("SELECT 1 FROM projects WHERE project_id=?", (project,)).fetchone():
+    if not store.db.execute(
+        "SELECT 1 FROM active_projects WHERE project_id=?", (project,)
+    ).fetchone():
         raise NotFound("项目不存在")
     return project, user.strip()
 

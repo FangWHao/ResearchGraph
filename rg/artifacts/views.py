@@ -13,7 +13,7 @@ def health(store: Store, project: str | None) -> dict[str, Any]:
         {
             row[0]: row[1]
             for row in store.db.execute(
-                "SELECT state,count(*) FROM artifact_jobs WHERE (? IS NULL OR "
+                "SELECT state,count(*) FROM effective_artifact_jobs WHERE (? IS NULL OR "
                 "project_id=?) GROUP BY state",
                 (project, project),
             )
@@ -24,7 +24,7 @@ def health(store: Store, project: str | None) -> dict[str, Any]:
         {
             row[0]: row[1]
             for row in store.db.execute(
-                "SELECT coalesce(d.status,'pending'),count(*) FROM workspace_snapshots s "
+                "SELECT coalesce(d.status,'pending'),count(*) FROM effective_workspace_snapshots s "
                 "LEFT JOIN artifact_discoveries d USING(snapshot_id) "
                 "WHERE (? IS NULL OR s.project_id=?) GROUP BY coalesce(d.status,'pending')",
                 (project, project),
@@ -34,13 +34,14 @@ def health(store: Store, project: str | None) -> dict[str, Any]:
     versions = {
         row[0]: row[1]
         for row in store.db.execute(
-            "SELECT source,count(*) FROM artifact_versions WHERE (? IS NULL OR "
+            "SELECT source,count(*) FROM effective_artifact_versions WHERE (? IS NULL OR "
             "project_id=?) GROUP BY source",
             (project, project),
         )
     }
     reused = store.db.execute(
-        "SELECT count(*) FROM artifact_observations o JOIN artifact_versions v USING(version_id) "
+        "SELECT count(*) FROM artifact_observations o JOIN "
+        "effective_artifact_versions v USING(version_id) "
         "WHERE o.cache_reused=1 AND (? IS NULL OR v.project_id=?)",
         (project, project),
     ).fetchone()[0]
@@ -68,10 +69,10 @@ def versions(store: Store, values: dict[str, str]) -> dict[str, Any]:
     where = "WHERE (? IS NULL OR project_id=?) AND (? IS NULL OR path=?)"
     parameters = (project, project, path, path)
     total = store.db.execute(
-        "SELECT count(*) FROM artifact_versions " + where, parameters
+        "SELECT count(*) FROM effective_artifact_versions " + where, parameters
     ).fetchone()[0]
     rows = store.db.execute(
-        "SELECT * FROM artifact_versions "
+        "SELECT * FROM effective_artifact_versions "
         + where
         + " ORDER BY observed_at DESC,version_id LIMIT ? OFFSET ?",
         (*parameters, limit, offset),

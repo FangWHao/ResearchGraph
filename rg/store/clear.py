@@ -7,8 +7,9 @@ import os
 import re
 import shutil
 import sqlite3
+import stat
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import closing
 from pathlib import Path
 from typing import Any
@@ -63,7 +64,7 @@ def connect(root: Path, *, readonly: bool) -> sqlite3.Connection:
 def plan(
     root: Path, db: sqlite3.Connection, project: str, *, record_barrier: bool = True
 ) -> tuple[dict, Selection]:
-    if not db.execute("SELECT 1 FROM projects WHERE project_id=?", (project,)).fetchone():
+    if not db.execute("SELECT 1 FROM active_projects WHERE project_id=?", (project,)).fetchone():
         raise ValueError("项目不存在")
     selected = Selection(db, project)
     selected.expand()
@@ -100,11 +101,17 @@ def plan(
             hasher.update(dumps(values).encode())
     hasher.update(dumps([files.signatures, sorted(removed), sorted(shared), denials]).encode())
     summary["preview_sha256"] = hasher.hexdigest()
-    return summary | {"remove": sorted(set(files.remove)), "denials": denials}, selected
+    hasher.update(dumps(files.prune_shadow).encode())
+    summary["preview_sha256"] = hasher.hexdigest()
+    return summary | {
+        "remove": sorted(set(files.remove)),
+        "denials": denials,
+        "prune_shadow": files.prune_shadow,
+    }, selected
 
 
 def public(value: dict) -> dict:
-    return {k: v for k, v in value.items() if k not in {"remove", "denials"}}
+    return {k: v for k, v in value.items() if k not in {"remove", "denials", "prune_shadow"}}
 
 
 def preview(root: Path, project: str) -> dict:
@@ -174,6 +181,17 @@ def _delete(db: sqlite3.Connection, selected: Selection) -> None:
                 "(SELECT n FROM temp.clear_rows WHERE t=?)",
                 (table,),
             )
+        if db.execute("SELECT 1 FROM projects WHERE project_id=?", (selected.project,)).fetchone():
+            db.execute(
+                "UPDATE projects SET name='已清除的来源',remote_model_allowed=0 WHERE project_id=?",
+                (selected.project,),
+            )
+            db.execute(
+                "INSERT OR IGNORE INTO project_tombstones VALUES (?,?)", (selected.project, now())
+            )
+        from rg.store.ownership_cleanup import cleanup
+
+        cleanup(db)
         for _, sql in triggers:
             db.execute(sql)
         for index in ("slim_fts", "event_fts"):
@@ -230,6 +248,24 @@ def _managed_path(root: Path, relative: str) -> Path:
     return path
 
 
+def _remove_tree(root: Path, path: Path) -> None:
+    def retry(function: Callable[..., Any], name: str, error: BaseException) -> None:
+        file = Path(name)
+        if os.name != "nt" or not isinstance(error, PermissionError):
+            raise error
+        reject_links(root, file)
+        value = file.lstat()
+        if not stat.S_ISREG(value.st_mode) or not (
+            getattr(value, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_READONLY
+        ):
+            raise error
+        # Git 打包文件在 Windows 带只读属性；仅为已选管理文件解除该属性。
+        file.chmod(value.st_mode | stat.S_IWRITE)
+        function(name)
+
+    shutil.rmtree(path, onexc=retry)
+
+
 def _finish(root: Path, value: dict, db: sqlite3.Connection) -> dict:
     with record_denials.guard(root) as contains:
         if value["denials"].get("record_barrier", {}).get("count", 0) and contains is None:
@@ -245,11 +281,15 @@ def _finish(root: Path, value: dict, db: sqlite3.Connection) -> dict:
     for relative in value["remove"]:
         path = _managed_path(root, relative)
         if path.is_dir():
-            shutil.rmtree(path)
+            _remove_tree(root, path)
         else:
             path.unlink(missing_ok=True)
         if path.parent.exists():
             _sync(path.parent)
+    from rg.store.shadow_cleanup import prune
+
+    for storage in value.get("prune_shadow", []):
+        prune(root, db, canonical(storage))
     registry = root / "snapshots" / "roots.json"
     reject_links(root, registry)
     if registry.exists() or registry.is_symlink():
@@ -314,7 +354,7 @@ def resume(root: Path, request_id: str) -> dict:
         if value["request_id"] != request_id:
             raise ConflictError("恢复请求与等待清除的请求不符")
         if db.execute(
-            "SELECT 1 FROM projects WHERE project_id=?", (value["project_id"],)
+            "SELECT 1 FROM active_projects WHERE project_id=?", (value["project_id"],)
         ).fetchone():
             db.execute("BEGIN IMMEDIATE")
             current, selected = plan(

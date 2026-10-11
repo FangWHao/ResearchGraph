@@ -34,7 +34,7 @@ def _version(reader: Reader, identity: Any) -> tuple[dict[str, Any], list[dict[s
     if not isinstance(identity, str) or not identity or len(identity.encode()) > 4096:
         raise ValueError("比较需要两个明确且不超过4096字节的版本标识")
     row = reader.store.db.execute(
-        "SELECT * FROM artifact_versions WHERE version_id=? AND project_id=?",
+        "SELECT * FROM effective_artifact_versions WHERE version_id=? AND project_id=?",
         (identity, reader.project),
     ).fetchone()
     record = version_record(reader, dict(row)) if row is not None else None

@@ -17,8 +17,9 @@ def evidence(store: Store, event_id: int) -> dict[str, Any]:
             "r.exit_code,r.state,r.started_at,r.ended_at,r.request_event_id,r.root_id,r.gap,"
             "r.requested_at,substr(r.command,1,8000) AS command,"
             "coalesce(length(cast(r.command AS BLOB)),0) AS command_total_bytes "
-            "FROM runs r LEFT JOIN run_observations o USING(run_id) "
-            "WHERE r.request_event_id=? OR o.event_id=? OR EXISTS(SELECT 1 FROM run_manifests m "
+            "FROM effective_runs r LEFT JOIN run_observations o USING(run_id) "
+            "WHERE r.request_event_id=? OR o.event_id=? OR EXISTS(SELECT "
+            "1 FROM effective_run_manifests m "
             "WHERE m.run_id=r.run_id AND m.project_id=r.project_id AND m.evidence_event_id=?) "
             "ORDER BY r.run_id LIMIT 20",
             (event_id, event_id, event_id),
@@ -54,7 +55,7 @@ def evidence(store: Store, event_id: int) -> dict[str, Any]:
     edits = [
         project_edit(store, dict(row))
         for row in store.db.execute(
-            "SELECT * FROM edit_records WHERE request_event_id=? OR result_event_id=? "
+            "SELECT * FROM effective_edit_records WHERE request_event_id=? OR result_event_id=? "
             "ORDER BY edit_id LIMIT 20",
             (event_id, event_id),
         )
@@ -74,13 +75,14 @@ def evidence(store: Store, event_id: int) -> dict[str, Any]:
         else:
             remaining -= size
     total = store.db.execute(
-        "SELECT count(*) FROM edit_records WHERE request_event_id=? OR result_event_id=?",
+        "SELECT count(*) FROM effective_edit_records WHERE request_event_id=? OR result_event_id=?",
         (event_id, event_id),
     ).fetchone()[0]
     run_total = store.db.execute(
-        "SELECT count(DISTINCT r.run_id) FROM runs r "
+        "SELECT count(DISTINCT r.run_id) FROM effective_runs r "
         "LEFT JOIN run_observations o USING(run_id) "
-        "WHERE r.request_event_id=? OR o.event_id=? OR EXISTS(SELECT 1 FROM run_manifests m "
+        "WHERE r.request_event_id=? OR o.event_id=? OR EXISTS(SELECT "
+        "1 FROM effective_run_manifests m "
         "WHERE m.run_id=r.run_id AND m.project_id=r.project_id AND m.evidence_event_id=?)",
         (event_id, event_id, event_id),
     ).fetchone()[0]

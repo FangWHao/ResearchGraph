@@ -76,6 +76,11 @@ def _copy_backup(store: Store, destination: Path) -> dict[str, int]:
         }
         if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise ValueError("备份数据库完整性检查失败")
+        lock_names = {p.with_suffix(".lock").name for p in (store.root / "snapshots").glob("*.git")}
+
+        def snapshot_locks(directory: str, names: list[str]) -> set[str]:
+            return set(names) & lock_names if Path(directory) == store.root / "snapshots" else set()
+
         for name in ["snapshots", "spool", "overviews", "clear-records"]:
             if (store.root / name).exists():
                 ignored = (
@@ -83,6 +88,8 @@ def _copy_backup(store: Store, destination: Path) -> dict[str, int]:
                         record_denials.NAME, record_denials.NAME + "-*", record_denials.NAME + ".*"
                     )
                     if name == "clear-records"
+                    else snapshot_locks
+                    if name == "snapshots"
                     else None
                 )
                 shutil.copytree(

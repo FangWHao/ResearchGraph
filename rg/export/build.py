@@ -261,7 +261,7 @@ def build(store: Store, body: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
         reviews = []
         for row in store.db.execute(
             "SELECT a.* FROM review_actions a JOIN claims c USING(claim_id) "
-            "JOIN entities e USING(entity_id) WHERE e.project_id=? ORDER BY a.action_id",
+            "JOIN effective_entities e USING(entity_id) WHERE e.project_id=? ORDER BY a.action_id",
             (reader.project,),
         ):
             recorded = instant(row["recorded_at"])

@@ -11,6 +11,7 @@ from typing import Any
 from rg.store.database import ConflictError, Store, dumps, now
 from rg.store.locking import TaskBusy, exclusive
 from rg.store.objects import digest
+from rg.store.ownership import projects_table
 
 ACTIVE_SENDS: ContextVar[tuple[tuple[str, str], ...]] = ContextVar("privacy_sends", default=())
 
@@ -59,7 +60,8 @@ class Policy:
         if (
             remote
             and not store.db.execute(
-                "SELECT remote_model_allowed FROM projects WHERE project_id=?", (self.project,)
+                "SELECT remote_model_allowed FROM active_projects WHERE project_id=?",
+                (self.project,),
             ).fetchone()[0]
         ):
             raise PermissionError("本项目未允许远程模型，计数请求也不会发送")
@@ -86,7 +88,9 @@ class Policy:
 def read(store: Store, project: str) -> Policy:
     if (
         not isinstance(project, str)
-        or not store.db.execute("SELECT 1 FROM projects WHERE project_id=?", (project,)).fetchone()
+        or not store.db.execute(
+            f"SELECT 1 FROM {projects_table(store.db)} WHERE project_id=?", (project,)
+        ).fetchone()
     ):
         raise ValueError("项目不存在")
     row = store.db.execute(

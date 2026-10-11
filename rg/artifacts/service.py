@@ -26,7 +26,9 @@ class Service:
             if self.process.stdin is not None:
                 self.process.stdin.close()
             self.process = None
-        if not self.store.db.execute("SELECT 1 FROM workspace_snapshots LIMIT 1").fetchone():
+        if not self.store.db.execute(
+            "SELECT 1 FROM effective_workspace_snapshots LIMIT 1"
+        ).fetchone():
             return
         environment = {
             key: value

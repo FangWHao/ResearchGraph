@@ -44,7 +44,7 @@ def working_set(
     if scope is not None and not scope_shape(scope):
         raise ValueError("显式范围必须为非空字符串字段")
     rows = store.db.execute(
-        "SELECT c.*, e.kind FROM entities e JOIN claims c "
+        "SELECT c.*, e.kind FROM effective_entities e JOIN claims c "
         "USING(entity_id) WHERE e.project_id = ? AND e.kind!='note' AND c.claim_type = ? "
         "AND NOT EXISTS (SELECT 1 FROM claims replacement "
         "WHERE replacement.replaces_claim=c.claim_id) "

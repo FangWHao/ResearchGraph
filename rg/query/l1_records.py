@@ -25,9 +25,7 @@ def run_records(reader: Reader) -> tuple[list[dict[str, Any]], set[int], set[str
     identities = {
         r[0]
         for r in reader.store.db.execute(
-            "SELECT run_id FROM runs WHERE project_id=? UNION "
-            "SELECT run_id FROM run_manifests WHERE project_id=?",
-            (reader.project, reader.project),
+            "SELECT run_id FROM effective_runs UNION SELECT run_id FROM effective_run_manifests",
         )
     }
     result, events, versions = [], set(), set()
@@ -88,8 +86,10 @@ def run_records(reader: Reader) -> tuple[list[dict[str, Any]], set[int], set[str
 def artifacts(reader: Reader, requested: set[str]) -> tuple[list[dict[str, Any]], set[int]]:
     result, events = [], set()
     for row in reader.store.db.execute(
-        "SELECT * FROM artifact_versions WHERE project_id=? ORDER BY version_id", (reader.project,)
+        "SELECT * FROM effective_artifact_versions ORDER BY version_id"
     ):
+        if not reader.belongs("artifact_versions", "version_id", row["version_id"]):
+            continue
         if reader.scope_filter and row["version_id"] not in requested:
             continue
         value = version_record(reader, dict(row))

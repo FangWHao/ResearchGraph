@@ -229,7 +229,7 @@ class Store:
             "bad_lines": "SELECT count(*) FROM raw_events WHERE exclude_reason = 'bad_json'",
             "unassigned_sessions": "SELECT count(*) FROM sessions WHERE project_id IS NULL",
             "pending": "SELECT count(*) FROM coverage WHERE status = 'pending'",
-            "manual_jobs": "SELECT count(*) FROM jobs WHERE state = 'failed'",
+            "manual_jobs": "SELECT count(*) FROM effective_jobs WHERE state = 'failed'",
         }.items():
             if (
                 name == "unassigned_sessions"
@@ -253,11 +253,11 @@ class Store:
             ).fetchone()[0],
             "spool_receipts": self.db.execute("SELECT count(*) FROM spool_receipts").fetchone()[0],
             "spool_unfinished": self.db.execute(
-                "SELECT count(*) FROM jobs WHERE kind='spool_hint' "
+                "SELECT count(*) FROM effective_jobs WHERE kind='spool_hint' "
                 "AND state IN ('queued','running')"
             ).fetchone()[0],
             "spool_failed": self.db.execute(
-                "SELECT count(*) FROM jobs WHERE kind='spool_hint' AND state='failed'"
+                "SELECT count(*) FROM effective_jobs WHERE kind='spool_hint' AND state='failed'"
             ).fetchone()[0],
         }
         result["extraction"] = monitor(self, project, day, daily_budget, limit, offset)
@@ -278,25 +278,27 @@ class Store:
                 "count(CASE WHEN json_array_length(metadata,'$.omitted_files')>0 "
                 "THEN 1 END) AS partial, "
                 "count(CASE WHEN metadata IS NULL THEN 1 END) AS metadata_unknown "
-                "FROM workspace_snapshots WHERE (? IS NULL OR project_id=?)",
+                "FROM effective_workspace_snapshots WHERE (? IS NULL OR project_id=?)",
                 (project, project),
             ).fetchone()
         )
         result["l1"] = {
             "candidate_manifests": self.db.execute(
-                "SELECT count(*) FROM run_manifests WHERE (? IS NULL OR project_id=?)",
+                "SELECT count(*) FROM effective_run_manifests WHERE (? IS NULL OR project_id=?)",
                 (project, project),
             ).fetchone()[0],
             "reported_io": self.db.execute(
-                "SELECT count(*) FROM run_io i JOIN run_manifests m ON i.manifest_id=m.request_id "
+                "SELECT count(*) FROM run_io i JOIN effective_run_manifests "
+                "m ON i.manifest_id=m.request_id "
                 "WHERE (? IS NULL OR m.project_id=?)",
                 (project, project),
             ).fetchone()[0],
             "runs": self.db.execute(
-                "SELECT count(*) FROM runs WHERE (? IS NULL OR project_id=?)", (project, project)
+                "SELECT count(*) FROM effective_runs WHERE (? IS NULL OR project_id=?)",
+                (project, project),
             ).fetchone()[0],
             "edit_records": self.db.execute(
-                "SELECT count(*) FROM edit_records WHERE (? IS NULL OR project_id=?)",
+                "SELECT count(*) FROM effective_edit_records WHERE (? IS NULL OR project_id=?)",
                 (project, project),
             ).fetchone()[0],
             "waiting": self.db.execute(

@@ -16,6 +16,7 @@ from rg.snapshot.git import Git
 from rg.store.database import Store, dumps, now
 from rg.store.locking import TaskBusy, exclusive
 from rg.store.objects import digest
+from rg.store.ownership import snapshot_storage
 
 
 class Worker:
@@ -35,7 +36,8 @@ class Worker:
         identifier(project)
         identifier(root)
         registered = self.store.db.execute(
-            "SELECT path FROM source_roots WHERE project_id=? AND root_id=? AND host_id='local'",
+            "SELECT path FROM effective_source_roots WHERE project_id=? "
+            "AND root_id=? AND host_id='local'",
             (project, root),
         ).fetchone()
         if not registered or registered[0] != path or not Path(path).is_absolute():
@@ -63,7 +65,7 @@ class Worker:
 
     def discover(self, counts: Counter) -> None:
         snapshots = self.store.db.execute(
-            "SELECT s.* FROM workspace_snapshots s WHERE NOT EXISTS "
+            "SELECT s.* FROM effective_workspace_snapshots s WHERE NOT EXISTS "
             "(SELECT 1 FROM artifact_discoveries d WHERE d.snapshot_id=s.snapshot_id) "
             "AND (? IS NULL OR s.project_id=?) ORDER BY coalesce("
             "(SELECT max(a.attempt_id) FROM artifact_discovery_attempts a "
@@ -86,10 +88,11 @@ class Worker:
                 if commit:
                     if not re.fullmatch(r"[a-f0-9]{40}", commit):
                         raise ValueError("invalid_shadow_commit")
+                    storage_project = snapshot_storage(self.store.db, snapshot["snapshot_id"])
                     repository = (
                         self.store.root.resolve()
                         / "snapshots"
-                        / f"{identifier(snapshot['project_id'])}.git"
+                        / f"{identifier(storage_project)}.git"
                     )
                     if repository.is_symlink():
                         raise ValueError("shadow_repository_is_link")
@@ -180,7 +183,7 @@ class Worker:
     def _recover(self) -> int:
         with self.store.transaction() as db:
             jobs = db.execute(
-                "SELECT job_id,owner_id FROM artifact_jobs WHERE state='running'"
+                "SELECT job_id,owner_id FROM effective_artifact_jobs WHERE state='running'"
             ).fetchall()
             for job in jobs:
                 db.execute(
@@ -195,7 +198,9 @@ class Worker:
 
     def _claim(self, job: int) -> tuple[Any, str] | None:
         with self.store.transaction() as db:
-            row = db.execute("SELECT * FROM artifact_jobs WHERE job_id=?", (job,)).fetchone()
+            row = db.execute(
+                "SELECT * FROM effective_artifact_jobs WHERE job_id=?", (job,)
+            ).fetchone()
             if row is None or row["state"] not in {"queued", "paused"}:
                 return None
             if row["next_attempt_at"] and row["next_attempt_at"] > now():
@@ -231,7 +236,9 @@ class Worker:
         if not 0 <= value["size"] <= MAX_FILE_BYTES:
             raise ValueError("快照对象超过原捕获上限")
         repository = (
-            self.store.root.resolve() / "snapshots" / f"{identifier(job['project_id'])}.git"
+            self.store.root.resolve()
+            / "snapshots"
+            / f"{identifier(snapshot_storage(self.store.db, job['snapshot_id']))}.git"
         )
         if repository.is_symlink():
             raise ValueError("影子仓库不能是链接")
@@ -280,7 +287,8 @@ class Worker:
         )
         with self.store.transaction() as db:
             if not db.execute(
-                "SELECT 1 FROM artifact_jobs WHERE job_id=? AND owner_id=? AND state='running'",
+                "SELECT 1 FROM effective_artifact_jobs WHERE job_id=? "
+                "AND owner_id=? AND state='running'",
                 (job["job_id"], owner),
             ).fetchone():
                 raise RuntimeError("文件版本任务归属已变化")
@@ -300,7 +308,7 @@ class Worker:
                     ).encode()
                 )
                 snapshot = db.execute(
-                    "SELECT taken_at FROM workspace_snapshots WHERE snapshot_id=?",
+                    "SELECT taken_at FROM effective_workspace_snapshots WHERE snapshot_id=?",
                     (job["snapshot_id"],),
                 ).fetchone()
                 db.execute(
@@ -374,7 +382,8 @@ class Worker:
             if retry_failed:
                 with self.store.transaction() as db:
                     rows = db.execute(
-                        "SELECT job_id FROM artifact_jobs WHERE state='failed' AND (? IS NULL "
+                        "SELECT job_id FROM effective_artifact_jobs WHERE "
+                        "state='failed' AND (? IS NULL "
                         "OR project_id=?)",
                         (self.project, self.project),
                     ).fetchall()
@@ -386,7 +395,7 @@ class Worker:
                         )
                         self._journal(row[0], "explicit_retry", None, {})
             rows = self.store.db.execute(
-                "SELECT job_id FROM artifact_jobs WHERE state IN ('queued','paused') "
+                "SELECT job_id FROM effective_artifact_jobs WHERE state IN ('queued','paused') "
                 "AND (next_attempt_at IS NULL OR next_attempt_at<=?) AND (? IS NULL OR "
                 "project_id=?) "
                 "ORDER BY updated_at,job_id LIMIT ?",

@@ -73,6 +73,10 @@ def _validate(body: dict[str, Any]) -> tuple[str, str]:
 
 
 def _replay(store: Store, request_id: str, signature: str) -> dict[str, Any] | None:
+    if store.db.execute(
+        "SELECT 1 FROM science_migrations WHERE request_id=?", (request_id,)
+    ).fetchone():
+        raise ConflictError("请求编号已用于科研迁移")
     row = store.db.execute(
         "SELECT intent_sha256,response_json FROM fragment_assignments WHERE request_id=?",
         (request_id,),
@@ -155,7 +159,7 @@ def selection(
     if (
         body["project_id"] is not None
         and not db.execute(
-            "SELECT 1 FROM projects WHERE project_id=?", (body["project_id"],)
+            "SELECT 1 FROM active_projects WHERE project_id=?", (body["project_id"],)
         ).fetchone()
     ):
         raise ValueError("目标项目不存在")
@@ -207,8 +211,22 @@ def selection(
     return origin, chosen
 
 
-def _assign(store: Store, body: dict[str, Any], request_id: str, signature: str) -> dict[str, Any]:
-    origin, chosen = selection(store, body)
+def _assign(
+    store: Store,
+    body: dict[str, Any],
+    request_id: str,
+    signature: str,
+    *,
+    chosen_override: list[dict[str, Any]] | None = None,
+    session_targets: dict[int, int] | None = None,
+) -> dict[str, Any]:
+    if chosen_override is None:
+        origin, chosen = selection(store, body)
+    else:
+        origin = store.db.execute(
+            "SELECT * FROM sessions WHERE session_pk=?", (body["session"],)
+        ).fetchone()
+        chosen = chosen_override
     db = store.db
     records = [
         dict(r)
@@ -224,10 +242,13 @@ def _assign(store: Store, body: dict[str, Any], request_id: str, signature: str)
             (body["session"],),
         )
     ]
-    _protect_science(store, body["session"])
+    if chosen_override is None:
+        _protect_science(store, body["session"])
     selected = {r["event_id"] for r in chosen}
     touched = {r["partition_id"] for r in records if r["event_id"] in selected}
     for record in records:
+        record["previous_project_id"] = record["project_id"]
+        record["previous_session_pk"] = record["logical_session_pk"]
         if record["partition_id"] in touched:
             record["partition_id"] = None
         if record["event_id"] in selected:
@@ -237,7 +258,14 @@ def _assign(store: Store, body: dict[str, Any], request_id: str, signature: str)
     # 来源、归属与已有分段均是边界；绝不把A/B/A的两个A片段合并。
     created, recorded = 0, now()
     for _, members in groupby(
-        records, lambda r: (r["file_instance_id"], r["project_id"], r["basis"], r["partition_id"])
+        records,
+        lambda r: (
+            r["file_instance_id"],
+            r["project_id"],
+            r["basis"],
+            r["partition_id"],
+            r["previous_session_pk"] if session_targets is not None else None,
+        ),
     ):
         group = list(members)
         segments: list[list[dict[str, Any]]] = []
@@ -249,7 +277,14 @@ def _assign(store: Store, body: dict[str, Any], request_id: str, signature: str)
             # 未受本次操作影响的完整现有边界直接保留。
             if segment[0]["partition_id"] is not None:
                 continue
-            _partition(store, origin, segment, request_id, recorded)
+            _partition(
+                store,
+                origin,
+                segment,
+                request_id,
+                recorded,
+                session_targets if segment[0]["event_id"] in selected else None,
+            )
             created += 1
     db.execute(
         "UPDATE sessions SET project_id=NULL,project_basis='fragment_container' WHERE session_pk=?",
@@ -269,6 +304,8 @@ def _assign(store: Store, body: dict[str, Any], request_id: str, signature: str)
         "records_assigned": len(chosen),
         "partitions_created": created,
     }
+    if chosen_override is not None:
+        return result
     db.execute(
         "INSERT INTO fragment_assignments(request_id,intent_sha256,physical_session_pk,"
         "file_instance_id,first_event_id,last_event_id,project_id,actor,response_json,recorded_at) "
@@ -290,7 +327,12 @@ def _assign(store: Store, body: dict[str, Any], request_id: str, signature: str)
 
 
 def _partition(
-    store: Store, origin: Any, records: list[dict[str, Any]], request: str, at: str
+    store: Store,
+    origin: Any,
+    records: list[dict[str, Any]],
+    request: str,
+    at: str,
+    session_targets: dict[int, int] | None = None,
 ) -> None:
     partition = str(uuid.uuid4())
     first, last = records[0], records[-1]
@@ -330,6 +372,27 @@ def _partition(
         "INSERT INTO fragment_record_maps(first_event_id,partition_id,request_id,recorded_at) "
         "VALUES (?,?,?,?)",
         [(r["event_id"], partition, request, at) for r in records],
+    )
+    if session is None:
+        raise RuntimeError("片段逻辑会话未保存")
+    target = session
+    if session_targets is not None:
+        target = session_targets.setdefault(first["previous_session_pk"], target)
+    store.db.executemany(
+        "INSERT INTO source_project_history(first_event_id,request_id,previous_project_id,"
+        "project_id,previous_session_pk,session_pk,recorded_at) VALUES (?,?,?,?,?,?,?)",
+        [
+            (
+                r["event_id"],
+                request,
+                r["previous_project_id"],
+                r["project_id"],
+                r["previous_session_pk"],
+                target,
+                at,
+            )
+            for r in records
+        ],
     )
 
 
@@ -386,11 +449,11 @@ def _protect_science(store: Store, session: int) -> None:
         "JOIN raw_events r USING(event_id) WHERE r.session_pk=? LIMIT 1",
         "SELECT 1 FROM extraction_runs x,json_each(x.input_event_ids) j "
         "JOIN raw_events r ON r.event_id=j.value WHERE r.session_pk=? LIMIT 1",
-        "SELECT 1 FROM extraction_plans p JOIN sessions s USING(session_pk) "
+        "SELECT 1 FROM effective_extraction_plans p JOIN sessions s USING(session_pk) "
         "WHERE s.session_pk=? OR s.physical_session_pk=? LIMIT 1",
         "SELECT 1 FROM run_observations o JOIN raw_events r USING(event_id) "
         "WHERE r.session_pk=? LIMIT 1",
-        "SELECT 1 FROM edit_records e JOIN raw_events r ON "
+        "SELECT 1 FROM effective_edit_records e JOIN raw_events r ON "
         "r.event_id=e.request_event_id OR r.event_id=e.result_event_id "
         "WHERE r.session_pk=? LIMIT 1",
     )

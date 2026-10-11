@@ -149,7 +149,7 @@ def _daily(
     ).fetchone()
     consumed = usage[0] if usage else 0
     all_rows = store.db.execute(
-        "SELECT sent,input_tokens,output_tokens FROM model_attempts "
+        "SELECT sent,input_tokens,output_tokens FROM effective_model_attempts "
         "WHERE COALESCE(usage_day,substr(created_at,1,10))=?",
         (day,),
     ).fetchall()
@@ -161,7 +161,7 @@ def _daily(
     )
     legacy = store.db.execute(
         "SELECT count(*) FROM extraction_runs r WHERE NOT EXISTS "
-        "(SELECT 1 FROM model_attempts a WHERE a.extraction_run_id=r.extraction_run_id)"
+        "(SELECT 1 FROM effective_model_attempts a WHERE a.extraction_run_id=r.extraction_run_id)"
     ).fetchone()[0]
     if consumed >= daily_budget:
         alerts.append({"code": "daily_limit", "message": "当天全库额度已达到本次配置的上限"})
@@ -211,11 +211,14 @@ def monitor(
         raise ValueError("每日额度必须为正数，页长 1 到 1000，偏移不能为负")
     if (
         project is not None
-        and not store.db.execute("SELECT 1 FROM projects WHERE project_id=?", (project,)).fetchone()
+        and not store.db.execute(
+            "SELECT 1 FROM active_projects WHERE project_id=?", (project,)
+        ).fetchone()
     ):
         raise ValueError("项目不存在")
     rows = store.db.execute(
-        "SELECT * FROM model_attempts WHERE COALESCE(usage_day,substr(created_at,1,10))=? "
+        "SELECT * FROM effective_model_attempts WHERE "
+        "COALESCE(usage_day,substr(created_at,1,10))=? "
         "AND (? IS NULL OR project_id=?) ORDER BY attempt_id",
         (day, project, project),
     ).fetchall()

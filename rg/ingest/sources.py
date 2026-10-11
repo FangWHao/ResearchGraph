@@ -28,7 +28,9 @@ def register(store: Store, path: Path, tool: str, project: str | None = None) ->
         raise ValueError("扫描文件必须使用 .jsonl 后缀")
     if (
         project is not None
-        and not store.db.execute("SELECT 1 FROM projects WHERE project_id=?", (project,)).fetchone()
+        and not store.db.execute(
+            "SELECT 1 FROM active_projects WHERE project_id=?", (project,)
+        ).fetchone()
     ):
         raise ValueError("项目不存在")
     previous = store.db.execute(

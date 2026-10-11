@@ -312,6 +312,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/api/view-state",
                 "/api/worktrees/follow",
                 "/api/project-fragments/assign",
+                "/api/project-fragments/migrate",
                 "/api/project-fragments/dependencies",
             } or path.startswith("/api/project-clear/"):
                 from rg.clients.record import unique_pairs
@@ -365,6 +366,10 @@ class Handler(BaseHTTPRequestHandler):
                     from rg.store.fragments import assign
 
                     result = assign(store, body)
+                elif path == "/api/project-fragments/migrate":
+                    from rg.store.science_migration import migrate
+
+                    result = migrate(store, body)
                 elif path == "/api/worktrees/follow":
                     from rg.store.worktrees import configure
 

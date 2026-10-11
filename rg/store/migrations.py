@@ -4,8 +4,10 @@ import sqlite3
 
 from rg.store.fragment_schema import MIGRATION as FRAGMENT_MIGRATION
 from rg.store.gap_schema import MIGRATION as GAP_MIGRATION
+from rg.store.ownership_schema import MIGRATION as OWNERSHIP_MIGRATION
+from rg.store.ownership_schema import views as ownership_views
 
-LATEST_VERSION = 32
+LATEST_VERSION = 33
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -562,6 +564,7 @@ MIGRATIONS[30] = (
 
 MIGRATIONS[31] = FRAGMENT_MIGRATION
 MIGRATIONS[32] = GAP_MIGRATION
+MIGRATIONS[33] = OWNERSHIP_MIGRATION
 
 
 def migrate(db: sqlite3.Connection) -> None:
@@ -601,6 +604,8 @@ def _upgrade(db: sqlite3.Connection) -> None:
                 ).fetchall()
             for statement in MIGRATIONS[version + 1]:
                 db.execute(statement)
+            if version == 32:
+                ownership_views(db)
             if version in {27, 30}:
                 for row in associated:
                     db.execute(row[0])

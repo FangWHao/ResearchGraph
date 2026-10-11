@@ -48,6 +48,7 @@ jobs:
           tests/golden/test_fragment_dependencies.py
           tests/golden/test_record_denials.py
           tests/golden/test_clear_continuation.py
+          tests/golden/test_science_migration.py
           tests/test_migrations.py
           -q
   backend:

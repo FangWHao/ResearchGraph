@@ -8,11 +8,13 @@ from rg.record.events import previous
 from rg.record.manifest_schema import MAX_BYTES, ROLES, identity, normalize
 from rg.store.database import ConflictError, Store, dumps, now
 from rg.store.objects import digest
+from rg.store.ownership import projects_table, read_table
 
 
 def receipt(store: Store, request_id: str, replayed: bool) -> dict[str, Any]:
     row = store.db.execute(
-        "SELECT request_id,run_id,evidence_event_id,claim_state,basis FROM run_manifests "
+        f"SELECT request_id,run_id,evidence_event_id,claim_state,basis "
+        f"FROM {read_table(store.db, 'run_manifests')} "
         "WHERE request_id=?",
         (request_id,),
     ).fetchone()
@@ -22,17 +24,20 @@ def receipt(store: Store, request_id: str, replayed: bool) -> dict[str, Any]:
 
 
 def validate_links(store: Store, project: str, data: dict[str, Any]) -> None:
-    if not store.db.execute("SELECT 1 FROM projects WHERE project_id=?", (project,)).fetchone():
+    if not store.db.execute(
+        f"SELECT 1 FROM {projects_table(store.db)} WHERE project_id=?", (project,)
+    ).fetchone():
         raise ValueError("项目不存在")
     run = store.db.execute(
-        "SELECT project_id FROM runs WHERE run_id=?", (data["run_id"],)
+        f"SELECT project_id FROM {read_table(store.db, 'runs')} WHERE run_id=?", (data["run_id"],)
     ).fetchone()
     if run is not None and run[0] != project:
         raise ValueError("运行属于其它项目")
     if (
         data["attempt_id"] is not None
         and not store.db.execute(
-            "SELECT 1 FROM entities WHERE entity_id=? AND project_id=? AND kind='attempt'",
+            f"SELECT 1 FROM {read_table(store.db, 'entities')} WHERE "
+            f"entity_id=? AND project_id=? AND kind='attempt'",
             (data["attempt_id"], project),
         ).fetchone()
     ):
@@ -40,7 +45,8 @@ def validate_links(store: Store, project: str, data: dict[str, Any]) -> None:
     if (
         data["snapshot_id"] is not None
         and not store.db.execute(
-            "SELECT 1 FROM workspace_snapshots WHERE snapshot_id=? AND project_id=?",
+            f"SELECT 1 FROM {read_table(store.db, 'workspace_snapshots')} "
+            f"WHERE snapshot_id=? AND project_id=?",
             (data["snapshot_id"], project),
         ).fetchone()
     ):
@@ -48,7 +54,9 @@ def validate_links(store: Store, project: str, data: dict[str, Any]) -> None:
     for role in ROLES:
         for requested in data[role] or []:
             row = store.db.execute(
-                "SELECT project_id FROM artifact_versions WHERE version_id=?", (requested,)
+                f"SELECT project_id FROM {read_table(store.db, 'artifact_versions')} "
+                f"WHERE version_id=?",
+                (requested,),
             ).fetchone()
             if row is not None and row[0] != project:
                 raise ValueError("文件版本属于其它项目")
@@ -154,7 +162,8 @@ def record(store: Store, project: str, body: dict[str, Any]) -> dict[str, Any]:
         for role, direction in ROLES.items():
             for ordinal, requested in enumerate(data[role] or []):
                 version = db.execute(
-                    "SELECT version_id FROM artifact_versions WHERE version_id=? AND project_id=?",
+                    f"SELECT version_id FROM {read_table(store.db, 'artifact_versions')} "
+                    f"WHERE version_id=? AND project_id=?",
                     (requested, project),
                 ).fetchone()
                 io_id = digest(dumps([request_id, role, ordinal, requested]).encode())

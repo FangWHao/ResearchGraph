@@ -8,6 +8,7 @@ from rg.record.events import evidence, original, previous, windows
 from rg.record.schema import validate_question, validate_scope
 from rg.store.database import ConflictError, Store, dumps, now
 from rg.store.objects import digest
+from rg.store.ownership import projects_table, read_table
 
 MAX_TEXT_BYTES = 16000
 
@@ -79,7 +80,8 @@ def intent(body: dict[str, Any]) -> tuple[str, dict[str, Any], int]:
 
 def receipt(store: Store, request_id: str, replayed: bool) -> dict[str, Any]:
     row = store.db.execute(
-        "SELECT r.*,c.entity_id FROM explicit_records r JOIN claims c USING(claim_id) "
+        f"SELECT r.*,c.entity_id FROM {read_table(store.db, 'explicit_records')} "
+        f"r JOIN claims c USING(claim_id) "
         "WHERE request_id=?",
         (request_id,),
     ).fetchone()
@@ -105,7 +107,7 @@ def question(store: Store, body: dict[str, Any]) -> dict[str, Any]:
         if store.revision() != expected:
             raise ConflictError("图版本已变化，请刷新后再保存问题")
         if not db.execute(
-            "SELECT 1 FROM projects WHERE project_id=?", (data["project_id"],)
+            f"SELECT 1 FROM {projects_table(db)} WHERE project_id=?", (data["project_id"],)
         ).fetchone():
             raise ValueError("项目不存在")
         recorded = now()

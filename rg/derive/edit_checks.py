@@ -8,6 +8,7 @@ from typing import Any
 from rg.derive.multiedit import project_edit
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
+from rg.store.ownership import read_table
 
 ALGORITHM = "multiedit-sequential-v1"
 FIELDS = ("after_version", "reported_after_version", "gap", "request_validation")
@@ -16,7 +17,7 @@ FIELDS = ("after_version", "reported_after_version", "gap", "request_validation"
 def signature(store: Store, row: dict[str, Any]) -> str:
     # 只取原行及已存元数据，排除视图临时字段；不会打开原文或候选正文。
     original = store.db.execute(
-        "SELECT * FROM edit_records WHERE edit_id=?", (row["edit_id"],)
+        f"SELECT * FROM {read_table(store.db, 'edit_records')} WHERE edit_id=?", (row["edit_id"],)
     ).fetchone()
     request = store.db.execute(
         "SELECT r.*,s.project_id,s.tool FROM effective_raw_events r JOIN "
@@ -26,7 +27,8 @@ def signature(store: Store, row: dict[str, Any]) -> str:
     ).fetchone()
     versions = [
         store.db.execute(
-            "SELECT * FROM artifact_versions WHERE version_id=?", (row[key],)
+            f"SELECT * FROM {read_table(store.db, 'artifact_versions')} WHERE version_id=?",
+            (row[key],),
         ).fetchone()
         for key in ("before_version", "after_version")
     ]
@@ -42,7 +44,8 @@ def recorded_edit(store: Store, record: dict[str, Any]) -> dict[str, Any]:
         return record
     row = dict(record)
     checked = store.db.execute(
-        "SELECT payload FROM edit_request_checks WHERE edit_id=? AND input_signature=? "
+        f"SELECT payload FROM {read_table(store.db, 'edit_request_checks')} "
+        "WHERE edit_id=? AND input_signature=? "
         "ORDER BY check_id DESC LIMIT 1",
         (row["edit_id"], signature(store, row)),
     ).fetchone()
@@ -68,7 +71,8 @@ def validate_edits(store: Store, limit: int = 100, *, retry_unavailable: bool = 
     # 新记录与旧版本缺核验的记录优先；显式重试的旧不可用项不能长期占满批次。
     for retrying in (False, True) if retry_unavailable else (False,):
         for saved in store.db.execute(
-            "SELECT * FROM edit_records WHERE operation='multiedit' ORDER BY edit_id"
+            f"SELECT * FROM {read_table(store.db, 'edit_records')} "
+            f"WHERE operation='multiedit' ORDER BY edit_id"
         ):
             row = dict(saved)
             if row["edit_id"] in attempted:
@@ -76,7 +80,8 @@ def validate_edits(store: Store, limit: int = 100, *, retry_unavailable: bool = 
             with store.transaction() as db:
                 fingerprint = signature(store, row)
                 previous = db.execute(
-                    "SELECT payload FROM edit_request_checks WHERE edit_id=? AND input_signature=? "
+                    f"SELECT payload FROM {read_table(store.db, 'edit_request_checks')} WHERE "
+                    "edit_id=? AND input_signature=? "
                     "ORDER BY check_id DESC LIMIT 1",
                     (row["edit_id"], fingerprint),
                 ).fetchone()

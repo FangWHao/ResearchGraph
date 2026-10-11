@@ -40,7 +40,7 @@ def export_registry(store: Store) -> list[dict[str, Any]]:
     values = [
         dict(row)
         for row in store.db.execute(
-            "SELECT project_id,root_id,path FROM source_roots WHERE host_id='local' "
+            "SELECT project_id,root_id,path FROM effective_source_roots WHERE host_id='local' "
             "AND kind IN ('repo','worktree','alias') ORDER BY root_id"
         )
     ]

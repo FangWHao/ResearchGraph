@@ -11,11 +11,15 @@ from rg.query.reader import Reader, instant
 def snapshot(reader: Reader, identity: int | None, root: str | None) -> dict[str, Any] | None:
     row = reader.store.db.execute(
         "SELECT snapshot_id,root_id,trigger,prompt_id,head_commit,branch,dirty,shadow_commit,"
-        "skipped,taken_at,async_race,recorded_at FROM workspace_snapshots "
-        "WHERE snapshot_id=? AND project_id=? AND root_id IS ?",
-        (identity, reader.project, root),
+        "skipped,taken_at,async_race,recorded_at FROM effective_workspace_snapshots "
+        "WHERE snapshot_id=? AND root_id IS ?",
+        (identity, root),
     ).fetchone()
-    if row is None or not reader.visible(row["taken_at"], row["recorded_at"], ("W", identity)):
+    if (
+        row is None
+        or not reader.belongs("workspace_snapshots", "snapshot_id", identity)
+        or not reader.visible(row["taken_at"], row["recorded_at"], ("W", identity))
+    ):
         return None
     return dict(row)
 
@@ -74,16 +78,19 @@ def observations(reader: Reader, version: dict[str, Any]) -> list[dict[str, Any]
 def version_record(
     reader: Reader, version: dict[str, Any]
 ) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
+    version = version | {"project_id": reader.project}
     identity = version["version_id"]
     if version["source"] not in {"shadow_snapshot", "current_file"}:
         event = reader.store.db.execute(
             "SELECT r.occurred_at,r.recorded_at FROM effective_raw_events r "
             "JOIN sessions s USING(session_pk) "
-            "WHERE r.event_id=? AND s.project_id=?",
-            (version["evidence_event_id"], reader.project),
+            "WHERE r.event_id=?",
+            (version["evidence_event_id"],),
         ).fetchone()
-        if event is None or not reader.visible(
-            event["occurred_at"], event["recorded_at"], ("V", identity)
+        if (
+            event is None
+            or not reader.event_belongs(version["evidence_event_id"])
+            or not reader.visible(event["occurred_at"], event["recorded_at"], ("V", identity))
         ):
             return None
         return version | dict(event) | {"citation_id": f"V:{identity}"}, []

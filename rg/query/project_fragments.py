@@ -142,7 +142,7 @@ def _query(
     roots = [
         dict(row)
         for row in db.execute(
-            "SELECT root_id,project_id,path,kind FROM source_roots WHERE host_id='local' "
+            "SELECT root_id,project_id,path,kind FROM effective_source_roots WHERE host_id='local' "
             "ORDER BY root_id LIMIT ?",
             (MAX_ROOTS + 1,),
         )

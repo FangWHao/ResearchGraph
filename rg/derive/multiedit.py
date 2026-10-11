@@ -9,6 +9,7 @@ from zstandard import ZstdError
 from rg.derive.records import arguments, block, event
 from rg.store.database import Store, dumps
 from rg.store.objects import digest
+from rg.store.ownership import read_table
 
 MAX_CONTENT_BYTES = 5_000_000
 
@@ -71,7 +72,8 @@ def _request(store: Store, row: dict[str, Any]) -> dict[str, Any]:
 def _content(store: Store, row: dict[str, Any], phase: str) -> str:
     try:
         saved = store.db.execute(
-            "SELECT * FROM artifact_versions WHERE version_id=?", (row[f"{phase}_version"],)
+            f"SELECT * FROM {read_table(store.db, 'artifact_versions')} WHERE version_id=?",
+            (row[f"{phase}_version"],),
         ).fetchone()
         identity = digest(
             dumps(

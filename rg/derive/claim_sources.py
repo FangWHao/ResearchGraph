@@ -15,6 +15,7 @@ from rg.ingest.scanner import PARSER_VERSION
 from rg.slim.slimmer import SLIM_VERSION
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
+from rg.store.ownership import entity_owner, event_owner, historical_source, read_table
 
 POLICY_VERSION = "1"
 
@@ -31,9 +32,12 @@ def modeled(row: Mapping[str, Any] | sqlite3.Row) -> bool:
     )
 
 
-def inputs(store: Store, claim_id: int) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
+def inputs(
+    store: Store, claim_id: int, known_at: str | None = None
+) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
     claim = store.db.execute(
-        "SELECT c.*,e.project_id FROM claims c LEFT JOIN entities e USING(entity_id) "
+        f"SELECT c.*,e.project_id FROM claims c LEFT JOIN "
+        f"{read_table(store.db, 'entities')} e USING(entity_id) "
         "WHERE c.claim_id=?",
         (claim_id,),
     ).fetchone()
@@ -50,23 +54,28 @@ def inputs(store: Store, claim_id: int) -> tuple[str, dict[str, Any], list[dict[
         (claim_id,),
     ):
         row = dict(saved)
-        row["calls"] = (
-            [
-                dict(call)
-                for call in store.db.execute(
-                    "SELECT r.*,f.parser FROM effective_raw_events r JOIN source_files f "
-                    "USING(file_instance_id) "
-                    "WHERE r.session_pk=? AND r.call_id=? AND r.alias_of IS NULL "
-                    "AND r.kind IN ('tool_call','file_edit','plan_update') "
-                    "ORDER BY r.event_id LIMIT 2",
-                    (row["session_pk"], row["call_id"]),
-                )
-            ]
-            if row["kind"] == "tool_result" and row["call_id"]
-            else []
-        )
+        if known_at is not None:
+            row = historical_source(store.db, row, known_at)
+            row["source_project"] = event_owner(store.db, row["event_id"], known_at)
+        row["calls"] = []
+        if row["kind"] == "tool_result" and row["call_id"]:
+            for saved_call in store.db.execute(
+                "SELECT r.*,f.parser FROM effective_raw_events r JOIN source_files f "
+                "USING(file_instance_id) WHERE r.call_id=? "
+                "AND r.kind IN ('tool_call','file_edit','plan_update') ORDER BY r.event_id",
+                (row["call_id"],),
+            ):
+                call = dict(saved_call)
+                if known_at is not None:
+                    call = historical_source(store.db, call, known_at)
+                if call["session_pk"] == row["session_pk"] and call["alias_of"] is None:
+                    row["calls"].append(call)
+                    if len(row["calls"]) == 2:
+                        break
         rows.append(row)
     value = dict(claim)
+    if known_at is not None:
+        value["project_id"] = entity_owner(store.db, value["entity_id"], known_at)
     # 正文、作者及路径只进入本地摘要，不复制到诊断载荷或模型请求。
     signature = digest(dumps([policy(), value, rows]).encode())
     return signature, value, rows
@@ -153,13 +162,17 @@ def projection(
 
 
 def recorded(
-    store: Store, claim_id: int, visible: Callable[[dict[str, Any]], bool] | None = None
+    store: Store,
+    claim_id: int,
+    visible: Callable[[dict[str, Any]], bool] | None = None,
+    *,
+    known_at: str | None = None,
 ) -> dict[str, Any]:
-    signature, claim, _ = inputs(store, claim_id)
+    signature, claim, _ = inputs(store, claim_id, known_at)
     if not modeled(claim):
         return {"status": "not_required", "input_eligible": True, "policy": policy()}
     row = store.db.execute(
-        "SELECT payload,recorded_at FROM claim_source_checks "
+        f"SELECT payload,recorded_at FROM {read_table(store.db, 'claim_source_checks')} "
         "WHERE claim_id=? AND input_signature=? ORDER BY check_id DESC LIMIT 1",
         (claim_id, signature),
     ).fetchone()
@@ -176,7 +189,8 @@ def assess(store: Store, claim_id: int, *, refresh: bool = False) -> dict[str, A
         if not modeled(claim):
             return {"status": "not_required", "input_eligible": True, "policy": policy()}
         previous = store.db.execute(
-            "SELECT payload FROM claim_source_checks WHERE claim_id=? AND input_signature=? "
+            f"SELECT payload FROM {read_table(store.db, 'claim_source_checks')} "
+            f"WHERE claim_id=? AND input_signature=? "
             "ORDER BY check_id DESC LIMIT 1",
             (claim_id, signature),
         ).fetchone()
@@ -197,7 +211,8 @@ def assess(store: Store, claim_id: int, *, refresh: bool = False) -> dict[str, A
 def check_batch(store: Store, limit: int = 100) -> dict[str, int]:
     """持久轮转；旧不可用项自动重查，不长期占满新记录的批次。"""
     row = store.db.execute(
-        "SELECT job_id,payload FROM jobs WHERE kind=? ORDER BY job_id LIMIT 1",
+        f"SELECT job_id,payload FROM {read_table(store.db, 'jobs')} "
+        f"WHERE kind=? ORDER BY job_id LIMIT 1",
         ("claim_source_cursor",),
     ).fetchone()
     cursor = json.loads(row["payload"])["last_claim"] if row else 0

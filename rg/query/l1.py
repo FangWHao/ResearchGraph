@@ -160,21 +160,25 @@ class FileRunGraph:
     def _event(self, identity: int) -> dict[str, Any] | None:
         row = self.reader.store.db.execute(
             "SELECT r.* FROM effective_raw_events r JOIN sessions s USING(session_pk) "
-            "WHERE r.event_id=? AND s.project_id=?",
-            (identity, self.reader.project),
+            "WHERE r.event_id=?",
+            (identity,),
         ).fetchone()
-        if row is None or not self.reader.visible(
-            row["occurred_at"], row["recorded_at"], ("E", identity)
+        if (
+            row is None
+            or not self.reader.event_belongs(identity)
+            or not self.reader.visible(row["occurred_at"], row["recorded_at"], ("E", identity))
         ):
             return None
-        return dict(row)
+        return self.reader.source(dict(row))
 
     def _edits(self, requested: set[str]) -> None:
         for row in self.reader.store.db.execute(
-            "SELECT * FROM edit_records WHERE project_id=? ORDER BY edit_id",
-            (self.reader.project,),
+            "SELECT * FROM effective_edit_records ORDER BY edit_id",
         ):
             record = dict(row)
+            if not self.reader.belongs("edit_records", "edit_id", record["edit_id"]):
+                continue
+            record["project_id"] = self.reader.project
             if self.reader.scope_filter and not (
                 record["before_version"] in requested or record["after_version"] in requested
             ):
@@ -190,18 +194,18 @@ class FileRunGraph:
             ):
                 continue
             candidates = self.reader.store.db.execute(
-                "SELECT event_id,kind,occurred_at,recorded_at FROM "
-                "effective_raw_events WHERE session_pk=? "
-                "AND call_id=? AND alias_of IS NULL AND "
+                "SELECT * FROM effective_raw_events WHERE call_id=? AND "
                 "((kind IN ('tool_call','file_edit') AND exclude_reason IS NULL) OR "
                 "(kind='meta' AND tool_name='apply_patch' "
                 "AND exclude_reason='execution_metadata'))",
-                (record["session_pk"], record["call_id"]),
+                (record["call_id"],),
             )
             calls = [
                 r
-                for r in candidates
-                if self.reader.visible(r["occurred_at"], r["recorded_at"], ("E", r["event_id"]))
+                for r in (self.reader.source(dict(saved)) for saved in candidates)
+                if r["session_pk"] == request["session_pk"]
+                and r["alias_of"] is None
+                and self.reader.visible(r["occurred_at"], r["recorded_at"], ("E", r["event_id"]))
             ]
             native_calls = sum(r["kind"] == "meta" for r in calls)
             ambiguous = native_calls > 1 or len(calls) - native_calls > 1
@@ -237,14 +241,14 @@ class FileRunGraph:
             self.snapshot_ids.update(
                 r[0]
                 for r in self.reader.store.db.execute(
-                    "SELECT snapshot_id FROM workspace_snapshots WHERE project_id=?",
-                    (self.reader.project,),
+                    "SELECT snapshot_id FROM effective_workspace_snapshots",
                 )
+                if self.reader.belongs("workspace_snapshots", "snapshot_id", r[0])
             )
         for identity in sorted(self.snapshot_ids):
             row = self.reader.store.db.execute(
-                "SELECT root_id FROM workspace_snapshots WHERE snapshot_id=? AND project_id=?",
-                (identity, self.reader.project),
+                "SELECT root_id FROM effective_workspace_snapshots WHERE snapshot_id=?",
+                (identity,),
             ).fetchone()
             captured = snapshot(self.reader, identity, row[0]) if row else None
             if captured:

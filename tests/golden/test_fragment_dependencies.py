@@ -128,7 +128,8 @@ def test_model_working_set_and_context_are_dependencies(store, tmp_path):
     assert data["dependencies"]["extraction_runs"] == 1
     assert data["dependencies"]["extraction_plans"] == 1
     assert data["dependencies"]["jobs"] == 1
-    assert [r["first_event_id"] for r in data["required_records"]] == [1, 2]
+    # 已登记的提取边界保持完整，迁移也必须携带该逻辑会话中的目录记录。
+    assert [r["first_event_id"] for r in data["required_records"]] == [1, 2, 3]
 
 
 def test_native_run_request_result_and_edit_versions_expand_together(store, tmp_path):

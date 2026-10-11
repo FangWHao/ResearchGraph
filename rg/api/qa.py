@@ -94,7 +94,7 @@ def packet(store: Store, body: dict[str, Any], extra: set[str] | None = None) ->
 def options(store: Store, project: str, config: QAConfig | None) -> dict[str, Any]:
     Reader(store, project, {})
     allowed = store.db.execute(
-        "SELECT remote_model_allowed FROM projects WHERE project_id=?",
+        "SELECT remote_model_allowed FROM active_projects WHERE project_id=?",
         (project,),
     ).fetchone()[0]
     return {

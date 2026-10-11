@@ -50,7 +50,7 @@ CUES = re.compile("|".join(pattern.pattern for pattern in CUE_PATTERNS.values())
 
 def _permission(store: Store, project_id: str, provider: Provider) -> None:
     row = store.db.execute(
-        "SELECT remote_model_allowed FROM projects WHERE project_id = ?", (project_id,)
+        "SELECT remote_model_allowed FROM active_projects WHERE project_id = ?", (project_id,)
     ).fetchone()
     if not row or (provider.remote and not row[0]):
         raise PermissionError("本项目未允许远程提取，计数请求也不会发送")
@@ -157,7 +157,7 @@ class Worker:
                 and cached["output_json"]
             ):
                 attempt = self.store.db.execute(
-                    "SELECT attempt_id FROM model_attempts WHERE extraction_run_id=? "
+                    "SELECT attempt_id FROM effective_model_attempts WHERE extraction_run_id=? "
                     "AND status='validated' ORDER BY attempt_id DESC LIMIT 1",
                     (cached["extraction_run_id"],),
                 ).fetchone()
@@ -383,7 +383,7 @@ class Worker:
                     "SELECT max(status='pending'),max(status='covered') "
                     "FROM segment_coverage WHERE event_id=? AND stage=? "
                     "AND (? IS NULL OR EXISTS "
-                    "(SELECT 1 FROM extraction_plans p WHERE p.config_key=? "
+                    "(SELECT 1 FROM effective_extraction_plans p WHERE p.config_key=? "
                     "AND p.segment_id=segment_coverage.segment_id AND p.state!='split'))",
                     (event_id, stage, self.config_key, self.config_key),
                 ).fetchone()
@@ -578,7 +578,7 @@ class Worker:
 
     def _finish_session(self, session_id: int, result_key: str, segments: int) -> None:
         for queued in self.store.db.execute(
-            "SELECT job_id,payload FROM jobs WHERE kind='budget_pause' AND state='queued'"
+            "SELECT job_id,payload FROM effective_jobs WHERE kind='budget_pause' AND state='queued'"
         ).fetchall():
             context = json.loads(queued["payload"])
             if (
@@ -606,7 +606,8 @@ class Worker:
         if item.context_gaps:
             payload = dumps({"segment_id": item.segment_id, "gaps": item.context_gaps})
             if not self.store.db.execute(
-                "SELECT 1 FROM jobs WHERE kind = 'context_gap' AND payload = ?", (payload,)
+                "SELECT 1 FROM effective_jobs WHERE kind = 'context_gap' AND payload = ?",
+                (payload,),
             ).fetchone():
                 self.store.db.execute(
                     "INSERT INTO jobs (kind, payload, state, attempts, updated_at) "
@@ -749,7 +750,8 @@ class Worker:
                 }
             )
             if not self.store.db.execute(
-                "SELECT 1 FROM jobs WHERE kind='budget_pause' AND payload=? AND state='queued'",
+                "SELECT 1 FROM effective_jobs WHERE kind='budget_pause' "
+                "AND payload=? AND state='queued'",
                 (context,),
             ).fetchone():
                 self.store.db.execute(
