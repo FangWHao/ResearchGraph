@@ -5,7 +5,7 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 import zstandard
 
@@ -20,6 +20,36 @@ def atomic_write(path: Path, data: bytes) -> None:
     atomic_stream(path, io.BytesIO(data))
 
 
+def _publish(source: str, destination: Path) -> None:
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        native: Any = ctypes
+        library = native.WinDLL("kernel32", use_last_error=True)
+        library.MoveFileExW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD]
+        library.MoveFileExW.restype = wintypes.BOOL
+
+        def full_path(value: str) -> str:
+            absolute = os.path.abspath(value)
+            if absolute.startswith("\\\\?\\"):
+                return absolute
+            if absolute.startswith("\\\\"):
+                return "\\\\?\\UNC\\" + absolute[2:]
+            return "\\\\?\\" + absolute
+
+        # 临时文件位于同一目录；不允许跨卷复制。正文已 fsync，再请求写穿透发布。
+        if not library.MoveFileExW(full_path(source), full_path(str(destination)), 1 | 8):
+            raise native.WinError(native.get_last_error())
+        return
+    os.replace(source, destination)
+    directory = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
 def atomic_stream(path: Path, stream: BinaryIO, prefix: bytes = b"") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(prefix=".tmp-", dir=path.parent)
@@ -30,12 +60,7 @@ def atomic_stream(path: Path, stream: BinaryIO, prefix: bytes = b"") -> None:
                 output.write(block)
             output.flush()
             os.fsync(output.fileno())
-        os.replace(name, path)
-        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+        _publish(name, path)
     finally:
         Path(name).unlink(missing_ok=True)
 

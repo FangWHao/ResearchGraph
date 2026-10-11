@@ -18,6 +18,7 @@ from rg.store.database import ConflictError, dumps, now
 from rg.store.lease import lease
 from rg.store.migrations import LATEST_VERSION
 from rg.store.objects import atomic_write, digest
+from rg.store.paths import is_link, reject_links
 
 ACTIVE = ".clear-active.json"
 BOUNDARY = "清除本数据目录管理的项目资料；外部日志、工作区及用户保存或分享的副本保留"
@@ -37,7 +38,7 @@ def canonical(value: Any) -> str:
 
 def connect(root: Path, *, readonly: bool) -> sqlite3.Connection:
     path = root / "rg.db"
-    if path.is_symlink() or not path.is_file():
+    if is_link(path) or not path.is_file():
         raise ValueError("清除要求已有普通数据库文件")
     db = sqlite3.connect(
         path.resolve().as_uri() + ("?mode=ro" if readonly else "?mode=rw"),
@@ -112,8 +113,7 @@ def preview(root: Path, project: str) -> dict:
 
 
 def status(root: Path, request_id: str | None = None) -> dict:
-    if (root / "clear-records").is_symlink():
-        raise ValueError("清除记录目录不能为符号链接")
+    reject_links(root, root / "clear-records")
     if request_id is not None:
         request_id = canonical(request_id)
     # 恢复入口不能打开普通 Store；部分删除期间它必须保持拒绝。
@@ -134,8 +134,7 @@ def _persist(root: Path, value: dict) -> None:
     raw = dumps(value).encode()
     if len(raw) > LIMIT - 4096:
         raise ValueError("清除清单超过当前恢复记录上限，未执行删除")
-    if (root / "clear-records").is_symlink():
-        raise ValueError("清除记录目录不能为符号链接")
+    reject_links(root, root / "clear-records")
     atomic_write(root / ACTIVE, raw)
 
 
@@ -182,11 +181,7 @@ def _managed_path(root: Path, relative: str) -> Path:
     ):
         raise ValueError("清除恢复记录含未授权管理路径")
     path = root / relative
-    for current in (path, *path.parents):
-        if current == root:
-            break
-        if current.is_symlink():
-            raise ValueError("清除路径含符号链接，停止并保留恢复记录")
+    reject_links(root, path)
     return path
 
 
@@ -208,6 +203,7 @@ def _finish(root: Path, value: dict, db: sqlite3.Connection) -> dict:
         if path.parent.exists():
             _sync(path.parent)
     registry = root / "snapshots" / "roots.json"
+    reject_links(root, registry)
     if registry.exists() or registry.is_symlink():
         entries = read_json(registry, 1024 * 1024)
         atomic_write(
@@ -223,7 +219,8 @@ def _finish(root: Path, value: dict, db: sqlite3.Connection) -> dict:
 
 def _sync(path: Path) -> None:
     if os.name == "nt":
-        return  # 原生 Windows 的持久性验收仍待完成。
+        # 恢复记录保护进程中断；Windows 未提供与 POSIX 目录 fsync 相同的验收保证。
+        return
     descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
     try:
         os.fsync(descriptor)
@@ -236,6 +233,7 @@ def execute(root: Path, project: str, request_id: str, proof: str) -> dict:
     if not isinstance(proof, str) or not re.fullmatch(r"[a-f0-9]{64}", proof):
         raise ValueError("执行清除必须携带当前预览摘要")
     with lease(root, exclusive=True), closing(connect(root, readonly=False)) as db:
+        reject_links(root, root / "clear-records")
         if (root / ACTIVE).exists() or (root / ACTIVE).is_symlink():
             raise ConflictError("已有清除等待恢复，请使用 resume")
         previous = root / "clear-records" / (request_id + ".json")
@@ -259,6 +257,7 @@ def execute(root: Path, project: str, request_id: str, proof: str) -> dict:
 def resume(root: Path, request_id: str) -> dict:
     request_id = canonical(request_id)
     with lease(root, exclusive=True), closing(connect(root, readonly=False)) as db:
+        reject_links(root, root / "clear-records")
         previous = root / "clear-records" / (request_id + ".json")
         if previous.exists() and not (root / ACTIVE).exists():
             return public(read_json(previous))

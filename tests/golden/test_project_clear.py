@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 import subprocess
 import sys
@@ -21,6 +22,7 @@ from rg.store.backup import backup
 from rg.store.database import ConflictError, Store, dumps, now
 from rg.store.locking import TaskBusy
 from rg.store.objects import digest
+from tests.directory_aliases import directory_alias
 from tests.l1_graph_browser import seed_l1_graph
 
 MARKER = "SYNTHETIC_ERASE_MARKER_97531"
@@ -145,7 +147,7 @@ def test_complete_managed_project_clear_scrubs_sqlite_fts_files_and_preserves_sh
         if path.is_file():
             assert MARKER.encode() not in path.read_bytes(), path
     assert {p.stem for p in (root / "objects").glob("*/*.zst")} == {shared}
-    record = (root / "clear-records" / (request + ".json")).read_text()
+    record = (root / "clear-records" / (request + ".json")).read_text(encoding="utf-8")
     assert str(source) not in record and str(work) not in record
     assert "synthetic-private" not in record and "验收L1" not in record
     assert not (root / clear.ACTIVE).exists()
@@ -252,11 +254,10 @@ def test_unsafe_ownership_never_deletes_or_modifies_other_project(tmp_path, prob
                 "VALUES (?,?,0,1,?,1,'unknown',?,?,?)",
                 (session, file, sha, now(), sha, event),
             )
-        else:
-            (root / "snapshots" / (project + ".git") / "outside").symlink_to(tmp_path)
     if problem == "symlink":
-        with pytest.raises(ValueError, match="符号链接"):
-            clear.preview(root, project)
+        with directory_alias(root / "snapshots" / (project + ".git") / "outside", tmp_path):
+            with pytest.raises(ValueError, match="符号链接"):
+                clear.preview(root, project)
     else:
         info = clear.preview(root, project)
         assert info["blockers"]
@@ -468,7 +469,7 @@ def test_real_cli_server_allows_clear_and_restart_resume(tmp_path, pending, monk
     (web / "index.html").write_text("synthetic")
     process = subprocess.Popen(
         [
-            str(Path(sys.executable).with_name("rg")),
+            str(Path(sys.executable).with_name("rg.exe" if os.name == "nt" else "rg")),
             "--data-dir",
             str(root),
             "serve",
@@ -480,6 +481,8 @@ def test_real_cli_server_allows_clear_and_restart_resume(tmp_path, pending, monk
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
+        env=os.environ | {"PYTHONIOENCODING": "utf-8"},
     )
     try:
         assert process.stdout is not None

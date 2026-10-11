@@ -80,7 +80,8 @@ class Store:
             with self.transaction() as db:
                 if db.execute("PRAGMA user_version").fetchone()[0] == 0:
                     pending = ""
-                    for line in Path(__file__).with_name("schema.sql").read_text().splitlines():
+                    schema = Path(__file__).with_name("schema.sql").read_text(encoding="utf-8")
+                    for line in schema.splitlines():
                         pending += line + "\n"
                         if sqlite3.complete_statement(pending):
                             db.execute(pending)

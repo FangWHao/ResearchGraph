@@ -14,21 +14,27 @@ from rg.snapshot.capture import capture
 from rg.snapshot.config import choose
 from rg.store.lease import lease
 from rg.store.objects import digest
+from rg.store.paths import reject_links
 
 
 def _error(root: Path, stage: str, failure: BaseException) -> None:
     try:
         directory = root / "logs"
+        reject_links(root, directory / "hook-errors.log")
         directory.mkdir(parents=True, exist_ok=True)
+        raw = f"{datetime.now(UTC).isoformat()} {stage} {type(failure).__name__}\n".encode()
+        if os.name == "nt":
+            from rg.hooks.windows_log import append
+
+            append(directory / "hook-errors.log", raw)
+            return
         descriptor = os.open(
             directory / "hook-errors.log",
             os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW,
             0o600,
         )
         with os.fdopen(descriptor, "ab") as stream:
-            stream.write(
-                f"{datetime.now(UTC).isoformat()} {stage} {type(failure).__name__}\n".encode()
-            )
+            stream.write(raw)
     except BaseException:
         pass
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import os
 import sqlite3
 import subprocess
 import sys
@@ -20,6 +19,7 @@ from rg.store.backup import backup
 from rg.store.database import Store
 from rg.store.lease import lease
 from rg.store.locking import TaskBusy
+from tests.directory_aliases import directory_alias
 
 
 @contextmanager
@@ -145,16 +145,14 @@ def test_failed_constructor_releases_and_missing_readonly_creates_nothing(tmp_pa
         pass
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Windows 不支持本案例的目录符号链接")
 def test_directory_alias_uses_same_lease_and_readonly_changes_no_files(tmp_path: Path):
     root = tmp_path / "data"
     Store(root).close()
     alias = tmp_path / "alias"
-    alias.symlink_to(root, target_is_directory=True)
     before = {
         str(path.relative_to(root)): path.read_bytes() for path in root.rglob("*") if path.is_file()
     }
-    with closing(Store(alias, readonly=True)):
+    with directory_alias(alias, root), closing(Store(alias, readonly=True)):
         with pytest.raises(TaskBusy):
             with lease(root, exclusive=True):
                 pass
@@ -204,7 +202,7 @@ def test_real_http_reports_busy_without_mutating_database(tmp_path: Path):
         revision = store.revision()
     web = tmp_path / "web"
     web.mkdir()
-    (web / "index.html").write_text("合成界面")
+    (web / "index.html").write_text("合成界面", encoding="utf-8")
     server = LocalServer(root, web, port=0, token="synthetic-token")
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

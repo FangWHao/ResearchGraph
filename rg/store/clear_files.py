@@ -12,12 +12,13 @@ import zstandard
 
 from rg.store.clear_selection import OBJECTS, Selection
 from rg.store.objects import ObjectStore, digest
+from rg.store.paths import is_link, reject_links
 
 LIMIT = 4 * 1024 * 1024
 
 
 def read_json(path: Path, limit: int = LIMIT) -> Any:
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > limit:
+    if is_link(path) or not path.is_file() or path.stat().st_size > limit:
         raise ValueError("管理目录中存在链接、异常文件或超大记录")
     with path.open("rb") as stream:
         raw = stream.read(limit + 1)
@@ -117,8 +118,7 @@ class Files:
         return next(iter(owners)) if len(owners) == 1 else None
 
     def signature(self, path: Path) -> None:
-        if path.is_symlink():
-            raise ValueError("管理目录中存在符号链接；未删除任何文件")
+        reject_links(self.root, path)
         stat = path.stat()
         self.signatures.append(
             (
@@ -131,7 +131,8 @@ class Files:
         )
 
     def tree(self, path: Path, *, remove: bool) -> None:
-        if not path.exists() and not path.is_symlink():
+        reject_links(self.root, path)
+        if not path.exists():
             return
         self.signature(path)
         if path.is_dir():
@@ -142,6 +143,7 @@ class Files:
 
     def scan(self) -> None:
         for directory in (self.root / "spool", self.root / "snapshots" / "pending"):
+            reject_links(self.root, directory)
             if not directory.exists():
                 continue
             self.signature(directory)
@@ -164,6 +166,7 @@ class Files:
         for row in self.db.execute("SELECT rowid,* FROM spool_receipts"):
             try:
                 path = objects.path(row["object_sha256"])
+                reject_links(self.root, path)
                 if path.stat().st_size > LIMIT:
                     raise ValueError("回执对象过大")
                 # 最大解压输出也有边界；不把正文放入清除记录。
@@ -186,7 +189,8 @@ class Files:
                     (row["receipt_id"],),
                 )
         registry = self.root / "snapshots" / "roots.json"
-        if registry.exists() or registry.is_symlink():
+        reject_links(self.root, registry)
+        if registry.exists():
             self.signature(registry)
             entries = read_json(registry, 1024 * 1024)
             if not isinstance(entries, list) or any(not isinstance(e, dict) for e in entries):
@@ -202,6 +206,7 @@ class Files:
                 for r in self.db.execute(f'SELECT "{col}" FROM "{table}" WHERE "{col}" IS NOT NULL')
             )
         directory = self.root / "objects"
+        reject_links(self.root, directory)
         if not directory.exists():
             if removed:
                 self.blockers.append("对象库缺失，无法核对清除副本")

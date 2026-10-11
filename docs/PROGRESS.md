@@ -828,3 +828,13 @@
 - 关联最终234 passed in75.43s(0:01:15)、仓库外Python3.12.3 -I安装251 passed in117.56s(0:01:57)，实际退出0；首次关联命令误写不存在的test_locating.py，退出4无测试，已用实际test_locations.py更正，失败日志保留。ruff全仓All checks passed!、pyright0/0/0、CLI帮助、SDK两代协议与两客户端配置均实际0，五工具及数据库转储不变。141包成员／136运行资源逐字相同、实际凭据0／私有文件0，wheel SHA f2b8ebc2ee4f2314fb157e0dd6f3754555697046338525a3ba3c6478b22cbc2c。父重新核对169项前端冻结、另建目录物理解包六文件与当前源码一致；无前端编辑或本地浏览器重跑。两组完整回归在执行，未预报通过。
 
 - 最终完整验收均实际退出0：uv run pytest -q为1299 passed in 583.93s (0:09:43)，uv run pytest tests/golden -q为1252 passed in 568.37s (0:09:28)。136运行资源冻结未变，十文件精确范围含三新增，README数据库版本按当前迁移常量更正为25；不增加数据库迁移。前端169项冻结与六文件恢复保持一致，无本地浏览器重跑，收尾核对最终提交两类CI的全量及浏览器。按十文件提交后接续476文件完整独立恢复与全历史实际凭据／私有路径核对，维护既有未合并草稿及精确正文；整体M0–M4、真实质量／采集／使用与待定设计保持未完成。
+
+## 2026-10-11 · 原生 Windows 存储与清除
+
+- 任务：读进度末40行、§2／8.2／11／12／14／16及相关决定；实际重核24f1808终态，再独立复制并验证恢复bundle。用户要求“按照自己的思路做就行”，普通设计题按自主授权推进，旧等待答复项不再作为开发阻碍；真实科学参考与使用门槛保持事实边界。
+- 改动：store 的 objects／database／clear／clear_files／clear_denials，新增 paths；hooks/entry及新增windows_log；新增公开directory_aliases辅助与storage_portability固定案例，调整既有store_lease／project_clear原生用例，新增Windows CI及中文验收、README、需求状态、决定与草稿说明。
+- 复现：旧安装包仓库外实际原件发布后AttributeError、建库UnicodeDecodeError；初始新专项10 failed／1 passed，首轮Windows关联6 failed／33 passed／1 skipped，Linux1 failed／39 passed。测试错用title列、默认回执编码／链接权限与CLI子进程旧安装分别更正；实际错误日志用原生句柄只追加。全部原失败日志保留，不用重复随机测试消除失败。
+- 验收实际退出0：修复后Windows40 passed／1 skipped／11.83s，改用真实junction取消跳过后41 passed／10.88s；最终仓库外Windows3.12.3 -I安装41 passed／11.98s，CP936、utf8_mode0。Linux存储／清除／钩子关联64 passed／25.35s，最终目录别名专项20 passed／7.09s；ruff All checks passed!、pyright0/0/0、CLI帮助0。143包成员／138运行资源与源码及原生安装逐字一致，实际凭据0、私有文件0。
+- 下一步：138产品资源已冻结，完整后端及golden按真实终态核对，再维护既有草稿、新HEAD双CI与完整独立备份。前端沿既有169项冻结，不改页面或重复委派。断电／规模、完整Windows快照／摘要／导出、真实质量／采集／两周使用及整体M0–M4仍未完成；普通剩余设计由Agent接续实现。
+
+- 最终完整回归实际退出0：uv run pytest -q为1311 passed in578.76s(0:09:38)，uv run pytest tests/golden -q为1264 passed in562.88s(0:09:22)。138产品资源冻结保持一致，测试辅助只补返回类型标注；19文件范围含5新增，预期481跟踪文件。前端169项冻结逐项核对通过，无本地前端重跑。接续Codex身份提交、完整bundle独立恢复／全历史凭据扫描、既有草稿精确正文及新HEAD双CI；Windows持续验收只覆盖本批三组，整体目标保持未完成。

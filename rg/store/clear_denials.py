@@ -7,6 +7,7 @@ from typing import Any
 
 from rg.store.clear_files import path_hash, read_json, session_hash
 from rg.store.objects import digest
+from rg.store.paths import reject_links
 
 
 def denied(
@@ -18,8 +19,7 @@ def denied(
     paths: list[str] | None = None,
 ) -> bool:
     directory = root / "clear-records"
-    if directory.is_symlink():
-        raise ValueError("清除记录目录不能为符号链接")
+    reject_links(root, directory)
     if not directory.exists():
         return False
     for record in directory.glob("*.json"):
