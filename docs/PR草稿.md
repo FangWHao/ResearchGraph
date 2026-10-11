@@ -6,33 +6,37 @@
 
 MultiEdit过去只检查最终报告补丁，第二步找不到目标文本也可能显示完整前后候选。现在每步作用于前一步正文，检查字段、匹配次数、UTF-8中间上限和最终报告；不一致只保留已知前文与缺口。旧行及后候选对象不改写，后台自动追加确定性核验缓存；图和默认导出只读元数据，尚待核验的旧后版本保持未知。原后编号保留，核验通过仍是工具文本候选，不确认物理文件。迁移25不读取原文、失败回滚，诊断与图修订原子提交，备份和整项目清除覆盖本项目缓存。
 
-原生Codex0.162.0和Claude2.1.280现已从生成接入包实际调用五个只读工具。新版命名空间曾漏过注入排除，Claude还会跳过证据工具的根级组合schema；现在保留工具身份、精确排除五个本服务别名，发现schema兼容而服务端互斥校验保留。旧保存原件在瘦身缓存接受及引用校验前重新核对，解析／瘦身版本进入静态执行配置，旧待执行窗口不能继续发送，L0原件不改写；旧已发布断言的污染审计仍待完成。验收脚本只用公开合成资料和回环固定响应，实际工具返回、数据库及Git index分别核对，不把退出0或固定用量当模型质量。
+原生Codex0.162.0和Claude2.1.280已从生成接入包实际调用五个只读工具。命名空间与五个别名准确排除，Claude兼容发现schema保留执行端互斥校验。旧保存原件在缓存接受、引用校验和具体取证时重新核对；静态配置记录校验版本，旧待执行窗口不能继续发送。过去已发布的漏标引用也不再作为问答证据，原文页显示当前输入资格；原分类、字节及人工审核保持不变。只读source-audit按项目分页输出编号及诊断，当前页才打开保存对象，元数据变化拒绝拼页；未发现排除原因不确认断言语义，缺失对象保留缺口。手机页面的较长项目标题可缩小换行，修订标签保持屏内。
 
 服务只监听127.0.0.1并检查令牌、Host和同源，不执行会话中的命令。整项目清除包括当前管理目录内原件、派生资料和个人视图，提供只读预览、独占执行、中断恢复、无原文回执和重导入屏障；共享字节和其他项目保留，未知归属拒绝执行。
+
+历史导出的编辑前后版本摘要过去可能因数字形似手机号被遮盖，导致引用失配。现在只为三个已定义版本引用字段中的标准摘要保留原值，正文及非摘要字段仍遮盖；自定义规则涉及这些结构引用则拒绝发布。固定合成摘要稳定复现并验证，保留原失败，不重跑随机数据碰运气。
 
 ## 当前验收
 
 ```text
-uv sync --locked                         Resolved 28 / 1ms；Checked 27 / 43ms
-uv run pytest -q                         1250 passed in 548.60s (0:09:08)
-uv run pytest tests/golden -q             1203 passed in 532.58s (0:08:52)
+uv sync --locked                         Resolved 28 / 12ms；Checked 27 / 56ms
+uv run pytest -q                         1282 passed in 557.83s (0:09:17)
+uv run pytest tests/golden -q             1235 passed in 542.18s (0:09:02)
 uv run ruff check rg tests scripts        All checks passed!
 uv run pyright                           0 errors, 0 warnings, 0 informations
 uv run rg --help                         退出 0
-原生MCP与注入专项                        23 passed in 3.90s
-相关解析／提取／队列／MCP／接入包案例       193 passed in 57.81s
-仓库外Python 3.12.3 -I隔离安装             205 passed in 80.78s
-cd web && pnpm test                      172 passed / 20 files / 1.51s
-cd web && pnpm build                     245 modules / 1.89s，含类型检查
-本地完整浏览器基线（bcf02d7）              158 passed (3.8m)
+uv run rg source-audit --help             退出 0
+来源／L1／导出及多步编辑专项               87 passed in 28.12s
+关联来源／查询／MCP／导出回归              253 passed in 72.15s (0:01:12)
+仓库外Python 3.12.3 -I隔离安装             265 passed in 60.03s (0:01:00)
+cd web && pnpm test                      172 passed / 20 files / 1.41s
+cd web && pnpm build                     245 modules / 1.38s，含类型检查
+前端来源专项                             4 passed (14.0s)
+cd web && pnpm test:browser              162 passed (3.9m)
 ```
 
-包中140成员／135运行资源与源码和实际隔离安装逐字一致，凭据匹配0、私有文件0。后端核对旧对象损坏、双时间、原记录不变、只读重开、后台失败恢复／追加重试、图与默认导出不读正文以及整项目清除保留其他项目。四个多步编辑场景两轮实际通过，保存41份真实本地API响应，查询前后数据库摘要相同；五张桌面／390px图已原尺寸查看，97项冻结和六文件独立恢复逐字核对。本轮前端源码未变，97项冻结清单全部核对；完整浏览器158项为bcf02d7的本地基线，当前提交的浏览器结果以GitHub CI为准，未改超时或重试。
+包中141成员／136运行资源与源码和实际隔离安装逐字一致，凭据匹配0、私有文件0。后端核对旧引用与不可重解析索引、共享记录多结果、原审核不变、双时间、分页页外对象不读、只读重开、对象损坏、导出版本引用、图和默认导出不读正文及整项目清除保留其他项目。本轮官方SDK2.3.0验证两代协议和Codex／Claude生成配置，五工具通过、数据库转储不变；原生两客户端版本证据属于上一轮，本轮没有重跑原生客户端。前端来源专项已通过四场景，20份实际API与8份几何记录、数据库转储前后相同；五张桌面／390px图由父子均原尺寸查看，169项稳定冻结及六文件物理解包逐字核对。父串行完整浏览器162项通过，原158项保留；源码停止编辑，未改超时或重试。本地完整后端／golden早于公开合成UUID隔离修正，136产品资源不变；修正后的来源27项、隔离安装265项及完整浏览器162项通过，最终提交的全量测试另核对双CI。
 
-证据见[原生MCP与注入排除](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/原生客户端MCP与注入排除_20261011.md)、[多步编辑顺序核验](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/Claude多步编辑顺序核验_20261011.md)、[十类语义与折叠验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/十类语义折叠验收_20261011.md)及[需求落实与剩余项](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。
+证据见[旧注入来源取证与审计](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/旧注入来源取证与审计_20261011.md)、[原生MCP与注入排除](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/原生客户端MCP与注入排除_20261011.md)、[多步编辑顺序核验](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/Claude多步编辑顺序核验_20261011.md)、[十类语义与折叠验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/十类语义折叠验收_20261011.md)及[需求落实与剩余项](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。
 
 草稿待评审，完整M0–M4尚未完成。Atlas正式人工参考、真实提取质量／找答案时间、全部工具／客户端版本、完整实际I/O、真实钩子／规模／原生Windows、M2真实全量采集和M3两周使用仍待落实；note、影响传播、跨项目优先级和外部副本清除边界沿已有待定项。整项目清除只覆盖当前管理目录，外部原日志、研究工作区及用户保存／分享副本保留。
 
 本轮没有删除真实项目、读取整份真实会话或调用远程模型。真实会话、数据库、截图、缓存及密钥不入仓库；合成断言不计作Atlas正式人工参考，离线固定模型输出不证明真实提取质量。
 
-Stop／SessionEnd收尾同步规则已提问，用户答复前沿§6.8原配置；旧已发布模型断言的污染审计仍待落实。本轮原生脚本仅固定协议响应，五个真实只读工具均逐项成功，数据库及Git index保持不变。
+Stop／SessionEnd收尾同步规则已提问，用户答复前沿§6.8原配置。人工已确认污染模型记录的自动状态及工作集处理仍待用户选择，尚未批量撤回旧输出；混合正文长窗口及其它资料路径仍需核验，不宣称全部自引用已清除。原生脚本仅固定协议响应，五个真实只读工具逐项成功，数据库及Git index保持不变，不证明远程模型质量。

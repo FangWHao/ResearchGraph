@@ -64,7 +64,7 @@ def _source(reader: Reader, selector: dict[str, Any], size: int) -> dict[str, An
             "max_bytes": size,
         },
     ).evidence()
-    if source["exclude_reason"] or source["alias_of"] is not None:
+    if source["exclude_reason"] or source["input_exclude_reason"] or source["alias_of"] is not None:
         raise ValueError("排除或镜像事件不能作为问答证据")
     if reader.store.db.execute(
         "SELECT 1 FROM dedupe_links WHERE alias_id=?", (source["event_id"],)

@@ -11,7 +11,7 @@ from rg.slim.tokens import TokenCounter
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
 
-SLIM_VERSION = "4"
+SLIM_VERSION = "5"
 
 
 def summarize(kind: str, text: str, tool: str | None, call_id: str | None) -> str:

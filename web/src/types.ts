@@ -99,6 +99,7 @@ export interface EventWindow {
   event_id: number; session_pk: number; seq: number; kind: string; role: string | null;
   path: string; source_byte_start: number; source_byte_end: number;
   occurred_at: string | null; recorded_at: string; exclude_reason: string | null;
+  input_exclude_reason?: string | null;
   total_bytes: number; window_start: number; window_end: number; window_truncated: boolean;
   before: string; quote: string; after: string; quote_sha256: string | null;
 }

@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from rg.api.views import NotFound, _utf8_window
+from rg.ingest.exclusion import source_exclusion
 from rg.query.time import canonical_times, instant
 from rg.record.schema import validate_scope
 from rg.store.database import Store, dumps, now
@@ -336,7 +337,8 @@ class Reader:
         else:
             event_id = values["event_id"]
         row = self.store.db.execute(
-            "SELECT r.* FROM raw_events r JOIN sessions s USING(session_pk) "
+            "SELECT r.*,f.parser FROM raw_events r JOIN sessions s USING(session_pk) "
+            "JOIN source_files f USING(file_instance_id) "
             "WHERE r.event_id=? AND s.project_id=?",
             (event_id, self.project),
         ).fetchone()
@@ -367,6 +369,14 @@ class Reader:
             "occurred_at": row["occurred_at"],
             "recorded_at": row["recorded_at"],
             "exclude_reason": row["exclude_reason"],
+            "input_exclude_reason": source_exclusion(
+                self.store,
+                row,
+                raw=raw,
+                call_visible=lambda call: self.visible(
+                    call["occurred_at"], call["recorded_at"], ("E", call["event_id"])
+                ),
+            ),
             "alias_of": row["alias_of"],
             "source_byte_start": row["byte_start"],
             "source_byte_end": row["byte_end"],

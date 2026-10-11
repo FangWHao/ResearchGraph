@@ -288,7 +288,7 @@ def test_writer_during_original_read_cannot_add_context_to_the_same_snapshot(sto
     initial_event = graph_records._event
     written = False
 
-    def open_event(current, identity, start, end):
+    def open_event(current, identity, start, end, **values):
         nonlocal written
         if not written:
             written = True
@@ -310,7 +310,7 @@ def test_writer_during_original_read_cannot_add_context_to_the_same_snapshot(sto
                     ),
                 )
                 review(writer, first, "confirm", T2)
-        return initial_event(current, identity, start, end)
+        return initial_event(current, identity, start, end, **values)
 
     monkeypatch.setattr(graph_records, "_event", open_event)
     found = historical_evidence(

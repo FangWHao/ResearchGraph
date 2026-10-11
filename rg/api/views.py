@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ from jsonschema import Draft202012Validator
 
 from rg.extract.differences import confirmed_differences
 from rg.extract.schemas import CLAIM_SCHEMA
+from rg.ingest.exclusion import source_exclusion
 from rg.query.time import canonical_times
 from rg.store.database import ConflictError, Store, dumps, now
 from rg.store.objects import digest
@@ -176,9 +178,16 @@ def _utf8_window(raw: bytes, start: int, end: int) -> tuple[int, int]:
     return start, end
 
 
-def _event(store: Store, event_id: int, start: int | None, end: int | None) -> dict[str, Any]:
+def _event(
+    store: Store,
+    event_id: int,
+    start: int | None,
+    end: int | None,
+    *,
+    call_visible: Callable[[sqlite3.Row], bool] | None = None,
+) -> dict[str, Any]:
     row = store.db.execute(
-        "SELECT r.*,f.path FROM raw_events r JOIN source_files f USING(file_instance_id) "
+        "SELECT r.*,f.path,f.parser FROM raw_events r JOIN source_files f USING(file_instance_id) "
         "WHERE r.event_id=?",
         (event_id,),
     ).fetchone()
@@ -215,6 +224,7 @@ def _event(store: Store, event_id: int, start: int | None, end: int | None) -> d
         "occurred_at": row["occurred_at"],
         "recorded_at": row["recorded_at"],
         "exclude_reason": row["exclude_reason"],
+        "input_exclude_reason": source_exclusion(store, row, raw=raw, call_visible=call_visible),
         "total_bytes": len(raw),
         "window_start": window_start,
         "window_end": window_end,

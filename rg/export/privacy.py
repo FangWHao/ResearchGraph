@@ -23,6 +23,7 @@ SENSITIVE = {
     "credentials",
 }
 IDENTITIES = {"source", "target", "ref", "temp_id", "selected", "replacement_ids"}
+VERSION_REFERENCES = {"before_version", "after_version", "reported_after_version"}
 APPLICATION_UUID_FIELDS = IDENTITIES | {
     "project_id",
     "entity_id",
@@ -57,9 +58,13 @@ class Privacy:
                 if any(re.search(pattern, value) for pattern in self.patterns):
                     raise ValueError("自定义遮盖规则涉及应用 UUID 结构标识符，不能发布断裂的引用")
                 return value
-            if (field.endswith("_id") or field in IDENTITIES) and re.fullmatch(
+            if (field.endswith("_id") or field in IDENTITIES | VERSION_REFERENCES) and re.fullmatch(
                 r"(?:(?:V:|R:))?(?:(?:l1|physical|physical-observation):)?[a-f0-9]{64}", value
             ):
+                if field in VERSION_REFERENCES and any(
+                    re.search(pattern, value) for pattern in self.patterns
+                ):
+                    raise ValueError("自定义遮盖规则涉及版本引用标识符，不能发布断裂的引用")
                 return value
             # 摘要和标准化种子是结构化数据，不能误作临床编号。
             if (

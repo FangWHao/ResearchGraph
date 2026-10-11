@@ -548,3 +548,12 @@ uv run rg --data-dir /tmp/rg-demo event-chain --event 1
 
 
 原生接入新增可复现验收：`uv run python scripts/check_native_clients.py` 使用本机Codex与Claude Code、临时公开合成数据库和回环固定响应，实际调用五个只读工具并核对数据库及Git index。当前两版本通过；固定响应不证明模型质量，收尾钩子和全部版本仍待验收。命名空间排除及旧输入缓存保护见[原生客户端验收](docs/acceptance/原生客户端MCP与注入排除_20261011.md)。
+
+旧版本漏标的保存原件现在在取证时重新核对，返回 `input_exclude_reason`；原始 `exclude_reason`、原文字节及人工审核保留。问答发送材料排除这些旧注入引用，来源面板显示当前输入资格。历史取证只关联同会话唯一、且同时满足发生和已知截止的调用，不借用晚到调用改写旧视图。
+
+```bash
+uv run rg source-audit --project PROJECT_ID --limit 20
+uv run rg source-audit --project PROJECT_ID --limit 20 --offset 20 --expected-audit AUDIT_ID
+```
+
+`source-audit` 只读分页诊断本项目模型来源记录，每个引用占一项，无引用也留缺口。只打开当前页保存对象，输出编号、字节范围及资格，不输出原文、记录正文、用户名或路径。`audit_id` 固定数据库元数据及校验版本，变化时拒绝拼页；对象缺失或损坏按实际读取报告，摘要不承诺文件可用性恒定。`not_excluded` 只表示未发现这些排除原因，不确认研究断言。已人工确认的污染模型记录如何参与状态计算和模型工作集仍待用户决定；本命令不撤回记录。见[旧注入来源验收](docs/acceptance/旧注入来源取证与审计_20261011.md)。

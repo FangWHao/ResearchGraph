@@ -46,9 +46,15 @@ export function EvidenceLink({ span, onOpen }: { span: Span; onOpen: (span: Span
   return <button className="evidence-link" onClick={() => onOpen(span)}><Icon name="evidence" size={14} />原文 #{span.event_id}<span className="mono">{span.byte_start}–{span.byte_end}</span></button>;
 }
 function RawWindow({ event, focus = false }: { event: EventWindow; focus?: boolean }) {
+  const exclusion = event.input_exclude_reason;
+  const reason = exclusion === 'injected_by_rg' ? 'ResearchGraph 注入的上下文或工具返回，不能再次作为自己的证据。'
+    : exclusion === 'unknown_tool_namespace' ? '工具命名空间无法核定。'
+    : exclusion === 'source_unavailable' ? '保存原件的输入资格暂无法核对。'
+    : exclusion;
   return <section className={`raw-event ${focus ? 'focused' : ''}`}>
     <header><strong>事件 #{event.event_id}</strong><span>{event.role ?? event.kind} · 顺序 {event.seq}</span><DateText value={event.occurred_at} /></header>
     {event.exclude_reason && <p className="notice">此事件已排除：{event.exclude_reason}，仅作为上下文查看。</p>}
+    {exclusion && <p className="missing-note" data-input-exclude-reason={exclusion}><strong>该原件不能用于模型输入/研究证据</strong><br />原因：{reason}<br /><span className="mono">{exclusion}</span> · 原始排除标记：{event.exclude_reason ?? '未标记'}<br />原文与字节位置仍可查看；此说明不改写原文或已有审核状态。</p>}
     <pre>{event.before}{event.quote && <mark data-testid="evidence-quote">{event.quote}</mark>}{event.after}</pre>
     {event.window_truncated && <p className="muted small">当前窗口 {event.window_start}–{event.window_end} / {event.total_bytes} UTF-8 字节，未显示部分保留在对象库。</p>}
   </section>;

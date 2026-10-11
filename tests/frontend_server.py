@@ -17,6 +17,7 @@ from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
 from tests.golden.test_ingestion import lines, record
 from tests.graph_browser import seed_graph
+from tests.injected_sources_browser import seed_injected_sources
 from tests.l1_graph_browser import seed_l1_graph
 from tests.privacy_browser import seed_privacy
 from tests.qa_browser import seed_qa
@@ -952,6 +953,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8791)
     parser.add_argument("--web-dir", type=Path, default=Path("web/dist"))
+    parser.add_argument("--injected-sources", action="store_true")
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="researchgraph-browser-") as temp:
         directory = Path(temp)
@@ -965,6 +967,8 @@ def main() -> None:
         seed_graph(store)
         seed_privacy(store)
         seed_l1_graph(store)
+        if args.injected_sources:
+            seed_injected_sources(store)
         semantic_index = seed_semantic_cases(store, directory)
         index_path = Path(".cache/semantic-cases-index.json")
         index_path.parent.mkdir(exist_ok=True)

@@ -123,6 +123,9 @@ def evidence(store: Store, project: str, event_id: int, values: dict[str, Any]) 
         ):
             raise NotFound("当前查询中没有这个原文事件")
 
+        def call_visible(call) -> bool:
+            return reader.visible(call["occurred_at"], call["recorded_at"], ("E", call["event_id"]))
+
         def adjacent(before: bool) -> list[dict[str, Any]]:
             if not context:
                 return []
@@ -146,9 +149,11 @@ def evidence(store: Store, project: str, event_id: int, values: dict[str, Any]) 
                         break
             if before:
                 found.reverse()
-            return [_event(store, identity, None, None) for identity in found]
+            return [
+                _event(store, identity, None, None, call_visible=call_visible) for identity in found
+            ]
 
-        event = _event(store, event_id, start, end)
+        event = _event(store, event_id, start, end, call_visible=call_visible)
         before, after = adjacent(True), adjacent(False)
         return reader.metadata() | {
             "history_context": True,

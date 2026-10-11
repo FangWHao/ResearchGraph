@@ -188,6 +188,13 @@ def parser() -> argparse.ArgumentParser:
     parsers.add_argument("--offset", type=int, default=0)
     parsers.add_argument("--snapshot", type=int, help="续页使用第一页面的 snapshot_id")
     parsers.add_argument("--expected-scope-key", help="续页使用第一页面的 scope_key")
+    source_audit = commands.add_parser("source-audit", help="只读分页诊断模型记录的原件引用资格")
+    source_audit.add_argument("--project", required=True)
+    source_audit.add_argument("--limit", type=int, default=20)
+    source_audit.add_argument("--offset", type=int, default=0)
+    source_audit.add_argument(
+        "--expected-audit", help="续页使用首页面 audit_id；元数据变化则拒绝拼页"
+    )
     hook_errors = commands.add_parser("hook-errors", help="只读查看全库钩子失败报告与采集缺口")
     hook_errors.add_argument("--project", help="验证项目存在，统计仍为全库")
     hook_errors.add_argument("--limit", type=int, default=20)
@@ -625,6 +632,17 @@ def run(args: argparse.Namespace, store: Store) -> object:
             for key in ("project", "limit", "offset", "snapshot", "expected_scope_key")
             if getattr(args, key) is not None
         })
+    if args.command == "source-audit":
+        from rg.query.source_audit import query
+
+        return query(
+            store,
+            {
+                key: getattr(args, key)
+                for key in ("project", "limit", "offset", "expected_audit")
+                if getattr(args, key) is not None
+            },
+        )
     if args.command == "hook-errors":
         from rg.query.hook_errors import query
 
@@ -934,6 +952,7 @@ def main() -> None:
             in {
                 "mcp",
                 "parser-health",
+                "source-audit",
                 "hook-errors",
                 "session-parent",
                 "event-chain",
