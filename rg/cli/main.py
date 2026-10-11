@@ -104,7 +104,7 @@ def parser() -> argparse.ArgumentParser:
         "--encoding", choices=["cl100k_base", "o200k_base"], default="cl100k_base"
     )
     client_record = commands.add_parser("client-record", help="明确调用的人工技能读取 JSON 原话")
-    client_record.add_argument("kind", choices=["question", "decide"])
+    client_record.add_argument("kind", choices=["question", "decide", "note"])
     client_record.add_argument("--project", required=True)
     client_record.add_argument("--input", required=True, help="UTF8 JSON 文件路径，- 表示标准输入")
     run_record = commands.add_parser("record-run", help="离线登记候选运行清单，不执行命令")
@@ -312,6 +312,15 @@ def parser() -> argparse.ArgumentParser:
     question.add_argument("--request-id", help="重试同一意图的 UUID；默认新建")
     question.add_argument("--occurred-at", help="回填发生时间，需带明确时区")
     question.add_argument("--expected-revision", type=int, help="读取版本后提交，冲突则不写入")
+    note = commands.add_parser("note", help="人工记录原话笔记，可关联本项目对象；不调用模型")
+    note.add_argument("text")
+    note.add_argument("--project", required=True)
+    note.add_argument("--about", help="本项目对象的 ID；未指定时保持未关联")
+    note.add_argument("--actor", default="human:本机用户")
+    note.add_argument("--scope", nargs="+", action="extend", default=[], metavar="字段=值")
+    note.add_argument("--request-id", help="重试复用同一 UUID 和原文")
+    note.add_argument("--occurred-at", help="带时区的发生时间")
+    note.add_argument("--expected-revision", type=int)
     decided = commands.add_parser("decide", help="人工记录采用、暂缓、拒绝或撤回；歧义进复核")
     decided.add_argument("action", choices=["accept", "defer", "reject", "withdraw"])
     decided.add_argument("selector", help="现有对象的完整名称或 ID")
@@ -344,7 +353,7 @@ def parser() -> argparse.ArgumentParser:
     contextual.add_argument("--offset", type=int, default=0)
     contextual.add_argument("--occurred-until")
     contextual.add_argument("--known-until")
-    mcp = commands.add_parser("mcp", help="启动指定项目的只读 stdio MCP，不打开网络端口")
+    mcp = commands.add_parser("mcp", help="启动固定项目 stdio MCP，查询与候选笔记；不打开端口")
     mcp.add_argument("--project", required=True)
     for command in (contextual, mcp):
         command.add_argument(
@@ -497,14 +506,16 @@ def run(args: argparse.Namespace, store: Store) -> object:
         if scope is not None:
             values["scope"] = dumps(scope)
         return targets(store, values)
-    if args.command == "question":
+    if args.command in {"question", "note"}:
         import uuid
 
+        from rg.record.note import note
         from rg.record.question import question
 
-        return question(
+        return (note if args.command == "note" else question)(
             store,
-            {
+            ({"about": args.about} if args.command == "note" else {})
+            | {
                 "project_id": args.project,
                 "text": args.text,
                 "actor": args.actor,

@@ -48,6 +48,8 @@ def context(reader: Reader) -> dict[str, Any]:
             and payload.get("state") in {"contested", "refuted", "insufficient"}
         ):
             priority, section = 4, "反对证据记录"
+        elif row["kind"] == "note":
+            priority, section = 5, "人工笔记"
         elif (
             row["effective_state"] == "candidate"
             or row["occurred_time_unknown"]

@@ -8,7 +8,7 @@ from typing import Any
 RG_BLOCK = re.compile(r"<rg-context\b[^>]*>.*?(?:</rg-context>|$)", re.DOTALL)
 RG_MCP_ALIASES = frozenset(
     f"mcp__researchgraph__research_{name}"
-    for name in ("context", "evidence", "history", "node", "search")
+    for name in ("context", "evidence", "history", "node", "search", "propose_note")
 )
 
 

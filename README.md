@@ -84,7 +84,7 @@ uv run rg --data-dir /tmp/rg-demo mcp --project PROJECT_ID
 
 `search` 默认检索 claims，`source=events` 可检索原文正文的字面量预览。原始事件没有统一分析范围，带 scope 的检索使用 claims。引用前缀 `C`、`S`、`E`、`V:`、`R:` 分别表示记录、片段、事件、文件观察和运行；`evidence` 的参数对应 `claim_id`、`span_id`、`event_id`、`version_id`、`run_id`，一次指定一种。原文窗口带实际字节位置、窗口摘要和下一字节偏移；源文件删除后仍读已复制原件。文件观察保留原算法及候选状态，不读取当前文件补写旧版本。
 
-支持新版 MCP 2026-07-28 的逐请求元数据和旧版初始化协议；详情与官方客户端复现命令见 [只读 MCP 与状态卡验收](docs/acceptance/M4只读MCP与状态卡验收_20261010.md)。本轮没有修改个人客户端设置；候选写工具 `propose_note` 仍等待 note 类型的明确约定。
+支持新版 MCP 2026-07-28 的逐请求元数据和旧版初始化协议；只读接口的原验收见 [只读 MCP 与状态卡验收](docs/acceptance/M4只读MCP与状态卡验收_20261010.md)。新增 `research.propose_note` 只保存当前启动项目的 Agent 候选笔记，必填 `text`、标准 UUID `request_id`、`expected_revision`，可选 `about`、`scope`、带时区的 `occurred_at`。模型身份与 candidate 状态由服务固定，不提供人工确认入口。重试复用编号和原文；关联对象必须属于本项目。候选写调用才打开写连接，不影响五个查询工具的只读合同。
 
 `research.evidence(version_id)` 同样支持后台物理版本，`observations` 按 `limit/offset` 分页。快照版本使用保存快照的发生时间，当前摘要使用实际完整读取结束时间；入库截止另核对观察和必要的快照记录。缓存继续沿用原读取窗口，发现快照只是线索。摘要时间和条数只计算双截止内的观察，缺失读取窗口显示未知，不采用版本表首次插入时间补造历史。状态卡按同一规则装填文件版本；指定分析范围时仍不猜文件归属。新增版本、观察或快照会改变 `revision`，续页可提交 `expected_revision`，冲突后重新开始。这里返回登记元数据，不打开当前文件或推定运行输入输出。见[物理版本 MCP 验收](docs/acceptance/M4物理版本MCP双时间验收_20261010.md)。
 
@@ -95,9 +95,9 @@ uv run rg --data-dir /合成数据目录 client-pack --project 项目ID --output
 uv run rg --data-dir /合成数据目录 client-pack --project 项目ID --output /另一个新目录/接入包 --encoding o200k_base
 ```
 
-生成两套原生目录：Codex 的 `.agents/skills` 和 `.codex/config.toml`，Claude 的 `.claude/skills` 和 `.mcp.json`。每套包含 research-context、research-question、research-decide。数据库只读，不调用模型；输出已有时拒绝覆盖，不修改个人设置或安装钩子。包内 README 说明如何把技能目录和 MCP 条目合并到已登记项目的工作区，保留已有配置。包包含本机绝对路径，移动环境或数据目录后需要重新生成，不宜直接上传。
+生成两套原生目录：Codex 的 `.agents/skills` 和 `.codex/config.toml`，Claude 的 `.claude/skills` 和 `.mcp.json`。每套包含 research-context、research-question、research-decide、research-note。生成过程只读数据库、不调用模型；输出已有时拒绝覆盖，不修改个人设置或安装钩子。包内 README 说明如何把技能目录和 MCP 条目合并到已登记项目的工作区，保留已有配置。包包含本机绝对路径，移动环境或数据目录后需要重新生成，不宜直接上传。
 
-上下文技能允许自动选用，用户也可输入 `$research-context` 或 `/research-context`。明确分析范围时使用只读 MCP 的完整 scope；未指定时读取固定项目的默认状态卡。人工命令只允许用户明确调用 `$research-question`、`$research-decide` 或对应的 `/research-question`、`/research-decide`。Agent 自己的判断、旧会话和 MCP 结果不能变成人工确认。
+上下文技能允许自动选用，用户也可输入 `$research-context` 或 `/research-context`。明确分析范围时使用只读 MCP 的完整 scope；未指定时读取固定项目的默认状态卡。人工命令只允许用户明确调用 `$research-question`、`$research-decide`、`$research-note` 或对应的 Claude 命令。Agent 自己的笔记使用 `research.propose_note` 保持候选，不能调用人工技能确认自己的判断、旧会话或 MCP 结果。
 
 记录脚本接收 UTF8 JSON 文件，通过固定解释器和参数数组调用同一 CLI，原话不插入 shell。包装入口也可直接使用：
 
@@ -108,7 +108,7 @@ uv run rg --data-dir /合成数据目录 client-record decide --project 项目ID
 
 question 请求包含 `text` 和标准 UUID `request_id`；decide 包含 `selector`、`action`、`why` 和 `request_id`。可选完整 `scope`、带时区 `occurred_at`、非负整数 `expected_revision`；不接受项目、actor 或其他操作覆盖。重试复用 UUID 和原意图，沿用现有版本冲突和对象歧义合同。请求文件用后删除，回执供重试；包不自动保管临时请求。
 
-人工入口的身份规则依赖可信本机和客户端技能调用，不构成操作系统认证。MCP 仍仅开放五个只读工具，note/propose_note 未定义的部分继续保留。格式、脚本、官方客户端及独立 wheel 验证见[客户端接入包验收](docs/acceptance/M2客户端接入包验收_20261010.md)，不替代真实 Agent 会话效果或钩子 p95 验收。
+人工入口的身份规则依赖可信本机和客户端技能调用，不构成操作系统认证。MCP 提供五个只读工具和一个固定身份的候选笔记工具。原接入包验收见[客户端接入包验收](docs/acceptance/M2客户端接入包验收_20261010.md)，笔记合同见[笔记验收](docs/acceptance/人工与候选笔记验收_20261011.md)；格式和固定响应通过不替代真实 Agent 会话效果或钩子 p95 验收。
 
 ## 有界问答
 
@@ -215,7 +215,20 @@ uv run rg --data-dir /tmp/rg-demo question '这个队列的验证目标是什么
 
 `--request-id` 接受 UUID：网络或进程重试同一意图时复用该编号，返回既有记录；相同编号用于不同文字、项目、身份或范围时拒绝写入。省略编号每次新建，内容相同也可以是不同记录。`--expected-revision` 指定读取时的图版本，冲突后刷新再人工提交；`--occurred-at` 可回填带时区的发生时间，入库时间仍单独保留。问题最多 16000 UTF8 字节，完整记录最多 65536 字节，引用按最多 8000 字节原文窗口保存。
 
-命令与本机令牌 HTTP 是可信人工入口，Agent 的候选写入口仍须单独实现。开发验证只写合成项目；`note` 存储类型尚待约定，question/decide 的两种客户端包装见上文。详见 [人工问题验收](docs/acceptance/M2人工问题验收_20261009.md)。人工记录供补记与纠错使用，日常采集和提取走自动链路，不要求先手工录入问题或决定。
+命令与本机令牌 HTTP 是可信人工入口，Agent 候选写入口只保存模型笔记。开发验证只写合成项目，两种客户端包装见上文。详见 [人工问题验收](docs/acceptance/M2人工问题验收_20261009.md)。人工记录供补记与纠错使用，日常采集和提取走自动链路，不要求先手工录入问题或决定。
+
+## 研究笔记
+
+笔记页支持人工原话、同项目关联对象、状态分页，以及候选确认、驳回和修改。也可使用同一人工后端：
+
+```bash
+uv run rg --data-dir /tmp/rg-demo note '这里保留观察与想法的原话。' --project PROJECT_ID
+uv run rg --data-dir /tmp/rg-demo note '补充说明。' --project PROJECT_ID --about ENTITY_ID --scope data=v2 step=validation
+```
+
+笔记是独立 `note` 对象，不产生方案采用、证据成立或运行成功。关联 ID 不创建科学关系，不继承对象范围；未指定范围保持空值。文字、原件、字节引用和 UUID 回执同一事务写入。人工笔记直接确认；Agent 的 `research.propose_note` 始终写 candidate，后续人工审核只追加动作，原模型记录与原文保留。人工修改不能更换关联对象，修订另存新版本。
+
+笔记原件和原生 MCP 调用及结果都排除再次提取，笔记不进入自动工作集、关联、原话对象匹配或概览模型输入。模型笔记的作者与输入资格分别显示，确认一条笔记不把模型自己的文字变成科学证据。CLI、HTTP、客户端技能与 MCP 使用同一幂等回执合同；整项目清除涵盖笔记原件及回执。具体行为和实际验收见[笔记验收](docs/acceptance/人工与候选笔记验收_20261011.md)。
 
 ## 人工补记决定与选择对象
 

@@ -64,10 +64,12 @@ async def check() -> None:
             )
             counter = LocalCounter()
             for mode in ("auto", "legacy"):
+                before = list(store.db.iterdump())
                 calls = []
                 async with Client(parameters, mode=mode) as client:
                     listed = await client.list_tools()
-                    assert len(listed.tools) == 5
+                    assert len(listed.tools) == 6
+                    assert sum(t.annotations.read_only_hint for t in listed.tools) == 5
                     for name, arguments in (
                         [
                             ("search", {"query": "方法甲"}),
@@ -115,14 +117,39 @@ async def check() -> None:
                             }
                         )
                     protocol = client.protocol_version
-                assert list(store.db.iterdump()) == before
+                    assert list(store.db.iterdump()) == before
+                    proposed = {
+                        "text": f"公开合成 SDK 候选笔记 {mode}",
+                        "about": entity,
+                        "request_id": str(uuid4()),
+                        "expected_revision": store.revision(),
+                    }
+                    first = await client.call_tool("research.propose_note", proposed)
+                    assert not first.is_error and first.content[0].type == "text"
+                    note = json.loads(first.content[0].text.split("\n", 1)[1].rsplit("\n", 2)[0])
+                    assert note["claim_state"] == note["effective_state"] == "candidate"
+                    after_write = list(store.db.iterdump())
+                    replay = await client.call_tool("research.propose_note", proposed)
+                    assert not replay.is_error and replay.content[0].type == "text"
+                    receipt = json.loads(
+                        replay.content[0].text.split("\n", 1)[1].rsplit("\n", 2)[0]
+                    )
+                    assert receipt == note | {"replayed": True}
+                    assert list(store.db.iterdump()) == after_write
+                    claim = store.db.execute(
+                        "SELECT * FROM claims WHERE claim_id=?", (note["claim_id"],)
+                    ).fetchone()
+                    assert claim["actor"] == "model:mcp" and claim["basis"] == "model_inference"
+                    assert json.loads(claim["payload"])["about"] == entity
                 results.append(
                     {
                         "mode": mode,
                         "protocol_version": protocol,
-                        "tools": 5,
+                        "tools": 6,
                         "queries": calls,
-                        "logical_database_unchanged": True,
+                        "readonly_queries_database_unchanged": True,
+                        "candidate_note": True,
+                        "candidate_retry_database_unchanged": True,
                         "physical_versions": len(physical),
                         "candidate_manifests": 1,
                         "reported_io": 2,

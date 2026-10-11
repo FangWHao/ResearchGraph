@@ -54,6 +54,8 @@ def records(
     ).fetchall()
     result = []
     for row in rows:
+        if json.loads(row["payload"]).get("kind") == "note":
+            continue
         current_scope = json.loads(row["scope"] or "{}")
         if scope is not None and current_scope != scope:
             continue

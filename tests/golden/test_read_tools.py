@@ -523,17 +523,19 @@ def test_tool_schema_blocks_ambiguous_and_unknown_arguments(store, arguments):
         ToolService(store, project).call("research.evidence", arguments)
 
 
-def test_modern_metadata_is_per_request_and_write_tools_do_not_exist(store):
+def test_modern_metadata_is_per_request_and_only_candidate_note_write_exists(store):
     project = store.project("合成", [])
     server = Server(ToolService(store, project))
     listed = server.dispatch(rpc("tools/list"))
     assert listed["result"]["resultType"] == "complete"
     assert listed["result"]["ttlMs"] >= 0 and listed["result"]["cacheScope"] == "public"
-    assert len(listed["result"]["tools"]) == 5
-    assert all(t["annotations"]["readOnlyHint"] for t in TOOLS)
+    assert len(listed["result"]["tools"]) == 6
+    assert sum(t["annotations"]["readOnlyHint"] for t in TOOLS) == 5
     assert server.dispatch(rpc("tools/list", modern=False))["error"]["code"] == -32602
     result = server.dispatch(rpc("tools/call", {"name": "research.propose_note", "arguments": {}}))
-    assert result["error"]["code"] == -32602
+    assert result["result"]["isError"] is True
+    forbidden = server.dispatch(rpc("tools/call", {"name": "research.confirm", "arguments": {}}))
+    assert forbidden["error"]["code"] == -32602
     assert store.db.execute("SELECT count(*) FROM claims").fetchone()[0] == 0
     wrong = rpc("server/discover")
     wrong["params"]["_meta"]["io.modelcontextprotocol/protocolVersion"] = "2099-01-01"

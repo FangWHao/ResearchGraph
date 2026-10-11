@@ -49,7 +49,8 @@ def _objects(
     seen: set[tuple[str, str]] = set()
     rows = store.db.execute(
         "SELECT e.entity_id,e.kind,c.claim_id,c.payload,c.scope FROM entities e JOIN claims c "
-        "USING(entity_id) WHERE e.project_id=? AND c.claim_type='entity_version' "
+        "USING(entity_id) WHERE e.project_id=? AND e.kind!='note' "
+        "AND c.claim_type='entity_version' "
         "AND NOT EXISTS (SELECT 1 FROM claims replacement "
         "WHERE replacement.replaces_claim=c.claim_id) "
         "ORDER BY c.claim_id DESC",

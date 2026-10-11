@@ -2,7 +2,7 @@ import type { Claim, Kind, ReviewState, RuleIssue, SourceIssue } from './types';
 import { claimInstant, compareInstants } from './exactTime';
 
 export const kindNames: Record<Kind, string> = {
-  question: '问题', approach: '方案', attempt: '尝试', finding: '发现', decision: '决定', join: '汇合',
+  question: '问题', approach: '方案', attempt: '尝试', finding: '发现', decision: '决定', join: '汇合', note: '笔记',
 };
 export const reviewNames: Record<ReviewState, string> = { candidate: '待复核', confirmed: '已确认', dismissed: '已驳回' };
 export const actionNames: Record<string, string> = {

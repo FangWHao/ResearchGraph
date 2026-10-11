@@ -13,7 +13,8 @@ def active_objects(
     """遍历全项目，审核状态和完整范围确定版本；不依赖界面图的返回上限。"""
     rows = store.db.execute(
         "SELECT c.claim_id,c.payload,c.scope,c.entity_id,e.kind FROM claims c "
-        "JOIN entities e USING(entity_id) WHERE e.project_id=? AND c.claim_type='entity_version' "
+        "JOIN entities e USING(entity_id) WHERE e.project_id=? AND e.kind!='note' "
+        "AND c.claim_type='entity_version' "
         "AND NOT EXISTS (SELECT 1 FROM claims n WHERE n.replaces_claim=c.claim_id) "
         "ORDER BY c.claim_id DESC",
         (project,),

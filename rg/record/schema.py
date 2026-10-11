@@ -13,6 +13,10 @@ QUESTION_SCHEMA["properties"]["kind"] = {"const": "question"}
 QUESTION_SCHEMA["properties"]["scope"] = {
     "anyOf": [QUESTION_SCHEMA["properties"]["scope"], {"type": "null"}]
 }
+NOTE_SCHEMA = deepcopy(QUESTION_SCHEMA)
+NOTE_SCHEMA["properties"]["kind"] = {"const": "note"}
+NOTE_SCHEMA["properties"]["about"] = {"type": ["string", "null"], "minLength": 1, "maxLength": 120}
+NOTE_SCHEMA["required"] = [*NOTE_SCHEMA["required"], "about"]
 DECISION_SCHEMA = deepcopy(CLAIM_SCHEMA["oneOf"][1])
 DECISION_SCHEMA["properties"]["scope"] = deepcopy(QUESTION_SCHEMA["properties"]["scope"])
 DECISION_SCHEMA["properties"]["speaker"] = {"const": "user"}
@@ -32,6 +36,11 @@ def validate_decision(payload: dict[str, Any]) -> None:
 def validate_question(payload: dict[str, Any]) -> None:
     if list(Draft202012Validator(QUESTION_SCHEMA).iter_errors(payload)):
         raise ValueError("人工问题不符合记录 schema")
+
+
+def validate_note(payload: dict[str, Any]) -> None:
+    if list(Draft202012Validator(NOTE_SCHEMA).iter_errors(payload)):
+        raise ValueError("笔记不符合记录 schema")
 
 
 def validate_scope(value: Any) -> dict[str, str] | None:

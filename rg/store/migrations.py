@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 27
+LATEST_VERSION = 28
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -487,7 +487,42 @@ MIGRATIONS = {
 }
 
 
+MIGRATIONS[28] = (
+    "CREATE TABLE entities_note_migration (entity_id TEXT PRIMARY KEY, "
+    "project_id TEXT NOT NULL REFERENCES projects, kind TEXT NOT NULL "
+    "CHECK(kind IN ('question','approach','attempt','finding','decision','join','note')), "
+    "subtype TEXT, created_at TEXT NOT NULL)",
+    "INSERT INTO entities_note_migration SELECT * FROM entities",
+    "DROP TABLE entities",
+    "ALTER TABLE entities_note_migration RENAME TO entities",
+    "CREATE TABLE note_requests (request_id TEXT PRIMARY KEY, "
+    "project_id TEXT NOT NULL REFERENCES projects, intent_sha256 TEXT NOT NULL, "
+    "event_id INTEGER NOT NULL UNIQUE REFERENCES raw_events, "
+    "claim_id INTEGER NOT NULL UNIQUE REFERENCES claims, recorded_at TEXT NOT NULL)",
+    "CREATE TRIGGER note_request_no_update BEFORE UPDATE ON note_requests BEGIN "
+    "SELECT RAISE(ABORT,'note receipt is append-only'); END",
+    "CREATE TRIGGER note_request_no_delete BEFORE DELETE ON note_requests BEGIN "
+    "SELECT RAISE(ABORT,'note receipt is append-only'); END",
+)
+
+
 def migrate(db: sqlite3.Connection) -> None:
+    """重建实体表遵循 SQLite 的事务复制流程，原外键开关在失败时也恢复。"""
+    version = db.execute("PRAGMA user_version").fetchone()[0]
+    if version >= LATEST_VERSION:
+        _upgrade(db)
+        return
+    foreign_keys = db.execute("PRAGMA foreign_keys").fetchone()[0]
+    if db.in_transaction:
+        raise ValueError("迁移不能在已有事务内执行")
+    db.execute("PRAGMA foreign_keys=OFF")
+    try:
+        _upgrade(db)
+    finally:
+        db.execute(f"PRAGMA foreign_keys={foreign_keys}")
+
+
+def _upgrade(db: sqlite3.Connection) -> None:
     version = db.execute("PRAGMA user_version").fetchone()[0]
     if version > LATEST_VERSION:
         raise ValueError("数据库版本高于当前程序，不能降级打开")
@@ -498,8 +533,19 @@ def migrate(db: sqlite3.Connection) -> None:
             if version >= LATEST_VERSION:
                 db.commit()
                 return
+            associated = []
+            if version == 27:
+                associated = db.execute(
+                    "SELECT sql FROM sqlite_schema WHERE tbl_name='entities' "
+                    "AND type IN ('index','trigger') AND sql IS NOT NULL"
+                ).fetchall()
             for statement in MIGRATIONS[version + 1]:
                 db.execute(statement)
+            if version == 27:
+                for row in associated:
+                    db.execute(row[0])
+                if db.execute("PRAGMA foreign_key_check").fetchone() is not None:
+                    raise sqlite3.IntegrityError("笔记迁移外键校验失败")
             db.execute(f"PRAGMA user_version = {version + 1}")
             db.commit()
             version += 1

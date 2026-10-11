@@ -4,11 +4,13 @@ import json
 from typing import Any, BinaryIO
 
 from rg.record.decide import decide
+from rg.record.note import note
 from rg.record.question import question
 from rg.store.database import Store
 
 MAX_REQUEST_BYTES = 65536
 FIELDS = {
+    "note": {"text", "about", "scope", "request_id", "occurred_at", "expected_revision"},
     "question": {"text", "scope", "request_id", "occurred_at", "expected_revision"},
     "decide": {
         "selector",
@@ -33,7 +35,7 @@ def unique_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 def read_request(stream: BinaryIO, kind: str) -> dict[str, Any]:
     if kind not in FIELDS:
-        raise ValueError("客户端只支持人工 question/decide")
+        raise ValueError("客户端只支持人工 question/decide/note")
     raw = stream.read(MAX_REQUEST_BYTES + 1)
     if len(raw) > MAX_REQUEST_BYTES:
         raise ValueError("客户端请求最多 65536 字节")
@@ -57,4 +59,4 @@ def record(store: Store, project: str, kind: str, body: dict[str, Any]) -> dict[
         "project_id": project,
         "actor": "human:本机用户",
     }
-    return question(store, values) if kind == "question" else decide(store, values)
+    return {"question": question, "decide": decide, "note": note}[kind](store, values)

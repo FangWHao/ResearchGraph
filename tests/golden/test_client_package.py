@@ -50,7 +50,7 @@ def test_package_native_configs_manifest_and_actual_readonly_context(store: Stor
     before = list(store.db.iterdump())
     output = tmp_path / "接入包 空格"
     result = package(store, project, output, "o200k_base")
-    assert result["installed"] is False and result["files"] == 19
+    assert result["installed"] is False and result["files"] == 24
     manifest = json.loads((output / "manifest.json").read_bytes())
     for name, sha in manifest["files"].items():
         assert hashlib.sha256((output / name).read_bytes()).hexdigest() == sha

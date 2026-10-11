@@ -15,6 +15,7 @@ ENTRY = "from rg.cli.main import main; main()"
 SKILLS = {
     "context": ("研究上下文", "在研究任务开始或需要核对历史状态时，只读查询项目决定、问题和证据"),
     "question": ("记录研究问题", "仅在用户明确调用本技能时，原样记录用户提出的研究问题"),
+    "note": ("记录研究笔记", "仅在用户明确调用本技能时，原样记录用户的研究笔记及关联对象"),
     "decide": ("记录研究决定", "仅在用户明确调用本技能时，记录用户指定的对象、动作和原话理由"),
 }
 
@@ -75,6 +76,8 @@ def instructions(kind: str, client: str) -> str:
     fields = (
         "`text` 为用户的原话问题"
         if kind == "question"
+        else "`text` 为用户的原话笔记，可选 `about` 为本项目对象 ID（未指定时省略）"
+        if kind == "note"
         else "`selector` 为用户给出的对象名称或 ID，`action` 为 accept/defer/reject/withdraw，"
         "`why` 为原话理由"
     )
@@ -95,7 +98,8 @@ def instructions(kind: str, client: str) -> str:
         "对象歧义保留候选并引导用户选择，不能自行确认或更换对象。"
         "处理结束后删除临时请求文件；回执保留 request_id 供同意图重试。\n\n"
         "本技能是可信本机人工入口的包装，不提供操作系统身份认证。"
-        "MCP 只有只读工具，Agent 自行记录候选的 propose_note 尚未开放。\n"
+        "Agent 自己的笔记只能使用 MCP `research.propose_note`，保留候选；"
+        "不能调用本人工入口确认自己的判断。\n"
     )
 
 
@@ -104,6 +108,7 @@ def metadata(kind: str) -> str:
     short = {
         "context": "读取可查证的研究历史，保留项目范围、原文引用及候选和确认的区别",
         "question": "明确调用后原样记录研究问题，保留完整范围、原文引用及幂等请求回执",
+        "note": "明确调用后原样记录人工笔记，可关联本项目对象，保留原文及幂等回执",
         "decide": "明确调用后记录人工决定和原话理由，对象歧义保留候选等待选择",
     }[kind]
     prompt = f"使用 $research-{kind} " + (
@@ -135,7 +140,7 @@ def files(store: Store, project: str, encoding: str) -> dict[str, bytes]:
                 result[f"{base}/agents/openai.yaml"] = metadata(kind).encode()
     # JSON 字符串及数组在此也是合法 TOML 字面量，保留空格、引号、反斜线。
     result["codex/.codex/config.toml"] = (
-        "# 固定项目的本地只读 MCP；合并时保留已有配置。\n"
+        "# 固定项目的本地 MCP：五个只读工具与一个候选笔记工具；保留已有配置。\n"
         "[mcp_servers.researchgraph]\n"
         f"command = {json.dumps(prefix[0], ensure_ascii=False)}\n"
         f"args = {json.dumps(mcp_args, ensure_ascii=False)}\n"
@@ -155,22 +160,25 @@ def files(store: Store, project: str, encoding: str) -> dict[str, bytes]:
         "生成过程只读数据库，不修改个人配置、不安装钩子、不调用模型。\n\n"
         "## 安装\n\n"
         "在已登记项目的工作区，分别复制 codex/.agents/skills 或 claude/.claude/skills "
-        "中的三个技能目录到同名目录；已有同名技能时先核对，不能覆盖。"
+        "中的四个技能目录到同名目录；已有同名技能时先核对，不能覆盖。"
         "Codex 将 codex/.codex/config.toml 的 researchgraph 条目合并到项目 .codex/config.toml；"
         "Claude 将 claude/.mcp.json 的 researchgraph 条目合并到项目 .mcp.json。"
         "保留其他配置；已有同名服务器时先核对项目。客户端本身的工作区信任和 MCP "
         "首次许可仍按客户端处理。移动 Python 环境或数据目录后重新生成。\n\n"
         "## 使用\n\n"
         "Codex 可明确输入 `$research-context`、`$research-question <原话问题>`、"
-        "`$research-decide <动作> <对象> --why <原话理由>`。"
-        "Claude 对应 `/research-context`、`/research-question`、`/research-decide`。"
+        "`$research-decide <动作> <对象> --why <原话理由>`、`$research-note <原话笔记>`。"
+        "Claude 对应 `/research-context`、`/research-question`、`/research-decide`、"
+        "`/research-note`。"
         "上下文允许自动选用；人工写入技能只允许用户明确调用。"
-        "MCP 提供五个只读工具，没有人工确认入口。\n\n"
+        "MCP 提供五个只读工具与 `research.propose_note` 候选写入，没有人工确认入口。\n\n"
         "人工命令使用同一个 ResearchGraph CLI 和原文存储合同，记录 UUID 防止重试重复。"
-        "question 直接确认问题；decide 仅在对象唯一时确认决定，歧义保留候选。"
+        "question 直接确认问题；note 直接确认人工笔记；"
+        "decide 仅在对象唯一时确认决定，歧义保留候选。"
         "这不证明发现成立，也不确认被引用的候选对象。"
         "包装的调用规则依赖客户端遵守技能，不能代替操作系统权限隔离。"
-        "note/propose_note 类型仍待约定，未提供写工具。\n\n"
+        "Agent 自己的笔记使用 propose_note，项目和模型身份固定，始终写 candidate。"
+        "笔记的确认只说明记录经人工审核，不确认研究结论；自动提取和关联排除笔记。\n\n"
         "`manifest.json` 记录每个包文件的 SHA256；没有数据库原文、凭据或模型配置。"
         "只验证格式和脚本行为不代表真实 Agent 会话质量已验收。\n"
     ).encode()

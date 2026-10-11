@@ -294,7 +294,8 @@ def test_discovery_keeps_evidence_available_and_server_enforces_exclusive_refere
     assert reply is not None
     tools = reply["result"]["tools"]
     assert {tool["name"] for tool in tools} == {
-        "research." + name for name in ("context", "evidence", "history", "node", "search")
+        "research." + name
+        for name in ("context", "evidence", "history", "node", "search", "propose_note")
     }
     evidence = next(tool for tool in tools if tool["name"] == "research.evidence")
     assert not {"oneOf", "anyOf", "allOf"}.intersection(evidence["inputSchema"])

@@ -137,6 +137,17 @@ def claims(store: Store, values: dict[str, str]) -> dict[str, Any]:
     limit, offset = page(values)
     project = values.get("project") or None
     state = values.get("state", "all")
+    kind = values.get("kind")
+    if kind is not None and kind not in {
+        "question",
+        "approach",
+        "attempt",
+        "finding",
+        "decision",
+        "join",
+        "note",
+    }:
+        raise ValueError("对象类型无效")
     if state not in {"all", "candidate", "confirmed", "dismissed"}:
         raise ValueError("审核状态无效")
     project_exists(store, project)
@@ -159,6 +170,9 @@ def claims(store: Store, values: dict[str, str]) -> dict[str, Any]:
         "AND (? IS NULL OR COALESCE(co.segment_id,'unknown')=?)))"
     )
     params = (project, project, state, state, session, session, segment, segment)
+    if kind is not None:
+        query += " AND c.claim_type='entity_version' AND e.kind=?"
+        params += (kind,)
     total = store.db.execute("SELECT count(*) " + query, params).fetchone()[0]
     rows = store.db.execute(
         "SELECT c.* " + query + " ORDER BY c.claim_id LIMIT ? OFFSET ?",
@@ -435,7 +449,14 @@ def edit(store: Store, claim_id: int, body: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("记录已有修改版，请打开最新记录")
         store.assert_reviewable(claim_id, "edit")
         original = json.loads(row["payload"])
-        from rg.record.schema import validate_decision, validate_question, validate_scope
+        from rg.record.schema import (
+            validate_decision,
+            validate_note,
+            validate_question,
+            validate_scope,
+        )
+
+        note_record = row["claim_type"] == "entity_version" and original.get("kind") == "note"
 
         manual_question = (
             row["basis"] == "manual"
@@ -451,7 +472,7 @@ def edit(store: Store, claim_id: int, body: dict[str, Any]) -> dict[str, Any]:
             and original.get("explicitness") == "explicit"
             and original.get("referent_unique") is True
         )
-        if manual_question or manual_decision:
+        if manual_question or manual_decision or note_record:
             scope = validate_scope(scope)
         elif not isinstance(scope, dict):
             raise ValueError("修改需提供完整范围")
@@ -470,6 +491,7 @@ def edit(store: Store, claim_id: int, body: dict[str, Any]) -> dict[str, Any]:
             "inputs",
             "semantics",
             "selected",
+            "about",
         }
         if any(payload.get(key) != original.get(key) for key in immutable):
             raise ValueError("修改不能重定向对象或关系；请另建人工记录")
@@ -484,7 +506,9 @@ def edit(store: Store, claim_id: int, body: dict[str, Any]) -> dict[str, Any]:
                 {key: span[key] for key in ("event_id", "byte_start", "byte_end", "quote_sha256")}
                 | {"quote": quote.decode("utf-8")}
             )
-        if manual_question:
+        if note_record:
+            validate_note(payload | {"scope": scope, "evidence": evidence_items})
+        elif manual_question:
             validate_question(payload | {"scope": scope, "evidence": evidence_items})
         elif manual_decision:
             validate_decision(payload | {"scope": scope, "evidence": evidence_items})

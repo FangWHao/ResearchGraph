@@ -4,6 +4,9 @@ import { Badge, ClaimBody, Empty, EvidenceLink, EvidencePanel, Icon, Loading } f
 import { actionNames, evidenceNames } from './model';
 import { canResolveDecision, requiresDecisionTarget } from './manualDecision';
 import { useManualDecisions } from './useManualDecisions';
+import { useManualNotes } from './useManualNotes';
+import { isNoteClaim } from './manualNote';
+import { NotesView } from './NotesView';
 import { ManualQuestionDialog } from './ManualQuestionDialog';
 import { allowsUnknownQuestionScope, emptyQuestionDraft, isCurrentQuestionIntent, parseScopeText } from './manualQuestion';
 import type { QuestionDraft } from './manualQuestion';
@@ -25,9 +28,10 @@ import { parseResearchDetail, researchQuery } from './researchGraph';
 const GraphView = lazy(() => import('./GraphView').then(module => ({ default: module.GraphView })));
 const FileRunGraphView = lazy(() => import('./FileRunGraphView').then(module => ({ default: module.FileRunGraphView })));
 
-type View = 'questions' | 'review' | 'timeline' | 'graph' | 'health' | 'search' | 'qa' | 'versions' | 'exports' | 'fileRuns' | 'clear';
+type View = 'questions' | 'review' | 'timeline' | 'graph' | 'health' | 'search' | 'qa' | 'versions' | 'exports' | 'fileRuns' | 'clear' | 'notes';
 const viewMeta: Record<View, { title: string; subtitle: string; icon: string }> = {
   questions: { title: '研究问题', subtitle: '从问题出发，找到每一步决定的依据。', icon: 'questions' },
+  notes: { title: '研究笔记', subtitle: '记录想法与补充说明，保留原文和关联对象。', icon: 'evidence' },
   qa: { title: '研究问答', subtitle: '从本地来源找答案，保留引用、历史时间和不确定事项。', icon: 'evidence' },
   review: { title: '复核队列', subtitle: '对照原文确认候选，记录由你判断。', icon: 'review' },
   timeline: { title: '决定时间线', subtitle: '提出、采用与撤回，都留下可查证的原话。', icon: 'history' },
@@ -47,7 +51,7 @@ function EditDialog({ claim, revision, actor, onClose, onWrite, onError }: {
   const [payload, setPayload] = useState({ ...claim.payload });
   const [scope, setScope] = useState(Object.entries(claim.scope ?? {}).map(([key, value]) => `${key}=${value}`).join('\n'));
   const [busy, setBusy] = useState(false); const [failure, setFailure] = useState('');
-  const allowUnknownScope = allowsUnknownQuestionScope(claim);
+  const allowUnknownScope = allowsUnknownQuestionScope(claim) || isNoteClaim(claim);
   async function submit(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setFailure('');
     try {
@@ -57,12 +61,13 @@ function EditDialog({ claim, revision, actor, onClose, onWrite, onError }: {
     } catch (error) { setFailure((error as Error).message); onError(error); } finally { setBusy(false); }
   }
   return <div className="modal-backdrop" onClick={onClose}><section className="edit-modal" role="dialog" aria-modal="true" aria-labelledby="edit-title" onClick={event => event.stopPropagation()}><header><div><span className="eyebrow">人工修改 · 记录 #{claim.claim_id}</span><h2 id="edit-title">保留原文，追加你的判断</h2></div><button className="icon-button" aria-label="关闭修改" onClick={onClose}><Icon name="close" /></button></header><form onSubmit={event => { void submit(event); }}>
-    {payload.label != null && <label>标题<input autoFocus value={payload.label} onChange={event => setPayload({ ...payload, label: event.target.value })} required maxLength={500} /></label>}
+    {payload.label != null && <label>标题<input autoFocus value={payload.label} onChange={event => setPayload({ ...payload, label: event.target.value })} required maxLength={isNoteClaim(claim) ? undefined : 500} /></label>}
     {payload.content != null && <label>内容<textarea aria-label="内容" value={payload.content} onChange={event => setPayload({ ...payload, content: event.target.value })} rows={4} required /></label>}
     {payload.reason != null && <label>理由<textarea aria-label="理由" autoFocus={payload.label == null} value={payload.reason} onChange={event => setPayload({ ...payload, reason: event.target.value })} rows={4} required /></label>}
     {payload.action != null && <label>决定动作<select aria-label="决定动作" value={payload.action} onChange={event => setPayload({ ...payload, action: event.target.value })}>{Object.entries(actionNames).map(([key, name]) => <option value={key} key={key}>{name}</option>)}</select></label>}
     {payload.state != null && <label>证据状态<select value={payload.state} onChange={event => setPayload({ ...payload, state: event.target.value })}>{Object.entries(evidenceNames).map(([key, name]) => <option value={key} key={key}>{name}</option>)}</select></label>}
     <label>{allowUnknownScope ? '研究范围（可留空）' : '完整范围'}<span className="muted small">{allowUnknownScope ? '已知范围需完整填写，每行一个 字段=值；留空保存为范围未知。' : '每行一个 字段=值，未知值明确填写 unknown。'}</span><textarea aria-label={allowUnknownScope ? '研究范围（可留空）' : '完整范围'} value={scope} onChange={event => setScope(event.target.value)} rows={3} required={!allowUnknownScope} className="mono" /></label>
+    {isNoteClaim(claim) && <p className="note-readonly-about">关联对象（修改时保留）：{claim.payload.about ?? '未指定'}</p>}
     <p className="notice">原记录与引用不改写；新记录标为人工确认，并关联到旧记录。对象和关系的指向保留。</p>{failure && <p className="error-message" role="alert">{failure}</p>}<footer><span className="muted small">复核者 {actor} · 版本 {revision}</span><button type="submit" className="button primary" disabled={busy}>{busy ? '正在保存…' : '修改并确认'}</button></footer>
   </form></section></div>;
 }
@@ -195,24 +200,28 @@ export function App() {
       const url = new URL(window.location.href); url.searchParams.set('view', 'clear'); url.hash = '';
       window.location.replace(url);
     } });
+  const notes = useManualNotes({ project, actor, authorized, revision: graph?.revision ?? null, onError, onRefresh: refresh,
+    onDataChanged: () => setEpoch(previous => previous + 1),
+    onSaved: result => { setConflict(false); setSelectedReading(null); setSelectedEvidence(null); setSelectedClaim(result.claim_id); setMessage(`${result.replayed ? '已找回保存的笔记' : '研究笔记已保存'}，记录 #${result.claim_id} · 当前版本 ${result.revision}`); } });
   const decisions = useManualDecisions({ project, actor, authorized, revision: graph?.revision ?? null, epoch, onError, onRefresh: refresh,
     onDataChanged: () => setEpoch(previous => previous + 1),
     onSaved: (claim, revision, text) => { setConflict(false); setSelectedEvidence(null); setSelectedClaim(claim); setMessage(`${text}，记录 #${claim} · 当前版本 ${revision}`); }, onClaim });
   useEffect(() => {
-    function close(event: KeyboardEvent) { if (event.key === 'Escape') { if (decisions.visible) decisions.close(); else if (questionProject) closeQuestion(); else if (editing) setEditing(null); else if (selectedEvidence) setSelectedEvidence(null); else setSelectedClaim(null); } }
+    function close(event: KeyboardEvent) { if (event.key === 'Escape') { if (decisions.visible) decisions.close(); else if (notes.visible) notes.close(); else if (questionProject) closeQuestion(); else if (editing) setEditing(null); else if (selectedEvidence) setSelectedEvidence(null); else setSelectedClaim(null); } }
     window.addEventListener('keydown', close); return () => window.removeEventListener('keydown', close);
-  }, [editing, selectedEvidence, questionProject, decisions.visible, decisions.close]);
+  }, [editing, selectedEvidence, questionProject, decisions.visible, decisions.close, notes.visible, notes.close]);
   const candidateCount = graph?.claims.filter(item => item.effective_state === 'candidate').length ?? 0;
   if (!authorized) return <div className="login-page"><section><div className="brand-mark">R<span>G</span></div><span className="eyebrow">ResearchGraph · 本地研究工作区</span><h1>打开你的研究决定史</h1><p>请使用本机服务启动时给出的链接，或输入该次启动的访问令牌。</p><form onSubmit={event => { event.preventDefault(); setToken(tokenInput); setAuthorized(true); refresh(); }}><label>访问令牌<input type="password" value={tokenInput} onChange={event => setTokenInput(event.target.value)} autoComplete="off" required /></label><button type="submit" className="button primary">进入本地工作区 <Icon name="arrow" size={16} /></button></form>{message && <p className="error-message" role="alert">{message}</p>}<small>资料保存在本机 · 远程模型须先获得项目授权</small></section></div>;
-  return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-mark">R<span>G</span></div><div><strong>ResearchGraph</strong><span>研究决定史</span></div></div><div className="project-picker"><label htmlFor="project-picker">当前项目</label><select id="project-picker" value={projectId} onChange={event => setProjectId(event.target.value)}>{projects.map(item => <option key={item.project_id} value={item.project_id}>{item.name}</option>)}{!projects.length && <option value="">尚无项目</option>}</select><span>{project?.sessions ?? 0} 个会话 · {project?.claims ?? 0} 条记录</span></div><div className="nav-label">研究工作区</div><nav aria-label="研究工作区">{(['questions', 'qa', 'review', 'timeline', 'graph', 'versions', 'fileRuns', 'exports', 'health', 'clear'] as View[]).map(key => <button key={key} className={view === key ? 'active' : ''} onClick={() => { setView(key); setSelectedClaim(null); setSelectedEvidence(null); }}><Icon name={viewMeta[key].icon} />{viewMeta[key].title}{key === 'review' && <span className="nav-count">{candidateCount}</span>}</button>)}</nav><div className="sidebar-bottom"><label>复核者<input aria-label="复核者姓名" value={name} onChange={event => setName(event.target.value)} maxLength={100} /></label><div className="local-status"><span />本机连接 · 127.0.0.1</div><p>原文保留以供追溯<br />隐私清除除外</p></div></aside><div className="main-shell"><header className="topbar"><div className="breadcrumb">研究工作区 <span>/</span> {project?.name ?? '项目未选择'}</div><form className="global-search" onSubmit={event => { event.preventDefault(); setSearchText(searchInput.trim()); setView('search'); setSelectedClaim(null); setSelectedEvidence(null); }}><Icon name="search" size={16} /><input aria-label="搜索会话原文" placeholder="搜索原文与决定依据…" value={searchInput} onChange={event => setSearchInput(event.target.value)} maxLength={500} /><button type="submit" aria-label="开始搜索"><Icon name="arrow" size={15} /></button></form><button className="icon-button" aria-label="刷新数据" onClick={refresh}><Icon name="refresh" /></button></header><main><div className="page-heading"><div><span className="eyebrow">{project?.name ?? '本地研究工作区'} / {view === 'health' ? '采集与覆盖' : '研究记忆'}</span><h1>{viewMeta[view].title}</h1><p>{viewMeta[view].subtitle}</p></div><div className="revision-tag">图版本 <strong>{view === 'fileRuns' ? fileRuns.data?.revision ?? '—' : graph?.revision ?? '—'}</strong><span>{view === 'fileRuns' ? '登记视图' : '本地资料'}</span></div></div>
+  return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-mark">R<span>G</span></div><div><strong>ResearchGraph</strong><span>研究决定史</span></div></div><div className="project-picker"><label htmlFor="project-picker">当前项目</label><select id="project-picker" value={projectId} onChange={event => setProjectId(event.target.value)}>{projects.map(item => <option key={item.project_id} value={item.project_id}>{item.name}</option>)}{!projects.length && <option value="">尚无项目</option>}</select><span>{project?.sessions ?? 0} 个会话 · {project?.claims ?? 0} 条记录</span></div><div className="nav-label">研究工作区</div><nav aria-label="研究工作区">{(['questions', 'notes', 'qa', 'review', 'timeline', 'graph', 'versions', 'fileRuns', 'exports', 'health', 'clear'] as View[]).map(key => <button key={key} className={view === key ? 'active' : ''} onClick={() => { setView(key); setSelectedClaim(null); setSelectedEvidence(null); }}><Icon name={viewMeta[key].icon} />{viewMeta[key].title}{key === 'review' && <span className="nav-count">{candidateCount}</span>}</button>)}</nav><div className="sidebar-bottom"><label>复核者<input aria-label="复核者姓名" value={name} onChange={event => setName(event.target.value)} maxLength={100} /></label><div className="local-status"><span />本机连接 · 127.0.0.1</div><p>原文保留以供追溯<br />隐私清除除外</p></div></aside><div className="main-shell"><header className="topbar"><div className="breadcrumb">研究工作区 <span>/</span> {project?.name ?? '项目未选择'}</div><form className="global-search" onSubmit={event => { event.preventDefault(); setSearchText(searchInput.trim()); setView('search'); setSelectedClaim(null); setSelectedEvidence(null); }}><Icon name="search" size={16} /><input aria-label="搜索会话原文" placeholder="搜索原文与决定依据…" value={searchInput} onChange={event => setSearchInput(event.target.value)} maxLength={500} /><button type="submit" aria-label="开始搜索"><Icon name="arrow" size={15} /></button></form><button className="icon-button" aria-label="刷新数据" onClick={refresh}><Icon name="refresh" /></button></header><main><div className="page-heading"><div><span className="eyebrow">{project?.name ?? '本地研究工作区'} / {view === 'health' ? '采集与覆盖' : '研究记忆'}</span><h1>{viewMeta[view].title}</h1><p>{viewMeta[view].subtitle}</p></div><div className="revision-tag">图版本 <strong>{view === 'fileRuns' ? fileRuns.data?.revision ?? '—' : graph?.revision ?? '—'}</strong><span>{view === 'fileRuns' ? '登记视图' : '本地资料'}</span></div></div>
       {message && <div className={`message-banner ${conflict ? 'conflict' : ''}`} role={conflict ? 'alert' : 'status'}><span>{message}</span>{conflict ? <button className="text-button" onClick={view === 'clear' ? () => { void projectClear.checkStatus(); } : refresh}>{view === 'clear' ? '检查清除状态' : '刷新后重新复核'}</button> : <button className="icon-button" aria-label="关闭提示" onClick={() => setMessage('')}><Icon name="close" size={15} /></button>}</div>}
       {projectClear.status?.state === 'pending' && view !== 'clear' && <div className="message-banner conflict" role="alert"><span>有项目清除尚未完成，普通资料读取暂时被阻止。</span><button className="text-button" onClick={() => setView('clear')}>打开清除恢复</button></div>}
-      {graph?.partial && view !== 'clear' && view !== 'fileRuns' && view !== 'graph' && <p className="notice">此视图仅载入前 {graph.limit} 条记录，不能据此判断项目全貌。完整记录可在复核队列分页查看。</p>}
+      {graph?.partial && view !== 'clear' && view !== 'fileRuns' && view !== 'graph' && view !== 'notes' && <p className="notice">此视图仅载入前 {graph.limit} 条记录，不能据此判断项目全貌。完整记录可在复核队列分页查看。</p>}
       {view === 'clear' ? <ProjectClearView project={project} projects={projects} onProject={setProjectId} workspace={projectClear} /> : !projectId ? <Empty title="尚未登记项目">使用项目登记与会话导入后，这里会读取实际研究记录。</Empty> : !graph && ['questions', 'timeline'].includes(view) ? <Loading /> : <>
         {view === 'questions' && graph && <Questions data={graph} onClaim={onClaim} onEvidence={onEvidence} onCreateQuestion={() => {
           if (!currentDrafts.current[projectId]) changeQuestionDraft(projectId, emptyQuestionDraft());
           setSelectedClaim(null); setSelectedEvidence(null); setEditing(null); currentQuestionProject.current = projectId; setQuestionProject(projectId);
         }} />}
+        {view === 'notes' && <NotesView key={projectId} project={projectId} epoch={epoch} onClaim={onClaim} onEvidence={onEvidence} onError={onError} onCreate={() => { setSelectedClaim(null); setSelectedEvidence(null); setEditing(null); notes.open(); }} />}
         {view === 'timeline' && graph && <TimelineView data={graph} onClaim={onClaim} onEvidence={onEvidence} onCreateDecision={decisions.openCreate} onResolve={decisions.openResolve} />}
         {view === 'review' && <ReviewQueue onResolve={decisions.openResolve} project={projectId} epoch={epoch} actor={actor} onWrite={onWrite} onError={onError} onEdit={onEdit} onEvidence={onEvidence} onClaim={onClaim} />}
         {(view === 'qa' || view === 'exports') && <ProjectPrivacyPanel project={project} projects={projects} onProject={setProjectId} workspace={privacy} />}
@@ -230,6 +239,7 @@ export function App() {
     {selectedEvidence && <aside className="evidence-drawer" role="dialog" aria-label="原文证据"><header><div><span className="eyebrow">来源证据</span><h2>原文 #{selectedEvidence.event_id}</h2></div><button className="icon-button" aria-label="关闭原文" onClick={() => setSelectedEvidence(null)}><Icon name="close" /></button></header><div className="drawer-content"><EvidencePanel target={selectedEvidence} onError={onError} onEvidence={onEvidence} /></div></aside>}
     {editing && <EditDialog key={editing.claim.claim_id} claim={editing.claim} revision={editing.revision} actor={actor} onClose={() => setEditing(null)} onWrite={onWrite} onError={onError} />}
     {decisions.dialogs}
+    {notes.dialogs}
     {questionProject === projectId && project && questionDrafts[projectId] && <ManualQuestionDialog key={projectId} project={project} revision={graph?.revision ?? null} actor={actor} draft={questionDrafts[projectId]}
       onDraft={draft => changeQuestionDraft(project.project_id, draft)} onClose={closeQuestion}
       onCreated={result => createdQuestion(project.project_id, result)} onError={onError} onRefresh={refresh} />}

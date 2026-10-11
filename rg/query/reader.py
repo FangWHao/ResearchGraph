@@ -250,6 +250,8 @@ class Reader:
                 r
                 for r in self.claims()
                 if r["entity_id"] == entity_id
+                or r["payload"].get("kind") == "note"
+                and r["payload"].get("about") == entity_id
                 or r["payload"].get("source") == entity_id
                 or any(i.get("ref") == entity_id for i in r["payload"].get("inputs", []))
             ]

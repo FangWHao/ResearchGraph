@@ -16,7 +16,9 @@ FIXTURES = Path(__file__).parents[2] / "fixtures/transcripts"
 
 
 def lines(path: Path, records: list[dict]) -> None:
-    path.write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in records))
+    path.write_text(
+        "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in records), encoding="utf-8"
+    )
 
 
 def record(text="采用甲", uuid="one", **extra):

@@ -45,7 +45,7 @@ def working_set(
         raise ValueError("显式范围必须为非空字符串字段")
     rows = store.db.execute(
         "SELECT c.*, e.kind FROM entities e JOIN claims c "
-        "USING(entity_id) WHERE e.project_id = ? AND c.claim_type = ? "
+        "USING(entity_id) WHERE e.project_id = ? AND e.kind!='note' AND c.claim_type = ? "
         "AND NOT EXISTS (SELECT 1 FROM claims replacement "
         "WHERE replacement.replaces_claim=c.claim_id) "
         "ORDER BY c.claim_id DESC",

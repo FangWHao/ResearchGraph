@@ -48,7 +48,7 @@ async def check() -> None:
                 parameters = StdioServerParameters(command=config["command"], args=config["args"])
                 async with Client(parameters) as client:
                     tools = await client.list_tools()
-                    assert len(tools.tools) == 5
+                    assert len(tools.tools) == 6
                     result = await client.call_tool("research.context", {"budget": 2000})
                     assert not result.is_error and result.content[0].type == "text"
                     text = result.content[0].text
@@ -59,7 +59,7 @@ async def check() -> None:
                     {
                         "client_config": name,
                         "protocol_version": protocol,
-                        "tools": 5,
+                        "tools": 6,
                         "context_ok": True,
                         "database_unchanged": True,
                     }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -111,6 +112,33 @@ TOOLS[2]["inputSchema"]["oneOf"] = [
     for key in ("claim_id", "span_id", "event_id", "version_id", "run_id")
 ]
 
+TOOLS.append(
+    {
+        "name": "research.propose_note",
+        "description": "在当前项目保存 Agent 候选笔记；固定模型身份，永不自行确认。"
+        "关联只接受本项目对象 ID，不改变采用、证据或运行状态。重试复用同一 UUID 和原文。",
+        "inputSchema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "text": {"type": "string", "minLength": 1, "maxLength": 16000},
+                "about": {"type": ["string", "null"], "minLength": 1, "maxLength": 120},
+                "scope": COMMON["scope"],
+                "request_id": {"type": "string", "pattern": "^[0-9a-f-]{36}$"},
+                "expected_revision": COMMON["expected_revision"],
+                "occurred_at": {"type": "string", "maxLength": 80},
+            },
+            "required": ["text", "request_id", "expected_revision"],
+        },
+        "annotations": {
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+    }
+)
+
 # 客户端可发现的 schema 避免根级组合词；服务端仍用完整 schema 校验互斥引用。
 CLIENT_TOOLS = [
     {
@@ -142,7 +170,7 @@ class ToolService:
     def call(self, name: str, arguments: Any) -> dict[str, Any]:
         definitions = [item for item in TOOLS if item["name"] == name]
         if not definitions:
-            raise ValueError("只提供五个 research 只读工具")
+            raise ValueError("只提供五个 research 只读工具和候选笔记工具")
         if not isinstance(arguments, dict) or list(
             Draft202012Validator(definitions[0]["inputSchema"]).iter_errors(arguments)
         ):
@@ -164,6 +192,16 @@ class ToolService:
                 raise ValueError("ID、分页、窗口和预算需为整数")
         if any(k in arguments for k in ("manifest_id", "io_offset")) and "run_id" not in arguments:
             raise ValueError("清单选择与 I/O 偏移只适用于运行证据")
+        if name == "research.propose_note":
+            from rg.record.note import propose_note
+
+            # 五个读取入口保持真正只读；仅在明确候选写调用时打开写连接。
+            if self.store.readonly:
+                with closing(Store(self.store.root)) as writer:
+                    value = propose_note(writer, self.project, arguments)
+            else:
+                value = propose_note(self.store, self.project, arguments)
+            return {"content": [{"type": "text", "text": wrap(value)}], "isError": False}
         with self.store.snapshot():
             if "expected_revision" in arguments and arguments["expected_revision"] != (
                 self.store.revision()

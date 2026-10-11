@@ -1,5 +1,5 @@
 export type ReviewState = 'candidate' | 'confirmed' | 'dismissed';
-export type Kind = 'question' | 'approach' | 'attempt' | 'finding' | 'decision' | 'join';
+export type Kind = 'question' | 'approach' | 'attempt' | 'finding' | 'decision' | 'join' | 'note';
 export interface Span {
   span_id: number; event_id: number; byte_start: number; byte_end: number;
   quote_sha256: string; role: string; session_pk: number; seq: number;
@@ -13,7 +13,7 @@ export interface Review {
 export interface Payload {
   claim_type: string; kind?: Kind; label?: string; content?: string; temp_id?: string;
   target?: string | null; source?: string; relation?: string; action?: string; reason?: string;
-  state?: string; semantics?: string; selected?: string | null;
+  about?: string | null; state?: string; semantics?: string; selected?: string | null;
   inputs?: { port: string; ref: string }[];
   [key: string]: unknown;
 }
@@ -84,6 +84,8 @@ export interface QuestionResult {
   revision: number; claim_id: number; entity_id: string; event_id: number;
   request_id: string; replayed: boolean;
 }
+export interface NoteRequest extends QuestionRequest { about: string | null }
+export interface NoteResult extends QuestionResult { claim_state: ReviewState; effective_state: ReviewState }
 export type DecisionAction = 'accept' | 'defer' | 'reject' | 'withdraw';
 export interface PendingDecision {
   request_id: string; selector: string; action: string; why: string; scope: Record<string, string> | null;

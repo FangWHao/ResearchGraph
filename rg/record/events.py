@@ -10,6 +10,7 @@ MAX_RECORD_BYTES = 65536
 SPAN_BYTES = 8000
 RECEIPTS = {
     "question": "explicit_records",
+    "note": "note_requests",
     "decide": "decision_requests",
     "resolve": "decision_resolutions",
     "manifest": "run_manifests",
@@ -36,6 +37,8 @@ def original(
     occurred: str,
     recorded: str,
     search_text: str,
+    *,
+    model_generated: bool = False,
 ) -> tuple[int, bytes]:
     """由调用方事务同时提交原件、结构化记录和回执。"""
     db = store.db
@@ -51,9 +54,10 @@ def original(
     if len(raw) > MAX_RECORD_BYTES:
         raise ValueError("完整人工记录超过 65536 字节")
     sha = store.objects.put(raw)
+    native_session = f"{'model' if model_generated else 'manual'}:{data['project_id']}"
     session = db.execute(
         "SELECT session_pk FROM sessions WHERE tool='rg' AND native_session_id=? AND agent_id=''",
-        (f"manual:{data['project_id']}",),
+        (native_session,),
     ).fetchone()
     session_id = (
         session[0]
@@ -61,7 +65,7 @@ def original(
         else db.execute(
             "INSERT INTO sessions(tool,native_session_id,project_id,project_basis,first_at) "
             "VALUES ('rg',?,?,'manual',?)",
-            (f"manual:{data['project_id']}", data["project_id"], recorded),
+            (native_session, data["project_id"], recorded),
         ).lastrowid
     )
     file_id = db.execute(
@@ -84,7 +88,7 @@ def original(
     event_id = db.execute(
         "INSERT INTO raw_events(session_pk,file_instance_id,record_index,byte_start,byte_end, "
         "object_sha256,native_id,seq,kind,role,occurred_at,recorded_at,line_sha256,exclude_reason) "
-        "VALUES (?,?,0,0,?,?,?,?,?,'user',?,?,?,'explicit_recorded')",
+        "VALUES (?,?,0,0,?,?,?,?,?,?,?,?,?,'explicit_recorded')",
         (
             session_id,
             file_id,
@@ -93,6 +97,7 @@ def original(
             request_id,
             seq,
             f"explicit_{kind}",
+            "assistant" if model_generated else "user",
             occurred,
             recorded,
             sha,

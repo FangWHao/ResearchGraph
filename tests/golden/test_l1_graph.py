@@ -267,6 +267,16 @@ def test_schema_v16_upgrade_is_atomic_retains_original_and_edit_revision_trigger
     root, raw = legacy_store(tmp_path, monkeypatch, version=16)
     with monkeypatch.context() as change:
         change.setattr(migrations, "LATEST_VERSION", 16)
+        # 旧库种子只使用当时已存在的显式记录回执表。
+        change.setattr(
+            "rg.record.events.RECEIPTS",
+            {
+                "question": "explicit_records",
+                "decide": "decision_requests",
+                "resolve": "decision_resolutions",
+                "manifest": "run_manifests",
+            },
+        )
         with closing(Store(root)) as old:
             owner = seed_l1_graph(old)
             revision = old.revision()

@@ -120,7 +120,8 @@ def iter_pairs(store: Store, project: str, scope: dict[str, str] | None = None) 
         raise ValueError("项目不存在")
     rows = store.db.execute(
         "SELECT c.*, e.kind FROM claims c JOIN entities e USING(entity_id) "
-        "WHERE e.project_id = ? AND c.claim_type='entity_version' ORDER BY c.claim_id DESC",
+        "WHERE e.project_id = ? AND e.kind!='note' AND c.claim_type='entity_version' "
+        "ORDER BY c.claim_id DESC",
         (project,),
     ).fetchall()
     cards: list[dict[str, Any]] = []

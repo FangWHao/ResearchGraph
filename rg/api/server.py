@@ -370,6 +370,10 @@ class Handler(BaseHTTPRequestHandler):
                     from rg.record.question import question
 
                     result = question(store, body)
+                elif path == "/api/records/note":
+                    from rg.record.note import note
+
+                    result = note(store, body)
                 elif path == "/api/records/decide":
                     from rg.record.decide import decide
 
