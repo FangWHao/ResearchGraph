@@ -46,7 +46,10 @@ def export_registry(store: Store) -> list[dict[str, Any]]:
     ]
     for value in values:
         value["snapshot_mode"] = modes.get(value["root_id"], "sync")
-    atomic_write(registry_path(store.root), dumps(values).encode())
+    raw = dumps(values).encode()
+    path = registry_path(store.root)
+    if not path.exists() or path.read_bytes() != raw:
+        atomic_write(path, raw)
     return values
 
 
@@ -59,9 +62,13 @@ def choose(data_root: Path, cwd: object) -> dict[str, Any]:
         for value in load_registry(data_root)
         if path.is_relative_to(Path(value["path"]).resolve())
     ]
-    if len(matches) != 1:
+    if not matches or len({value["project_id"] for value in matches}) != 1:
         raise ValueError("钩子工作区未登记或归属有歧义")
-    return matches[0]
+    depth = max(len(Path(value["path"]).parts) for value in matches)
+    closest = [value for value in matches if len(Path(value["path"]).parts) == depth]
+    if len(closest) != 1:
+        raise ValueError("钩子工作区归属有歧义")
+    return closest[0]
 
 
 def examples(store: Store, output: Path) -> dict[str, Any]:

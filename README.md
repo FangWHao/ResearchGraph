@@ -305,6 +305,19 @@ Codex 原生 `patch_apply_begin/end` 也可派生候选编辑；只按同会话�
 
 已有项目追加根目录时，使用 `project root-add --project PROJECT_ID --path /workspace/another-worktree`；可明确指定 `--kind worktree|data|alias|repo`。`project roots --project PROJECT_ID` 只读列出登记路径、类型和登记时的 Git 身份，支持分页与修订核对。新登记保留 Git 共同目录及远端 URL 摘要，不保存原始 URL；相同摘要不合并项目，追加根目录不改变已有会话归属。显式 data 不探测 Git 或加入钩子快照清单，旧登记的未记录元数据不自动补造。详见[根目录登记验收](docs/acceptance/项目根目录与Git身份登记验收_20261010.md)。
 
+新项目可用 `project add 项目名 --root /workspace/repo --follow-worktrees` 一次开启同仓库工作树跟踪；已有项目可在采集健康页开启，或按以下命令配置。开启后 `scan`／`watch` 自动登记归属唯一且身份核对成功的本机成员，并允许其提示快照。默认关闭；暂停后已有根和历史保留。共同目录跨项目有歧义、成员与另一项目根相交、路径身份变化或已整项目清除时，保留诊断并跳过登记。远端摘要不推定归属，工作树发现不改变已存会话或跨项目片段。
+
+```bash
+uv run rg --data-dir /tmp/rg-demo project worktrees --project PROJECT_ID
+# 使用上一条返回的 revision 开启；停止时将 --enable 换成 --disable。
+uv run rg --data-dir /tmp/rg-demo project follow-worktrees --project PROJECT_ID \
+  --enable --expected-revision REVISION
+# 可手动执行一批已开启的发现；后续自动采集循环会持续执行。
+uv run rg --data-dir /tmp/rg-demo project discover-worktrees --project PROJECT_ID
+```
+
+每轮有界轮转，清单及游标可重启续扫；诊断计数只描述该次成员页，清单结束不证明所有目录可用、会话采集完整或实际运行输入输出。工作树读取接口只读数据库；策略开关自身不运行 Git、不调用模型或安装客户端钩子。详见[自动工作树验收](docs/acceptance/自动工作树发现验收_20261011.md)。
+
 手机页面已恢复当前项目选择入口，可直接切换项目；各项目页面内草稿和迟到响应沿用原隔离规则。详见[移动端验收](docs/acceptance/移动端项目切换验收_20261010.md)。
 
 ```bash

@@ -28,10 +28,10 @@ def _path(store: Store, path: Path, project: str | None = None) -> Path:
     return path
 
 
-def _git_identity(path: Path) -> dict[str, Any]:
+def _git_identity(path: Path, deadline: float | None = None) -> dict[str, Any]:
     if not path.is_dir():
         return {"status": "missing"}
-    git = Git(path, time.monotonic() + 2)
+    git = Git(path, deadline if deadline is not None else time.monotonic() + 2)
     try:
         worktree = git.run("rev-parse", "--show-toplevel", optional=True)
         if not worktree:
@@ -80,11 +80,17 @@ def _git_identity(path: Path) -> dict[str, Any]:
         return {"status": "unavailable"}
 
 
-def prepare(store: Store, path: Path, kind: str = "auto") -> dict[str, Any]:
+def prepare(
+    store: Store, path: Path, kind: str = "auto", *, deadline: float | None = None
+) -> dict[str, Any]:
     if kind not in KINDS:
         raise ValueError("根目录类型非法")
     path = _path(store, path)
-    metadata = {"status": "not_probed"} if kind == "data" else _git_identity(path)
+    metadata = (
+        {"status": "not_probed"}
+        if kind == "data"
+        else (_git_identity(path) if deadline is None else _git_identity(path, deadline))
+    )
     linked = (
         metadata.get("status") == "registered" and metadata["git_dir"] != metadata["git_common_dir"]
     )

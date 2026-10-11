@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 28
+LATEST_VERSION = 29
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -503,6 +503,38 @@ MIGRATIONS[28] = (
     "SELECT RAISE(ABORT,'note receipt is append-only'); END",
     "CREATE TRIGGER note_request_no_delete BEFORE DELETE ON note_requests BEGIN "
     "SELECT RAISE(ABORT,'note receipt is append-only'); END",
+)
+
+MIGRATIONS[29] = (
+    "CREATE TABLE worktree_follow_actions (action_id INTEGER PRIMARY KEY, "
+    "project_id TEXT NOT NULL REFERENCES projects, enabled INTEGER NOT NULL "
+    "CHECK(enabled IN (0,1)), recorded_at TEXT NOT NULL)",
+    "CREATE INDEX worktree_follow_project ON worktree_follow_actions(project_id,action_id)",
+    "CREATE TABLE worktree_discovery_observations (observation_id INTEGER PRIMARY KEY, "
+    "project_id TEXT NOT NULL REFERENCES projects, root_id TEXT NOT NULL REFERENCES source_roots, "
+    "status TEXT NOT NULL, details TEXT NOT NULL, input_sha256 TEXT, recorded_at TEXT NOT NULL)",
+    "CREATE INDEX worktree_discovery_root ON "
+    "worktree_discovery_observations(root_id,observation_id)",
+    "CREATE TABLE worktree_discovery_progress (root_id TEXT PRIMARY KEY REFERENCES source_roots, "
+    "project_id TEXT NOT NULL REFERENCES projects, list_sha256 TEXT NOT NULL, "
+    "after_path TEXT NOT NULL)",
+    "CREATE TABLE worktree_discovery_cursors (cursor_key TEXT PRIMARY KEY NOT NULL, "
+    "project_id TEXT REFERENCES projects, last_root INTEGER NOT NULL "
+    "CHECK(typeof(last_root)='integer' AND last_root>=0), "
+    "CHECK((project_id IS NULL AND cursor_key='global') OR "
+    "(project_id IS NOT NULL AND cursor_key=project_id)))",
+    *(
+        statement
+        for table in ("worktree_follow_actions", "worktree_discovery_observations")
+        for statement in (
+            f"CREATE TRIGGER {table}_no_update BEFORE UPDATE ON {table} BEGIN "
+            "SELECT RAISE(ABORT,'worktree history is append-only'); END",
+            f"CREATE TRIGGER {table}_no_delete BEFORE DELETE ON {table} BEGIN "
+            "SELECT RAISE(ABORT,'worktree history is append-only'); END",
+            f"CREATE TRIGGER {table}_revision AFTER INSERT ON {table} BEGIN "
+            "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
+        )
+    ),
 )
 
 

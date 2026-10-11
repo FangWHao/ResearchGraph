@@ -135,6 +135,14 @@ class Handler(BaseHTTPRequestHandler):
     def _dispatch(self, path: str, values: dict[str, str], store: Store) -> Any:
         if path == "/api/projects":
             return views.projects(store)
+        if path == "/api/worktrees":
+            from rg.store.worktrees import listing
+
+            if set(values) - {"project", "limit", "offset", "expected_revision"}:
+                raise ValueError("工作树查询包含未知参数")
+            limit, offset = views.page(values)
+            expected = int(values["expected_revision"]) if "expected_revision" in values else None
+            return listing(store, values.get("project", ""), limit, offset, expected)
         if path == "/api/view-state":
             from rg.api.view_state import read
 
@@ -294,7 +302,9 @@ class Handler(BaseHTTPRequestHandler):
             raw = self.rfile.read(length)
             self._unread_body = False
             path = urlsplit(self.path).path
-            if path in {"/api/exports", "/api/privacy", "/api/view-state"} or path.startswith(
+            if path in {
+                "/api/exports", "/api/privacy", "/api/view-state", "/api/worktrees/follow"
+            } or path.startswith(
                 "/api/project-clear/"
             ):
                 from rg.clients.record import unique_pairs
@@ -334,7 +344,15 @@ class Handler(BaseHTTPRequestHandler):
                 readonly=path in {"/api/qa/retrieve", "/api/qa/preview", "/api/exports"},
             )
             try:
-                if path == "/api/privacy":
+                if path == "/api/worktrees/follow":
+                    from rg.store.worktrees import configure
+
+                    if set(body) != {"project_id", "follow_enabled", "expected_revision"}:
+                        raise ValueError("工作树跟踪请求字段无效")
+                    result = configure(
+                        store, body["project_id"], body["follow_enabled"], body["expected_revision"]
+                    )
+                elif path == "/api/privacy":
                     from rg.store.privacy import update
 
                     result = update(store, body)

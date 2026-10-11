@@ -19,6 +19,8 @@ pipeline_queue_events project_privacy projects raw_events remote_previews review
 run_manifests run_observations runs segment_coverage session_parent_observations session_results
 sessions slim_events
 source_files source_roots spool_receipts token_cache view_states workspace_snapshots
+worktree_follow_actions worktree_discovery_observations
+worktree_discovery_progress worktree_discovery_cursors
 """.split()
 )
 POINTERS = {

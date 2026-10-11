@@ -6,6 +6,7 @@ import { PipelineQueuePanel } from './PipelineQueuePanel';
 import { ArtifactHealthPanel } from './ArtifactHealthPanel';
 import { ParserHealthPanel } from './ParserHealthPanel';
 import { HookErrorPanel } from './HookErrorPanel';
+import { WorktreePanel } from './WorktreePanel';
 import { healthCount, healthMetrics, percentage } from './health';
 import type { HealthMetric } from './health';
 import type { HealthData } from './types';
@@ -25,7 +26,8 @@ type HealthViewProps = {
 };
 
 export function HealthView(props: HealthViewProps) {
-  return <><HookErrorPanel project={props.project} epoch={props.epoch} onError={props.onError} />
+  return <><WorktreePanel project={props.project} epoch={props.epoch} onError={props.onError} />
+    <HookErrorPanel project={props.project} epoch={props.epoch} onError={props.onError} />
     <ParserHealthPanel project={props.project} epoch={props.epoch}
     onEvidence={props.onEvidence} onError={props.onError} /><HealthContent {...props} /></>;
 }

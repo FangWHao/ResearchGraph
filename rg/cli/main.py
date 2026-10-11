@@ -133,6 +133,10 @@ def parser() -> argparse.ArgumentParser:
     add.add_argument("name")
     add.add_argument("--root", type=Path, required=True)
     add.add_argument("--alias", type=Path, action="append", default=[])
+    add.add_argument(
+        "--follow-worktrees", action="store_true",
+        help="持续登记归属唯一的同仓库工作树并允许其快照",
+    )
     root_add = project_sub.add_parser("root-add", help="给已有项目追加本机根目录，不改变会话归属")
     root_add.add_argument("--project", required=True)
     root_add.add_argument("--path", type=Path, required=True)
@@ -144,6 +148,24 @@ def parser() -> argparse.ArgumentParser:
     roots.add_argument("--limit", type=int, default=100)
     roots.add_argument("--offset", type=int, default=0)
     roots.add_argument("--expected-revision", type=int)
+    worktrees = project_sub.add_parser("worktrees", help="只读查看工作树跟踪策略和发现诊断")
+    worktrees.add_argument("--project", required=True)
+    worktrees.add_argument("--limit", type=int, default=100)
+    worktrees.add_argument("--offset", type=int, default=0)
+    worktrees.add_argument("--expected-revision", type=int)
+    follow = project_sub.add_parser(
+        "follow-worktrees", help="开启或停止自动登记同仓库工作树；已登记历史保留"
+    )
+    follow.add_argument("--project", required=True)
+    mode = follow.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--enable", dest="follow", action="store_const", const=True)
+    mode.add_argument("--disable", dest="follow", action="store_const", const=False)
+    follow.add_argument("--expected-revision", type=int, required=True)
+    discovery = project_sub.add_parser(
+        "discover-worktrees", help="执行一批已开启的工作树发现，不扫描研究文件"
+    )
+    discovery.add_argument("--project", required=True)
+    discovery.add_argument("--limit", type=int, default=4)
     allow = project_sub.add_parser("allow-remote", help="预览后明确允许该项目的远程计数与提取")
     allow.add_argument("project_id")
     allow.add_argument("--ack-preview", required=True, help="预览文件的 sha256")
@@ -564,6 +586,10 @@ def run(args: argparse.Namespace, store: Store) -> object:
 
             project_id = store.project(args.name, [args.root], aliases=args.alias)
             export_registry(store)
+            if args.follow_worktrees:
+                from rg.store.worktrees import configure
+
+                return configure(store, project_id, True, store.revision())
             return {"project_id": project_id}
         if args.project_command == "root-add":
             from rg.snapshot.config import export_registry
@@ -576,6 +602,18 @@ def run(args: argparse.Namespace, store: Store) -> object:
             from rg.store.roots import listing
 
             return listing(store, args.project, args.limit, args.offset, args.expected_revision)
+        if args.project_command == "worktrees":
+            from rg.store.worktrees import listing
+
+            return listing(store, args.project, args.limit, args.offset, args.expected_revision)
+        if args.project_command == "follow-worktrees":
+            from rg.store.worktrees import configure
+
+            return configure(store, args.project, args.follow, args.expected_revision)
+        if args.project_command == "discover-worktrees":
+            from rg.store.worktrees import discover
+
+            return discover(store, args.project, args.limit)
         from rg.store.privacy import gate, read, update
 
         if args.project_command == "privacy":
@@ -977,7 +1015,7 @@ def main() -> None:
                 "l1-graph",
             }
             or (args.command == "ask" and args.retrieve_only)
-            or (args.command == "project" and args.project_command == "roots")
+            or (args.command == "project" and args.project_command in {"roots", "worktrees"})
             or (
                 args.command == "project"
                 and args.project_command == "privacy"

@@ -17,6 +17,14 @@ def cycle(
 ) -> dict[str, int]:
     with exclusive(store.root / "locks" / "scan.lock", "扫描守护进程正在运行"):
         counts: Counter[str] = Counter()
+        from rg.store.worktrees import discover
+
+        try:
+            counts.update(discover(store))
+        except TaskBusy:
+            counts["worktrees_busy"] += 1
+        except (OSError, ValueError, RuntimeError):
+            counts["worktrees_errors"] += 1
         scanned_files: set[int] = set()
         values = sources(store)
         for path in files(values):
