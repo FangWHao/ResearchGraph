@@ -24,6 +24,9 @@ class PhysicalFiles(WorkspaceFiles):
     def __enter__(self) -> PhysicalFiles:
         if not self.root.is_absolute():
             raise ValueError("物理文件根目录必须为绝对路径")
+        if os.name == "nt":
+            super().__enter__()
+            return self
         self.ancestors: list[int] = []
         self.ancestry: list[tuple[int, str, int]] = []
         options = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
@@ -48,6 +51,9 @@ class PhysicalFiles(WorkspaceFiles):
         value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
+        if self.native is not None:
+            super().__exit__(kind, value, traceback)
+            return
         try:
             super().__exit__(kind, value, traceback)
         finally:
@@ -56,6 +62,8 @@ class PhysicalFiles(WorkspaceFiles):
 
     def verify(self) -> None:
         super().verify()
+        if self.native is not None:
+            return
         for parent, name, descriptor in self.ancestry:
             observed = os.fstat(descriptor)
             current = os.stat(name, dir_fd=parent, follow_symlinks=False)
@@ -77,14 +85,15 @@ def relative_path(value: Any) -> str:
 
 
 def signature(value: os.stat_result) -> list[int]:
-    return [
+    result = [
         value.st_dev,
         value.st_ino,
         value.st_mode,
         value.st_size,
         value.st_mtime_ns,
-        value.st_ctime_ns,
     ]
+    # Windows 的路径 stat 和 fd fstat 对旧 ctime 的含义不同；原生 ChangeTime 另加。
+    return result if os.name == "nt" else result + [value.st_ctime_ns]
 
 
 def full_digest(stream: BinaryIO) -> tuple[str, int]:
@@ -102,35 +111,44 @@ def current_file(store: Store, root: Path, relative: str, root_id: str) -> dict[
         before = files.stat(relative)
         if not stat.S_ISREG(before.st_mode):
             raise ValueError("后台完整摘要仅接受登记目录内的普通文件")
-        stamp = signature(before)
-        key = digest(dumps([root_id, relative, stamp]).encode())
-        cached = store.db.execute(
-            "SELECT o.*,v.digest,v.size,v.content_sha256,v.observed_at FROM file_hash_cache f "
-            "JOIN artifact_observations o USING(observation_id) "
-            "JOIN artifact_versions v USING(version_id) WHERE f.cache_key=?",
-            (key,),
-        ).fetchone()
-        started = now()
         descriptor = files.open(relative)
         with os.fdopen(descriptor, "rb") as stream:
-            if stamp != signature(os.fstat(stream.fileno())):
+
+            def stamp() -> list[int]:
+                value = signature(os.fstat(stream.fileno()))
+                return (
+                    value + [files.native.change_time(stream.fileno())]
+                    if files.native is not None
+                    else value
+                )
+
+            if signature(before) != signature(os.fstat(stream.fileno())):
                 raise ChangedDuringRead("文件在摘要读取前变化")
+            observed = stamp()
+            key = digest(dumps([root_id, relative, observed]).encode())
+            cached = store.db.execute(
+                "SELECT o.*,v.digest,v.size,v.content_sha256,v.observed_at FROM file_hash_cache f "
+                "JOIN artifact_observations o USING(observation_id) "
+                "JOIN artifact_versions v USING(version_id) WHERE f.cache_key=?",
+                (key,),
+            ).fetchone()
+            started = now()
             if cached:
                 sha, size = cached["digest"], cached["size"]
             else:
                 sha, size = full_digest(stream)
-            if stamp != signature(os.fstat(stream.fileno())):
+            if observed != stamp():
                 raise ChangedDuringRead("文件在摘要读取期间变化")
-        try:
-            if stamp != signature(files.stat(relative)) or size != before.st_size:
-                raise ChangedDuringRead("文件路径或长度在摘要读取期间变化")
-            files.verify()
-        except (OSError, ValueError) as error:
-            raise ChangedDuringRead("文件路径或父目录在摘要读取期间变化") from error
+            try:
+                if signature(before) != signature(files.stat(relative)) or size != before.st_size:
+                    raise ChangedDuringRead("文件路径或长度在摘要读取期间变化")
+                files.verify()
+            except (OSError, ValueError) as error:
+                raise ChangedDuringRead("文件路径或父目录在摘要读取期间变化") from error
         return {
             "sha256": sha,
             "size": size,
-            "signature": stamp,
+            "signature": observed,
             "cache_key": key,
             "mode": "100755" if before.st_mode & 0o111 else "100644",
             "hash_started_at": cached["hash_started_at"] if cached else started,

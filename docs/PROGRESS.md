@@ -852,3 +852,15 @@
 - 最终产品冻结后的完整后端为9 failed／1327 passed／607.29s，退出1；golden打印8 failed／1281 passed／591.53s，外层退出143且原因未确认，不记通过。旧规则确认测试仍预期两个修订增量，现验证候选／规则审核／来源诊断三个增量，并核对重复确认幂等；没有发生时间仍保持time_unknown，跨范围确认不改变原范围。首轮测试对齐仍漏第二处旧增量断言，6 failed／31 passed／9.34s，失败日志保留；最终命令uv run pytest tests/test_review_scope.py tests/golden/test_claim_source_qualification.py tests/golden/test_rule_confirmation.py -q实际63 passed／14.20s、退出0。仅修正旧测试，139产品资源保持冻结；最终提交的完整测试副本由新HEAD双CI验收，不将定向结果冒充本地全量通过。
 - 前端实际182单测／20files／1.00s、build245modules／1.11s、tsc均退出0；来源四场景4 passed／22.8s。完整浏览器实际155 passed／3 failed／8未运行／4.4m、退出1：旧图在ELK渲染前拍空基线，两组原时间／版本种子服务在并行后端全量时未于原5秒内监听。仅旧图测试等待现有canvasVisible后保存基线，409及全部图断言保留；原失败与未运行11场景在后端结束后串行补验11 passed／33.2s、退出0，不改超时或重试。首轮／次轮来源场景2／2及3／1失败日志均保留。
 - 父已原尺寸查看五张稳定桌面／390px图；八文件独立恢复逐字相同，320项冻结清单均通过，SHA c20cbb316bedb6d041187922fef3b09c789311e384c8dc1b2b55f3b83d1fce8f，恢复包f6eadb9f989ddf1dfed799685149def9cb36c821317b97ee54a77b3a8c7098aa。公开合成库查询前后摘要5141f478b7f61cb48c133e1ad6e7b31d7565ea0c9cf3c842f0f944766e4c2aec一致；服务退出0，相关端口可绑定。源码停止修改，接续33文件精确提交、486跟踪文件完整独立恢复及全历史凭据／私有路径核对，维护既有未合并草稿、核对精确正文和新HEAD两类CI。
+
+
+## 2026-10-11 · 原生 Windows 快照、摘要与导出
+
+- 任务：按进度末40行、§2／7.5–7.7／8.1–8.2／10／11及相关决定自主推进。重核4cd3606的远端、精确未合并草稿、双CI、486文件独立恢复及139运行资源；先另存验证bundle，SHA16e48a9f94a162f850f006c02d2a783f5268ca77357faf9d88c44ce74d4bb660。前批推送／PR两类CI各30步骤及14类检查通过：完整后端1336、golden1289、前端182、浏览器166、构建245模块、原生Windows41；本地旧失败记录保留。
+- 改动文件：新增store/windows_files、golden/test_native_files及中文验收；更新snapshot/files与capture、artifacts/files、export/package、Windows CI、README、需求状态、决定、草稿与进度。无数据库迁移，无前端编辑。
+- 实现：实际目录句柄的卷和128位文件身份作基线，子路径相对父句柄打开；拒绝正文重解析点和额外数据流，读后核对目录。Windows缓存用真实ChangeTime；普通NTFS快照保留原字节及独立index，大文件只记元数据。Windows ZIP独占发布及失败按句柄清理；POSIX导出保留全部祖先，变更时作废，只清理本次inode，保留他人替换文件。
+- 复现：旧Windows安装9 failed／1.46s；原生接口迭代和ctime差异原日志保留，最后基线竞态1 failed／19 passed／6.22s。POSIX父目录改名原实现2 failed／12 passed／4.81s。真实junction和已打开空目录原地变重解析点有实际系统调用；Windows拒绝并发改名时按实际拒绝核对，不声称目录已成功变化。未请求管理员权限，原生末级符号链接创建WinError1314，分支未物理验证。
+- 当前验收实际退出0：Windows3.12.3仓库外-I安装61 passed in19.25s、默认CP936／utf8_mode0；ruff All checks passed!、pyright0/0/0、CLI帮助和uv sync locked均0。145包成员／140产品资源与源码及安装逐字一致，实际凭据／私有文件0，wheel SHA450dc01553139a14799fc44a6706e9530456853dd239c7b655099c184a445b2c。资源已冻结；完整后端执行中，不预记通过。
+- 下一步：核对完整后端终态、精确13文件提交、489文件独立全历史恢复与凭据／私有路径扫描；维护既有草稿精确正文，新HEAD推送／PR双CI覆盖全量、golden及前端。前端沿320项冻结及八文件恢复，不重复委派或本地浏览器。全部Windows文件系统、断电／规模、真实Atlas正式参考／质量／采集／两周使用及整体M0–M4继续落实，不改个人钩子或删除真实资料。
+
+- 最终完整后端命令uv run pytest -q实际1353 passed in434.32s(0:07:14)，退出0。140产品资源未变，最终13文件范围含3新增，489跟踪文件、实际凭据／私有文件0、进度及决定前缀追加约束通过。完整golden包含在本地全量，单独golden及前端沿最终HEAD双CI命令核对，不重复本地前端或委派；八文件恢复、合成库前后摘要及320项冻结均通过。接续Codex身份提交、独立全历史bundle恢复和精确草稿维护，当前整体目标保持未完成。

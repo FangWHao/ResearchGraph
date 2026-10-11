@@ -34,18 +34,29 @@ def _content(
     files: WorkspaceFiles, relative: str
 ) -> tuple[bytes | None, str, dict[str, Any], tuple[int, ...]]:
     before = files.stat(relative)
+    signature = files.signature(relative, before)
     metadata = {"path": relative, "size": before.st_size, "mtime_ns": before.st_mtime_ns}
     if stat.S_ISLNK(before.st_mode):
         raw, mode = files.link(relative), "120000"
     elif stat.S_ISREG(before.st_mode):
         if before.st_size > MAX_FILE_BYTES:
-            return None, "", {**metadata, "reason": "large_file"}, _signature(before)
+            return None, "", {**metadata, "reason": "large_file"}, signature
         descriptor = files.open(relative)
         with os.fdopen(descriptor, "rb") as stream:
             if _signature(before) != _signature(os.fstat(stream.fileno())):
                 raise ValueError("文件在快照读取前变化")
+            if (
+                files.native is not None
+                and files.native.change_time(stream.fileno()) != signature[-1]
+            ):
+                raise ValueError("文件在快照读取前变化")
             raw = stream.read(MAX_FILE_BYTES + 1)
             if _signature(before) != _signature(os.fstat(stream.fileno())):
+                raise ValueError("文件在快照读取期间变化")
+            if (
+                files.native is not None
+                and files.native.change_time(stream.fileno()) != signature[-1]
+            ):
                 raise ValueError("文件在快照读取期间变化")
         if len(raw) != before.st_size or len(raw) > MAX_FILE_BYTES:
             raise ValueError("快照文件长度变化")
@@ -55,9 +66,9 @@ def _content(
             None,
             "",
             {**metadata, "reason": "non_regular_or_nested_repository"},
-            _signature(before),
+            signature,
         )
-    return raw, mode, metadata, _signature(before)
+    return raw, mode, metadata, signature
 
 
 def _tree(
@@ -108,7 +119,7 @@ def _populate_tree(
         raise ValueError("工作区文件列表在快照期间变化")
     for relative, signature in signatures:
         git.remaining()
-        if _signature(files.stat(relative)) != signature:
+        if files.signature(relative) != signature:
             raise ValueError("工作区文件在快照期间变化")
     files.verify()
     index = b"".join(

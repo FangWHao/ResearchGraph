@@ -93,52 +93,88 @@ def write(store: Store, body: dict[str, Any], output: Path) -> dict[str, Any]:
     output = Path(os.path.abspath(output))
     if output.is_relative_to(store.root.resolve()) or output.is_relative_to(store.root.absolute()):
         raise ValueError("导出文件不能位于证据库目录内")
-    # 逐级 nofollow 打开已有父目录，避免祖先链接和检查后的替换。
-    directory = os.open(output.anchor, os.O_RDONLY | os.O_DIRECTORY)
-    temp = ".rg-export-" + secrets.token_hex(16)
-    created = False
-    try:
-        for part in output.parent.parts[1:]:
-            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
-            os.close(directory)
-            directory = child
+    if os.name == "nt":
+        from rg.store.windows_files import NativeFiles
+
+        directory = NativeFiles(output.parent)
+        directory.enter()
         try:
-            os.stat(output.name, dir_fd=directory, follow_symlinks=False)
-        except FileNotFoundError:
-            pass
-        else:
-            raise ValueError("导出目标已存在，请使用新的文件名")
-        manifest, data = archive(store, body)
-        fd = os.open(
-            temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory
-        )
-        created = True
-        with os.fdopen(fd, "wb") as stream:
-            mode = stat.S_IMODE(os.fstat(stream.fileno()).st_mode)
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
-        # link 是独占发布；并发创建的目标不能被覆盖。
-        os.link(
-            temp, output.name, src_dir_fd=directory, dst_dir_fd=directory, follow_symlinks=False
-        )
-        os.unlink(temp, dir_fd=directory)
+            try:
+                directory.stat(output.name)
+            except FileNotFoundError:
+                pass
+            else:
+                raise ValueError("导出目标已存在，请使用新的文件名")
+            manifest, data = archive(store, body)
+            mode = stat.S_IMODE(
+                directory.publish(".rg-export-" + secrets.token_hex(16), output.name, data)
+            )
+            return _written(output, manifest, data, mode)
+        finally:
+            directory.close()
+    return _write_posix(store, body, output)
+
+
+def _write_posix(store: Store, body: dict[str, Any], output: Path) -> dict[str, Any]:
+    from rg.artifacts.files import PhysicalFiles
+
+    # 保留全部祖先句柄，发布前后核对请求路径；只清理本次创建的同一对象。
+    with PhysicalFiles(output.parent) as guard:
+        directory = guard.directories[()]
+        temp = ".rg-export-" + secrets.token_hex(16)
         created = False
-        os.fsync(directory)
-        return {
-            "output": str(output),
-            "sha256": digest(data),
-            "bytes": len(data),
-            "permissions": {
-                "requested_mode": "0o600",
-                "observed_mode": oct(mode),
-                "posix_private": not bool(mode & 0o077),
-                "notice": "权限由目标文件系统决定；Windows 挂载目录需按实际 ACL 核对",
-            },
-            "conditions": manifest["conditions"],
-            "counts": manifest["counts"],
-        }
-    finally:
-        if created:
+        try:
+            try:
+                os.stat(output.name, dir_fd=directory, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise ValueError("导出目标已存在，请使用新的文件名")
+            manifest, data = archive(store, body)
+            fd = os.open(
+                temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory
+            )
+            created = True
+            with os.fdopen(fd, "wb") as stream:
+                owned = os.fstat(stream.fileno())
+                mode = stat.S_IMODE(owned.st_mode)
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+            guard.verify()
+            os.link(
+                temp, output.name, src_dir_fd=directory, dst_dir_fd=directory, follow_symlinks=False
+            )
+            try:
+                guard.verify()
+            except (OSError, ValueError):
+                current = os.stat(output.name, dir_fd=directory, follow_symlinks=False)
+                if (current.st_dev, current.st_ino) == (owned.st_dev, owned.st_ino):
+                    os.unlink(output.name, dir_fd=directory)
+                    os.fsync(directory)
+                raise
             os.unlink(temp, dir_fd=directory)
-        os.close(directory)
+            created = False
+            os.fsync(directory)
+            return _written(output, manifest, data, mode)
+        finally:
+            if created:
+                os.unlink(temp, dir_fd=directory)
+
+
+def _written(output: Path, manifest: dict[str, Any], data: bytes, mode: int) -> dict[str, Any]:
+    return {
+        "output": str(output),
+        "sha256": digest(data),
+        "bytes": len(data),
+        "permissions": {
+            "requested_mode": None if os.name == "nt" else "0o600",
+            "observed_mode": oct(mode),
+            "posix_private": not bool(mode & 0o077),
+            "notice": "Windows 原生发布继承目录 ACL，不设置 POSIX 权限"
+            if os.name == "nt"
+            else "权限由目标文件系统决定；Windows 挂载目录需按实际 ACL 核对",
+        },
+        "conditions": manifest["conditions"],
+        "counts": manifest["counts"],
+    }

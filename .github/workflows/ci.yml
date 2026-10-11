@@ -28,11 +28,20 @@ jobs:
           enable-cache: true
       - name: 按锁文件安装依赖
         run: uv sync --locked
-      - name: 使用系统默认编码验收存储与清除
+      - name: 使用系统默认编码验收存储、快照与导出
         env:
           PYTHONUTF8: '0'
           PYTHONIOENCODING: utf-8
-        run: uv run --no-sync pytest tests/golden/test_storage_portability.py tests/golden/test_store_lease.py tests/golden/test_project_clear.py -q
+        run: >-
+          uv run --no-sync pytest
+          tests/golden/test_storage_portability.py
+          tests/golden/test_store_lease.py
+          tests/golden/test_project_clear.py
+          tests/golden/test_native_files.py
+          tests/golden/test_artifacts.py::test_complete_large_file_hash_is_current_only_and_never_copied
+          tests/golden/test_artifacts.py::test_cache_reuses_read_window_and_rehashes_same_size_mtime_with_changed_ctime
+          tests/golden/test_artifacts.py::test_hash_read_does_not_hold_sqlite_write_transaction
+          -q
   backend:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
