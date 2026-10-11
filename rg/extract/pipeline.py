@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from rg.extract.linker import LINK_SCHEMA, link
+from rg.extract.linker import LINK_SCHEMA, link, source_policy
 from rg.extract.overview import OVERVIEW_SCHEMA, ChangedInput, overview, records
 from rg.extract.queue import Queue
 from rg.extract.worker import Worker
@@ -30,28 +30,25 @@ class Stages:
         self.configs = {}
         for stage, schema in (("link", LINK_SCHEMA), ("overview", OVERVIEW_SCHEMA)):
             prompt = Path(__file__).with_name("prompts").joinpath(stage + ".txt").read_text()
-            self.configs[stage] = digest(
-                dumps(
-                    [
-                        stage,
-                        worker.provider.provider,
-                        worker.provider.model,
-                        worker.provider.request(
-                            prompt,
-                            "",
-                            schema,
-                            min(worker.output_budget, 1000)
-                            if stage == "link"
-                            else worker.output_budget,
-                        ),
-                        worker.input_budget,
-                        worker.output_budget,
-                        worker.daily_budget,
-                        scope,
-                        "pipeline-v1",
-                    ]
-                ).encode()
-            )
+            configuration = [
+                stage,
+                worker.provider.provider,
+                worker.provider.model,
+                worker.provider.request(
+                    prompt,
+                    "",
+                    schema,
+                    min(worker.output_budget, 1000) if stage == "link" else worker.output_budget,
+                ),
+                worker.input_budget,
+                worker.output_budget,
+                worker.daily_budget,
+                scope,
+                "pipeline-v1",
+            ]
+            if stage == "link":
+                configuration.append(source_policy())
+            self.configs[stage] = digest(dumps(configuration).encode())
 
     def _journal(self, queue: int, kind: str, owner: str | None, details: dict) -> None:
         self.store.db.execute(

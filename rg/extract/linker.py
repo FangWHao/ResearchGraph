@@ -1,24 +1,38 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections.abc import Iterator
 from dataclasses import dataclass
 from itertools import islice
 from pathlib import Path
 from typing import Any
 
+import zstandard
+
 from rg.extract.locator import _bounded_prefix
 from rg.extract.monitor import set_status
+from rg.extract.privacy import ProjectCounter
 from rg.extract.redact import redact
 from rg.extract.schemas import STRING, obj
 from rg.extract.segmenter import Segment
 from rg.extract.validate import InvalidClaim, persist
 from rg.extract.worker import Worker, _permission
 from rg.extract.working_set import _label_matches
+from rg.ingest.exclusion import source_exclusion
+from rg.ingest.scanner import PARSER_VERSION
+from rg.slim.slimmer import SLIM_VERSION
 from rg.slim.tokens import DailyBudgetExceeded
 from rg.store.database import Store, dumps, now
 from rg.store.locking import exclusive
 from rg.store.objects import digest
+
+LINK_VERSION = "2"
+
+
+def source_policy() -> dict[str, str]:
+    return {"link": LINK_VERSION, "parser": PARSER_VERSION, "slim": SLIM_VERSION}
+
 
 LINK_SCHEMA = obj(
     {
@@ -47,6 +61,43 @@ class Pair:
     cards: list[dict[str, Any]]
     basis: list[str]
     scope: dict[str, str]
+
+
+def _source(
+    store: Store, project: str, span: sqlite3.Row, counter: ProjectCounter
+) -> dict[str, Any]:
+    row = store.db.execute(
+        "SELECT r.*,f.parser,s.project_id FROM raw_events r JOIN source_files f "
+        "USING(file_instance_id) JOIN sessions s USING(session_pk) WHERE r.event_id=?",
+        (span["event_id"],),
+    ).fetchone()
+    if (
+        row is None
+        or row["project_id"] != project
+        or row["exclude_reason"]
+        or row["alias_of"] is not None
+        or store.db.execute(
+            "SELECT 1 FROM dedupe_links WHERE alias_id=?", (span["event_id"],)
+        ).fetchone()
+    ):
+        raise InvalidClaim("链接原文不存在、属于其他项目或已排除")
+    try:
+        raw = store.raw(span["event_id"])
+    except (OSError, zstandard.ZstdError) as error:
+        raise InvalidClaim("链接保存原件不可用") from error
+    if source_exclusion(store, row, raw=raw):
+        raise InvalidClaim("链接原文当前输入资格不通过")
+    a, b = span["byte_start"], span["byte_end"]
+    redact(raw, counter.policy.patterns).original_span(a, b)
+    if digest(raw[a:b]) != span["quote_sha256"]:
+        raise InvalidClaim("既有引用摘要不一致")
+    a, b = _bounded_prefix(raw, a, b, counter)
+    return {
+        "event_id": span["event_id"],
+        "byte_start": a,
+        "byte_end": b,
+        "quote": raw[a:b].decode(),
+    }
 
 
 def pairs(
@@ -169,7 +220,13 @@ def _schedule(
     store = worker.store
     prompt = Path(__file__).with_name("prompts").joinpath("link.txt").read_text()
     header = worker.provider.request(prompt, "", LINK_SCHEMA, min(worker.output_budget, 1000))
-    processing = [worker.provider.provider, worker.provider.model, header, 3000, "link-scheduler1"]
+    processing = [
+        worker.provider.provider,
+        worker.provider.model,
+        header,
+        3000,
+        source_policy(),
+    ]
     counter = worker.project_counter(project)
     if counter.policy.rule_id:
         processing.append(counter.policy.identity)
@@ -245,25 +302,15 @@ def _schedule(
             ).fetchone()
             if not span:
                 raise InvalidClaim("链接对象缺少原文引用")
-            raw = store.raw(span["event_id"])
-            a, b = span["byte_start"], span["byte_end"]
-            redact(raw, counter.policy.patterns).original_span(a, b)
-            if digest(raw[a:b]) != span["quote_sha256"]:
-                raise InvalidClaim("既有引用摘要不一致")
-            a, b = _bounded_prefix(raw, a, b, counter)
-            evidence = {
-                "event_id": span["event_id"],
-                "byte_start": a,
-                "byte_end": b,
-                "quote": raw[a:b].decode(),
-            }
+            evidence = _source(store, project, span, counter)
+            a, b = evidence["byte_start"], evidence["byte_end"]
             content = {
                 "pair_id": pair.pair_id,
                 "cards": pair.cards,
                 "retrieval_basis": pair.basis,
                 "source_window": evidence,
             }
-            item = Segment("link:" + pair.pair_id, [{"event_id": span["event_id"]}])
+            item = Segment("link:" + key, [{"event_id": span["event_id"]}])
             ids = {card["id"] for card in pair.cards}
             run, output = worker.invoke(
                 "link",
