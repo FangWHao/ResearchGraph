@@ -206,7 +206,13 @@ def metadata_status(db: sqlite3.Connection) -> tuple[dict[int, bool], bool]:
 
 def resolve(db: sqlite3.Connection) -> tuple[dict[int, dict[str, Any]], dict[int, sqlite3.Row]]:
     """在调用方的快照内解读全部声明；不依赖可能尚未恢复的关系投影。"""
-    sessions = {r["session_pk"]: r for r in db.execute("SELECT * FROM sessions WHERE tool='codex'")}
+    physical = (
+        " AND fragment_id=''" if db.execute("PRAGMA user_version").fetchone()[0] >= 31 else ""
+    )
+    sessions = {
+        r["session_pk"]: r
+        for r in db.execute("SELECT * FROM sessions WHERE tool='codex'" + physical)
+    }
     modern = db.execute("PRAGMA user_version").fetchone()[0] >= 23
     complete, catalog_complete = metadata_status(db) if modern else ({}, None)
     facts: dict[int, list[sqlite3.Row]] = {pk: [] for pk in sessions}

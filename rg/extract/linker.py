@@ -74,7 +74,7 @@ def _source(
     store: Store, project: str, span: sqlite3.Row, counter: ProjectCounter
 ) -> dict[str, Any]:
     row = store.db.execute(
-        "SELECT r.*,f.parser,s.project_id FROM raw_events r JOIN source_files f "
+        "SELECT r.*,f.parser,s.project_id FROM effective_raw_events r JOIN source_files f "
         "USING(file_instance_id) JOIN sessions s USING(session_pk) WHERE r.event_id=?",
         (span["event_id"],),
     ).fetchone()
@@ -84,7 +84,7 @@ def _source(
         or row["exclude_reason"]
         or row["alias_of"] is not None
         or store.db.execute(
-            "SELECT 1 FROM dedupe_links WHERE alias_id=?", (span["event_id"],)
+            "SELECT 1 FROM effective_dedupe_links WHERE alias_id=?", (span["event_id"],)
         ).fetchone()
     ):
         raise InvalidClaim("链接原文不存在、属于其他项目或已排除")
@@ -160,7 +160,7 @@ def iter_pairs(store: Store, project: str, scope: dict[str, str] | None = None) 
             r[0]
             for r in store.db.execute(
                 "SELECT r.session_pk FROM claim_evidence ce JOIN evidence_spans es USING(span_id) "
-                "JOIN raw_events r USING(event_id) WHERE ce.claim_id=?",
+                "JOIN effective_raw_events r USING(event_id) WHERE ce.claim_id=?",
                 (row["claim_id"],),
             )
         }

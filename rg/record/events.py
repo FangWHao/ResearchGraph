@@ -14,11 +14,14 @@ RECEIPTS = {
     "decide": "decision_requests",
     "resolve": "decision_resolutions",
     "manifest": "run_manifests",
+    "fragment": "fragment_assignments",
 }
 
 
 def previous(store: Store, request_id: str, kind: str, intent_sha: str) -> bool:
     for candidate, table in RECEIPTS.items():
+        if candidate == "fragment" and store.db.execute("PRAGMA user_version").fetchone()[0] < 31:
+            continue
         row = store.db.execute(
             f"SELECT intent_sha256 FROM {table} WHERE request_id=?", (request_id,)
         ).fetchone()

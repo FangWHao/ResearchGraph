@@ -33,7 +33,7 @@ def sessions(
         raise ValueError("项目不存在")
     rows = store.db.execute(
         "SELECT s.session_pk,s.project_id,max(r.event_id) AS max_event_id,p.remote_model_allowed "
-        "FROM sessions s JOIN raw_events r USING(session_pk) LEFT JOIN projects "
+        "FROM sessions s JOIN effective_raw_events r USING(session_pk) LEFT JOIN projects "
         "p USING(project_id) "
         "WHERE s.tool IN ('claude','codex') AND (? IS NULL OR s.project_id=?) "
         "GROUP BY s.session_pk ORDER BY s.session_pk",
@@ -106,7 +106,8 @@ class Queue:
     def _input(self, project: str, session: int, maximum: int) -> str:
         snapshot = self.store.db.execute(
             "SELECT r.event_id,r.object_sha256,r.exclude_reason,r.seq,r.kind,r.call_id,"
-            "d.alias_id FROM raw_events r LEFT JOIN dedupe_links d ON d.alias_id=r.event_id "
+            "d.alias_id FROM effective_raw_events r LEFT JOIN "
+            "effective_dedupe_links d ON d.alias_id=r.event_id "
             "WHERE r.session_pk=? AND r.event_id<=? ORDER BY r.seq",
             (session, maximum),
         ).fetchall()

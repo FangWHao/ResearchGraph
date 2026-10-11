@@ -77,9 +77,13 @@ def _consume_record(store: Store, payload: dict[str, Any], tool: str, sha: str) 
         git.run("rev-list", "--objects", "--missing=error", commit)
         git.run("update-ref", f"refs/rg/{key}", commit)
     native = payload.get("native_session_id")
+    physical = (
+        " AND fragment_id=''" if store.db.execute("PRAGMA user_version").fetchone()[0] >= 31 else ""
+    )
     sessions = (
         store.db.execute(
-            "SELECT session_pk FROM sessions WHERE tool=? AND native_session_id=? AND project_id=?",
+            "SELECT session_pk FROM sessions WHERE tool=? AND native_session_id=? AND project_id=?"
+            + physical,
             (tool, native, project),
         ).fetchall()
         if isinstance(native, str)

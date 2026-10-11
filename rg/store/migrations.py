@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 30
+from rg.store.fragment_schema import MIGRATION as FRAGMENT_MIGRATION
+
+LATEST_VERSION = 31
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -557,6 +559,9 @@ MIGRATIONS[30] = (
 )
 
 
+MIGRATIONS[31] = FRAGMENT_MIGRATION
+
+
 def migrate(db: sqlite3.Connection) -> None:
     """重建实体表遵循 SQLite 的事务复制流程，原外键开关在失败时也恢复。"""
     version = db.execute("PRAGMA user_version").fetchone()[0]
@@ -585,14 +590,16 @@ def _upgrade(db: sqlite3.Connection) -> None:
                 db.commit()
                 return
             associated = []
-            if version == 27:
+            if version in {27, 30}:
+                table = "entities" if version == 27 else "sessions"
                 associated = db.execute(
-                    "SELECT sql FROM sqlite_schema WHERE tbl_name='entities' "
-                    "AND type IN ('index','trigger') AND sql IS NOT NULL"
+                    "SELECT sql FROM sqlite_schema WHERE tbl_name=? "
+                    "AND type IN ('index','trigger') AND sql IS NOT NULL",
+                    (table,),
                 ).fetchall()
             for statement in MIGRATIONS[version + 1]:
                 db.execute(statement)
-            if version == 27:
+            if version in {27, 30}:
                 for row in associated:
                     db.execute(row[0])
                 if db.execute("PRAGMA foreign_key_check").fetchone() is not None:

@@ -67,7 +67,7 @@ def _source(reader: Reader, selector: dict[str, Any], size: int) -> dict[str, An
     if source["exclude_reason"] or source["input_exclude_reason"] or source["alias_of"] is not None:
         raise ValueError("排除或镜像事件不能作为问答证据")
     if reader.store.db.execute(
-        "SELECT 1 FROM dedupe_links WHERE alias_id=?", (source["event_id"],)
+        "SELECT 1 FROM effective_dedupe_links WHERE alias_id=?", (source["event_id"],)
     ).fetchone():
         raise ValueError("重复事件不能作为问答证据")
     return {
@@ -189,9 +189,10 @@ def retrieve(
             clauses = " OR ".join("instr(lower(es.text),?)>0" for _ in words)
             matches = store.db.execute(
                 "SELECT r.event_id,r.occurred_at,r.recorded_at,es.text FROM event_search es "
-                "JOIN raw_events r USING(event_id) JOIN sessions s USING(session_pk) "
+                "JOIN effective_raw_events r USING(event_id) JOIN sessions s USING(session_pk) "
                 "WHERE s.project_id=? AND r.exclude_reason IS NULL AND r.alias_of IS NULL "
-                "AND NOT EXISTS (SELECT 1 FROM dedupe_links d WHERE d.alias_id=r.event_id) "
+                "AND NOT EXISTS (SELECT 1 FROM effective_dedupe_links d WHERE "
+                "d.alias_id=r.event_id) "
                 f"AND ({clauses}) ORDER BY r.event_id LIMIT ?",
                 (project, *words, MAX_MATCHES + 1),
             ).fetchall()

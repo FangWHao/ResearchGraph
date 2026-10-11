@@ -42,9 +42,14 @@ def projects(store: Store) -> dict[str, Any]:
     result = []
     for row in store.db.execute("SELECT * FROM projects ORDER BY name, project_id"):
         project = dict(row)
-        project["sessions"] = store.db.execute(
-            "SELECT count(*) FROM sessions WHERE project_id=?", (row["project_id"],)
-        ).fetchone()[0]
+        count = "SELECT count(*) FROM sessions WHERE project_id=?"
+        if store.db.execute("PRAGMA user_version").fetchone()[0] >= 31:
+            count = (
+                "SELECT count(DISTINCT coalesce(s.physical_session_pk,s.session_pk)) "
+                "FROM sessions s WHERE s.project_id=? AND (s.physical_session_pk IS NULL "
+                "OR EXISTS (SELECT 1 FROM effective_raw_events e WHERE e.session_pk=s.session_pk))"
+            )
+        project["sessions"] = store.db.execute(count, (row["project_id"],)).fetchone()[0]
         project["claims"] = store.db.execute(
             "SELECT count(*) FROM claims c JOIN entities e USING(entity_id) WHERE e.project_id=?",
             (row["project_id"],),
@@ -58,7 +63,7 @@ def _spans(store: Store, claim_id: int) -> list[dict[str, Any]]:
         "SELECT e.*, c.role, r.session_pk, r.seq, r.occurred_at, r.recorded_at, "
         "f.path, r.byte_start AS source_byte_start, r.byte_end AS source_byte_end "
         "FROM claim_evidence c JOIN evidence_spans e USING(span_id) "
-        "JOIN raw_events r USING(event_id) JOIN source_files f USING(file_instance_id) "
+        "JOIN effective_raw_events r USING(event_id) JOIN source_files f USING(file_instance_id) "
         "WHERE c.claim_id=? ORDER BY r.seq,e.byte_start,e.span_id",
         (claim_id,),
     )
@@ -91,7 +96,7 @@ def _claim(store: Store, row: sqlite3.Row, comparisons: bool = False) -> dict[st
     result["evidence"] = _spans(store, row["claim_id"])
     coverage = store.db.execute(
         "SELECT DISTINCT c.segment_id,r.session_pk FROM claim_evidence ce "
-        "JOIN evidence_spans s USING(span_id) JOIN raw_events r USING(event_id) "
+        "JOIN evidence_spans s USING(span_id) JOIN effective_raw_events r USING(event_id) "
         "LEFT JOIN coverage c ON c.event_id=r.event_id AND c.stage='pass2' "
         "WHERE ce.claim_id=? ORDER BY r.session_pk,c.segment_id",
         (row["claim_id"],),
@@ -164,7 +169,7 @@ def claims(store: Store, values: dict[str, str]) -> dict[str, Any]:
         "CASE WHEN a.action='confirm' THEN 'confirmed' "
         "WHEN a.action IS NOT NULL THEN 'dismissed' ELSE c.claim_state END=?) "
         "AND (? IS NULL OR EXISTS (SELECT 1 FROM claim_evidence ce "
-        "JOIN evidence_spans es USING(span_id) JOIN raw_events re USING(event_id) "
+        "JOIN evidence_spans es USING(span_id) JOIN effective_raw_events re USING(event_id) "
         "LEFT JOIN coverage co ON co.event_id=re.event_id AND co.stage='pass2' "
         "WHERE ce.claim_id=c.claim_id AND re.session_pk=? "
         "AND (? IS NULL OR COALESCE(co.segment_id,'unknown')=?)))"
@@ -204,7 +209,8 @@ def _event(
     call_visible: Callable[[sqlite3.Row], bool] | None = None,
 ) -> dict[str, Any]:
     row = store.db.execute(
-        "SELECT r.*,f.path,f.parser FROM raw_events r JOIN source_files f USING(file_instance_id) "
+        "SELECT r.*,f.path,f.parser FROM effective_raw_events r JOIN "
+        "source_files f USING(file_instance_id) "
         "WHERE r.event_id=?",
         (event_id,),
     ).fetchone()
@@ -261,11 +267,13 @@ def evidence(store: Store, event_id: int, values: dict[str, str]) -> dict[str, A
     end = int(values["end"]) if "end" in values else None
     event = _event(store, event_id, start, end)
     before = store.db.execute(
-        "SELECT event_id FROM raw_events WHERE session_pk=? AND seq<? ORDER BY seq DESC LIMIT ?",
+        "SELECT event_id FROM effective_raw_events WHERE session_pk=? AND "
+        "seq<? ORDER BY seq DESC LIMIT ?",
         (event["session_pk"], event["seq"], context),
     ).fetchall()
     after = store.db.execute(
-        "SELECT event_id FROM raw_events WHERE session_pk=? AND seq>? ORDER BY seq LIMIT ?",
+        "SELECT event_id FROM effective_raw_events WHERE session_pk=? AND "
+        "seq>? ORDER BY seq LIMIT ?",
         (event["session_pk"], event["seq"], context),
     ).fetchall()
     versions = [
@@ -313,7 +321,8 @@ def search(store: Store, values: dict[str, str]) -> dict[str, Any]:
     project_exists(store, project)
     limit, offset = page(values, 100)
     query = (
-        "FROM event_search x JOIN raw_events r USING(event_id) JOIN sessions s USING(session_pk) "
+        "FROM event_search x JOIN effective_raw_events r USING(event_id) "
+        "JOIN sessions s USING(session_pk) "
         "WHERE instr(x.text,?)>0 AND (? IS NULL OR s.project_id=?)"
     )
     params = (text, project, project)
@@ -357,9 +366,11 @@ def health(store: Store, values: dict[str, str], daily_budget: int) -> dict[str,
     rows = store.db.execute(
         "SELECT f.*,s.tool,s.native_session_id,s.project_id FROM source_files f "
         "LEFT JOIN sessions s USING(session_pk) "
-        "WHERE f.parser IN ('claude','codex') AND (? IS NULL OR s.project_id=?) "
+        "WHERE f.parser IN ('claude','codex') AND (? IS NULL OR s.project_id=? OR EXISTS ("
+        "SELECT 1 FROM effective_raw_events e JOIN sessions z ON z.session_pk=e.session_pk "
+        "WHERE e.file_instance_id=f.file_instance_id AND z.project_id=?)) "
         "ORDER BY f.file_instance_id",
-        (project, project),
+        (project, project, project),
     ).fetchall()
     sources = []
     for row in rows:
@@ -367,6 +378,7 @@ def health(store: Store, values: dict[str, str], daily_budget: int) -> dict[str,
             key: row[key]
             for key in (
                 "file_instance_id",
+                "session_pk",
                 "path",
                 "tool",
                 "last_read",
@@ -383,7 +395,7 @@ def health(store: Store, values: dict[str, str], daily_budget: int) -> dict[str,
         sources.append(entry)
     result["sources"] = sources
     result["compression_points"] = store.db.execute(
-        "SELECT count(*) FROM raw_events r JOIN sessions s USING(session_pk) "
+        "SELECT count(*) FROM effective_raw_events r JOIN sessions s USING(session_pk) "
         "WHERE r.kind='compact_boundary' AND (? IS NULL OR s.project_id=?)",
         (project, project),
     ).fetchone()[0]

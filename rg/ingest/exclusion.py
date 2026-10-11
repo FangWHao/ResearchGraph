@@ -45,7 +45,8 @@ def current_exclusion(
     if event.kind != "tool_result" or not event.call_id:
         return None
     calls = store.db.execute(
-        "SELECT r.*,f.parser FROM raw_events r JOIN source_files f USING(file_instance_id) "
+        "SELECT r.*,f.parser FROM effective_raw_events r JOIN "
+        "source_files f USING(file_instance_id) "
         "WHERE r.session_pk=? AND r.call_id=? AND r.alias_of IS NULL "
         "AND r.kind IN ('tool_call','file_edit','plan_update') LIMIT 2",
         (row["session_pk"], event.call_id),

@@ -103,8 +103,10 @@ class Stages:
                         "SELECT ce.claim_id,es.span_id,es.quote_sha256,r.object_sha256,"
                         "r.exclude_reason,d.alias_id FROM claim_evidence ce "
                         "JOIN claims c USING(claim_id) JOIN entities e "
-                        "USING(entity_id) JOIN evidence_spans es USING(span_id) JOIN raw_events r "
-                        "USING(event_id) LEFT JOIN dedupe_links d ON d.alias_id=r.event_id "
+                        "USING(entity_id) JOIN evidence_spans es USING(span_id) JOIN "
+                        "effective_raw_events r "
+                        "USING(event_id) LEFT JOIN effective_dedupe_links d ON "
+                        "d.alias_id=r.event_id "
                         "WHERE e.project_id=? AND c.claim_type='entity_version' "
                         "ORDER BY ce.claim_id,es.span_id",
                         (project,),

@@ -67,7 +67,7 @@ def working_set(
     seen = set()
     boundary = (
         store.db.execute(
-            "SELECT session_pk, seq FROM raw_events WHERE event_id = ?", (before_event,)
+            "SELECT session_pk, seq FROM effective_raw_events WHERE event_id = ?", (before_event,)
         ).fetchone()
         if before_event
         else None
@@ -83,7 +83,8 @@ def working_set(
         if boundary and store.claim_state(row["claim_id"]) == "candidate":
             same_or_later = store.db.execute(
                 "SELECT 1 FROM claim_evidence ce JOIN evidence_spans es USING(span_id) "
-                "JOIN raw_events r USING(event_id) WHERE ce.claim_id = ? AND r.session_pk = ? "
+                "JOIN effective_raw_events r USING(event_id) WHERE ce.claim_id = "
+                "? AND r.session_pk = ? "
                 "AND (r.seq > ? OR (r.seq = ? AND es.byte_end > ?)) LIMIT 1",
                 (row["claim_id"], boundary[0], boundary[1], boundary[1], before_offset or 0),
             ).fetchone()
@@ -97,7 +98,8 @@ def working_set(
             prior = (
                 store.db.execute(
                     "SELECT 1 FROM claim_evidence ce JOIN evidence_spans es USING(span_id) "
-                    "JOIN raw_events r USING(event_id) WHERE ce.claim_id = ? AND r.session_pk = ? "
+                    "JOIN effective_raw_events r USING(event_id) WHERE ce.claim_id = "
+                    "? AND r.session_pk = ? "
                     "AND (r.seq < ? OR (r.seq = ? AND es.byte_end <= ?)) LIMIT 1",
                     (row["claim_id"], boundary[0], boundary[1], boundary[1], before_offset or 0),
                 ).fetchone()

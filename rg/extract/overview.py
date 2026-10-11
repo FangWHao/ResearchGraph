@@ -48,7 +48,7 @@ def records(
         "SELECT c.* FROM claims c WHERE EXISTS (SELECT 1 FROM entities e "
         "WHERE e.entity_id=c.entity_id AND e.project_id=?) OR EXISTS "
         "(SELECT 1 FROM claim_evidence ce JOIN evidence_spans es USING(span_id) "
-        "JOIN raw_events r USING(event_id) JOIN sessions s USING(session_pk) "
+        "JOIN effective_raw_events r USING(event_id) JOIN sessions s USING(session_pk) "
         "WHERE ce.claim_id=c.claim_id AND s.project_id=?) ORDER BY c.claim_id",
         (project, project),
     ).fetchall()
@@ -64,8 +64,11 @@ def records(
         if (
             session is not None
             and not store.db.execute(
-                "SELECT 1 FROM claim_evidence ce JOIN evidence_spans es USING(span_id) "
-                "JOIN raw_events r USING(event_id) WHERE ce.claim_id=? AND r.session_pk=? LIMIT 1",
+                (
+                    "SELECT 1 FROM claim_evidence ce JOIN evidence_spans es "
+                    "USING(span_id) JOIN effective_raw_events r USING(event_id) WHERE "
+                    "ce.claim_id=? AND r.session_pk=? LIMIT 1"
+                ),
                 (row["claim_id"], session),
             ).fetchone()
         ):

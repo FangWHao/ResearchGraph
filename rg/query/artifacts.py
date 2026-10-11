@@ -77,7 +77,7 @@ def version_record(
     identity = version["version_id"]
     if version["source"] not in {"shadow_snapshot", "current_file"}:
         event = reader.store.db.execute(
-            "SELECT r.occurred_at,r.recorded_at FROM raw_events r "
+            "SELECT r.occurred_at,r.recorded_at FROM effective_raw_events r "
             "JOIN sessions s USING(session_pk) "
             "WHERE r.event_id=? AND s.project_id=?",
             (version["evidence_event_id"], reader.project),

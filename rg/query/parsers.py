@@ -11,7 +11,7 @@ from rg.store.database import ConflictError, Store, dumps
 BASE = (
     "WITH records AS (SELECT r.event_id,r.file_instance_id,s.session_pk,s.project_id,"
     "f.parser AS tool,p.record_id,p.parser_version,p.tool_version,p.version_basis,p.status,"
-    "p.types,p.unknown_types,p.recorded_at FROM raw_events r "
+    "p.types,p.unknown_types,p.recorded_at FROM effective_raw_events r "
     "JOIN source_files f USING(file_instance_id) JOIN sessions s ON s.session_pk=r.session_pk "
     "LEFT JOIN parser_records p ON p.event_id=r.event_id "
     "WHERE r.record_index=0 AND f.parser IN ('claude','codex') "

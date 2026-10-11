@@ -17,7 +17,7 @@ def _groups(
     return db.execute(
         "SELECT min(c.event_id) AS event_id,count(*) AS copies,"
         "count(DISTINCT c.file_instance_id) AS source_contexts FROM claude_chain_records c "
-        "JOIN raw_events r ON r.event_id=c.event_id JOIN sessions s USING(session_pk) "
+        "JOIN effective_raw_events r ON r.event_id=c.event_id JOIN sessions s USING(session_pk) "
         "JOIN source_files f ON f.file_instance_id=c.file_instance_id "
         "WHERE s.tool='claude' AND f.parser='claude' AND c.native_uuid=? "
         "AND c.uuid_state='valid' AND s.project_id IS ? "
@@ -72,7 +72,8 @@ def _parent(
         return "ambiguous_parent", None, scope, 0, 0
     if not groups:
         elsewhere = db.execute(
-            "SELECT 1 FROM claude_chain_records c JOIN raw_events r ON r.event_id=c.event_id "
+            "SELECT 1 FROM claude_chain_records c JOIN effective_raw_events r "
+            "ON r.event_id=c.event_id "
             "JOIN sessions s USING(session_pk) JOIN source_files f "
             "ON f.file_instance_id=c.file_instance_id WHERE c.native_uuid=? "
             "AND c.uuid_state='valid' AND s.tool='claude' AND f.parser='claude' "
@@ -97,7 +98,8 @@ def _references(
         dict(r)
         for r in db.execute(
             "SELECT c.event_id,c.file_instance_id FROM claude_chain_records c "
-            "JOIN raw_events r ON r.event_id=c.event_id JOIN sessions s USING(session_pk) "
+            "JOIN effective_raw_events r ON r.event_id=c.event_id JOIN "
+            "sessions s USING(session_pk) "
             "JOIN source_files f ON f.file_instance_id=c.file_instance_id "
             "WHERE c.native_uuid=? AND c.uuid_state='valid' AND s.project_id IS ? "
             "AND s.tool='claude' AND f.parser='claude' AND (? IS NULL OR c.file_instance_id=?) "
@@ -151,7 +153,8 @@ def query(store: Store, values: dict[str, str]) -> dict[str, Any]:
     with store.snapshot():
         source = store.db.execute(
             "SELECT r.session_pk,r.file_instance_id,r.byte_start,s.tool,s.project_id,f.parser,"
-            "f.committed_offset,f.chain_observed_offset FROM raw_events r JOIN sessions s "
+            "f.committed_offset,f.chain_observed_offset FROM "
+            "effective_raw_events r JOIN sessions s "
             "USING(session_pk) JOIN source_files f USING(file_instance_id) WHERE r.event_id=?",
             (event,),
         ).fetchone()

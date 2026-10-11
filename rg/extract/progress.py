@@ -80,7 +80,7 @@ def adopt_legacy(
     closed = {
         r[0]
         for r in store.db.execute(
-            "SELECT c.event_id FROM coverage c JOIN raw_events r USING(event_id) "
+            "SELECT c.event_id FROM coverage c JOIN effective_raw_events r USING(event_id) "
             "WHERE r.session_pk=? AND c.stage IN ('slim','pass1','pass2') "
             "GROUP BY c.event_id HAVING count(*)=3 AND sum(c.status='pending')=0",
             (session,),
@@ -123,7 +123,7 @@ def legacy_project(store: Store, session: int, project: str) -> bool:
     rows = store.db.execute(
         "SELECT DISTINCT m.project_id FROM model_attempts m JOIN extraction_runs e "
         "USING(extraction_run_id) WHERE m.stage IN ('pass1','pass2') AND EXISTS "
-        "(SELECT 1 FROM json_each(e.input_event_ids) x JOIN raw_events r "
+        "(SELECT 1 FROM json_each(e.input_event_ids) x JOIN effective_raw_events r "
         "ON r.event_id=x.value WHERE r.session_pk=?)",
         (session,),
     ).fetchall()
@@ -170,7 +170,7 @@ def adopt(store: Store, config: str, session: int, cache: str, ids: list[int]) -
     statuses = [
         dict(row)
         for row in store.db.execute(
-            "SELECT c.* FROM coverage c JOIN raw_events r USING(event_id) "
+            "SELECT c.* FROM coverage c JOIN effective_raw_events r USING(event_id) "
             "WHERE r.session_pk=? ORDER BY r.seq,c.stage",
             (session,),
         )

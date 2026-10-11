@@ -66,6 +66,8 @@ CREATE INDEX raw_events_seq    ON raw_events (session_pk, seq);
 CREATE INDEX raw_events_native ON raw_events (native_id);
 CREATE INDEX raw_events_call   ON raw_events (call_id);
 
+CREATE VIEW effective_raw_events AS SELECT * FROM raw_events;
+
 CREATE TABLE slim_events (
   event_id       INTEGER PRIMARY KEY REFERENCES raw_events,
   text           TEXT NOT NULL,
@@ -212,6 +214,8 @@ CREATE TABLE dedupe_links (
   canonical_id INTEGER NOT NULL REFERENCES raw_events,
   reason TEXT NOT NULL
 );
+CREATE VIEW effective_dedupe_links AS SELECT * FROM dedupe_links;
+
 CREATE TABLE token_cache (
   cache_key TEXT PRIMARY KEY, provider TEXT NOT NULL, model TEXT NOT NULL,
   tokens INTEGER NOT NULL, created_at TEXT NOT NULL

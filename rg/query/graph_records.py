@@ -114,7 +114,7 @@ def evidence(store: Store, project: str, event_id: int, values: dict[str, Any]) 
     with store.snapshot():
         reader = _reader(store, project, values)
         row = store.db.execute(
-            "SELECT r.* FROM raw_events r JOIN sessions s USING(session_pk) "
+            "SELECT r.* FROM effective_raw_events r JOIN sessions s USING(session_pk) "
             "WHERE r.event_id=? AND s.project_id=?",
             (event_id, project),
         ).fetchone()
@@ -133,7 +133,7 @@ def evidence(store: Store, project: str, event_id: int, values: dict[str, Any]) 
             comparison, order = ("<", "DESC") if before else (">", "ASC")
             found = []
             for candidate in store.db.execute(
-                "SELECT * FROM raw_events WHERE session_pk=? AND seq "
+                "SELECT * FROM effective_raw_events WHERE session_pk=? AND seq "
                 + comparison
                 + " ? ORDER BY seq "
                 + order

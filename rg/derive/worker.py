@@ -35,7 +35,7 @@ def _derive(
     with store.transaction() as db:
         db.execute(
             "INSERT OR IGNORE INTO l1_derivations "
-            "SELECT event_id,'queued',NULL,? FROM raw_events "
+            "SELECT event_id,'queued',NULL,? FROM effective_raw_events "
             "WHERE alias_of IS NULL AND ((kind IN ('tool_call','file_edit','tool_result') "
             "AND exclude_reason IS NULL) OR "
             "(kind='meta' AND tool_name IN ('exec_command','apply_patch') "
@@ -46,11 +46,11 @@ def _derive(
             db.execute(
                 "UPDATE l1_derivations SET state='queued',error=NULL WHERE state='failed' "
                 "AND (? IS NULL OR event_id IN "
-                "(SELECT event_id FROM raw_events WHERE session_pk=?))",
+                "(SELECT event_id FROM effective_raw_events WHERE session_pk=?))",
                 (session, session),
             )
     rows = store.db.execute(
-        "SELECT d.event_id FROM l1_derivations d JOIN raw_events r USING(event_id) "
+        "SELECT d.event_id FROM l1_derivations d JOIN effective_raw_events r USING(event_id) "
         "WHERE d.state IN ('queued','waiting') AND (? IS NULL OR r.session_pk=?) "
         "ORDER BY d.updated_at,d.event_id LIMIT ?",
         (session, session, limit),
@@ -91,7 +91,7 @@ def _derive(
     if qualified_rules["rule_references_checked"]:
         counts.update(qualified_rules)
     counts["l1_remaining"] = store.db.execute(
-        "SELECT count(*) FROM l1_derivations d JOIN raw_events r USING(event_id) "
+        "SELECT count(*) FROM l1_derivations d JOIN effective_raw_events r USING(event_id) "
         "WHERE d.state IN ('queued','waiting') AND (? IS NULL OR r.session_pk=?)",
         (session, session),
     ).fetchone()[0]

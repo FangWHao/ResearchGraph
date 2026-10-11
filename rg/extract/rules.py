@@ -200,7 +200,8 @@ def _proof(
     spans = store.db.execute(
         "SELECT es.*,ce.role,r.role AS speaker,r.kind,r.record_index,r.exclude_reason,"
         "s.project_id,s.tool FROM claim_evidence ce JOIN evidence_spans es USING(span_id) "
-        "JOIN raw_events r USING(event_id) JOIN sessions s USING(session_pk) WHERE ce.claim_id=?",
+        "JOIN effective_raw_events r USING(event_id) JOIN sessions s USING(session_pk) "
+        "WHERE ce.claim_id=?",
         (claim["claim_id"],),
     ).fetchall()
     evidence = []
@@ -215,7 +216,7 @@ def _proof(
             or span["exclude_reason"]
             or span["project_id"] != project
             or store.db.execute(
-                "SELECT 1 FROM dedupe_links WHERE alias_id=?", (span["event_id"],)
+                "SELECT 1 FROM effective_dedupe_links WHERE alias_id=?", (span["event_id"],)
             ).fetchone()
         ):
             return None

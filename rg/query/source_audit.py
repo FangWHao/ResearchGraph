@@ -24,10 +24,10 @@ REFERENCES = (
     "r.object_sha256,r.call_id,r.exclude_reason,r.alias_of,se.project_id AS source_project,"
     "f.parser,(SELECT action FROM review_actions a WHERE a.claim_id=c.claim_id "
     "ORDER BY a.action_id DESC LIMIT 1) AS review_action,"
-    "EXISTS(SELECT 1 FROM dedupe_links d WHERE d.alias_id=r.event_id) AS duplicate "
+    "EXISTS(SELECT 1 FROM effective_dedupe_links d WHERE d.alias_id=r.event_id) AS duplicate "
     "FROM claims c JOIN entities e USING(entity_id) "
     "LEFT JOIN claim_evidence ce USING(claim_id) LEFT JOIN evidence_spans s USING(span_id) "
-    "LEFT JOIN raw_events r USING(event_id) LEFT JOIN sessions se USING(session_pk) "
+    "LEFT JOIN effective_raw_events r USING(event_id) LEFT JOIN sessions se USING(session_pk) "
     "LEFT JOIN source_files f USING(file_instance_id) "
     "WHERE e.project_id=? AND (c.extraction_run_id IS NOT NULL OR substr(c.actor,1,6)=?) "
     "ORDER BY c.claim_id,coalesce(ce.span_id,0)"
@@ -115,9 +115,9 @@ def query(store: Store, values: dict[str, Any]) -> dict[str, Any]:
         for row in store.db.execute(
             "SELECT r.event_id,r.session_pk,r.kind,r.call_id,r.alias_of,r.exclude_reason,"
             "r.object_sha256,r.record_index,r.occurred_at,r.recorded_at,f.parser,"
-            "d.canonical_id FROM raw_events r JOIN sessions se USING(session_pk) "
+            "d.canonical_id FROM effective_raw_events r JOIN sessions se USING(session_pk) "
             "JOIN source_files f USING(file_instance_id) "
-            "LEFT JOIN dedupe_links d ON d.alias_id=r.event_id "
+            "LEFT JOIN effective_dedupe_links d ON d.alias_id=r.event_id "
             "WHERE se.project_id=? ORDER BY r.event_id",
             (project,),
         ):

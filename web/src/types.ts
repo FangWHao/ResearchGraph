@@ -274,7 +274,7 @@ export interface HealthData {
     total: number; skipped: number; async_race: number; partial: number; metadata_unknown: number;
   };
   sources: {
-    file_instance_id: number; path: string; tool: string; last_read: string | null;
+    file_instance_id: number; session_pk?: number; path: string; tool: string; last_read: string | null;
     committed_offset: number; cursor_lag_bytes: number | null; cleanup_risk: string | null; status: string;
   }[];
   extraction: {

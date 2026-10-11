@@ -17,7 +17,7 @@ def unique_call(reader: Reader, run: dict[str, Any]) -> bool:
         "kind='meta' AND tool_name='exec_command' AND exclude_reason='execution_metadata'",
     ):
         rows = reader.store.db.execute(
-            "SELECT event_id,occurred_at,recorded_at FROM raw_events WHERE session_pk=? "
+            "SELECT event_id,occurred_at,recorded_at FROM effective_raw_events WHERE session_pk=? "
             "AND call_id=? AND alias_of IS NULL AND " + condition,
             (run["session_pk"], run["call_id"]),
         )
@@ -40,7 +40,7 @@ def native(reader: Reader, identity: str) -> dict[str, Any] | None:
         return None
     run = dict(row)
     request = reader.store.db.execute(
-        "SELECT r.* FROM raw_events r JOIN sessions s USING(session_pk) "
+        "SELECT r.* FROM effective_raw_events r JOIN sessions s USING(session_pk) "
         "WHERE event_id=? AND s.project_id=?",
         (run["request_event_id"], reader.project),
     ).fetchone()
@@ -62,7 +62,7 @@ def native(reader: Reader, identity: str) -> dict[str, Any] | None:
     facts = []
     for observed in reader.store.db.execute(
         "SELECT o.*,r.occurred_at AS source_occurred_at,r.recorded_at AS source_recorded_at "
-        "FROM run_observations o JOIN raw_events r USING(event_id) "
+        "FROM run_observations o JOIN effective_raw_events r USING(event_id) "
         "JOIN sessions s USING(session_pk) "
         "WHERE o.run_id=? AND s.project_id=? ORDER BY o.event_id,o.observation_id",
         (identity, reader.project),
@@ -171,7 +171,7 @@ def manifests(
     run = native(reader, identity)
     for row in reader.store.db.execute(
         "SELECT m.*,r.occurred_at AS source_occurred_at,r.recorded_at AS source_recorded_at "
-        "FROM run_manifests m JOIN raw_events r ON r.event_id=m.evidence_event_id "
+        "FROM run_manifests m JOIN effective_raw_events r ON r.event_id=m.evidence_event_id "
         "JOIN sessions s USING(session_pk) WHERE m.run_id=? AND m.project_id=? AND s.project_id=? "
         "AND (? IS NULL OR m.attempt_id=?) AND (? IS NULL OR EXISTS(SELECT 1 FROM run_io i "
         "WHERE i.manifest_id=m.request_id AND i.requested_version_id=?)) "

@@ -17,7 +17,7 @@ def report(store: Store, session_id: int, destination: Path) -> None:
     ]
     claims = store.db.execute(
         "SELECT DISTINCT c.* FROM claims c JOIN claim_evidence ce USING(claim_id) "
-        "JOIN evidence_spans es USING(span_id) JOIN raw_events r USING(event_id) "
+        "JOIN evidence_spans es USING(span_id) JOIN effective_raw_events r USING(event_id) "
         "WHERE r.session_pk = ? ORDER BY c.claim_id",
         (session_id,),
     ).fetchall()
@@ -83,7 +83,7 @@ def report(store: Store, session_id: int, destination: Path) -> None:
                 ]
             )
     pending = store.db.execute(
-        "SELECT count(*) FROM coverage c JOIN raw_events r USING(event_id) "
+        "SELECT count(*) FROM coverage c JOIN effective_raw_events r USING(event_id) "
         "WHERE session_pk = ? AND status = 'pending'",
         (session_id,),
     ).fetchone()[0]

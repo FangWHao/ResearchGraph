@@ -1,4 +1,4 @@
-"""只读检查跨项目片段的物理边界和目录线索；不发布项目归属。"""
+"""只读检查物理边界、目录线索与另存的正式片段归属。"""
 
 from __future__ import annotations
 
@@ -52,12 +52,22 @@ def query(store: Store, values: dict[str, str]) -> dict[str, Any]:
             "WHERE f.file_instance_id=? AND s.session_pk=?",
             (source, session),
         ).fetchone()
-        if file is None or ("project" in values and values["project"] != file["project_id"]):
+        if file is None:
             raise ValueError("来源不属于该会话或指定项目")
         if file["parser"] not in {"claude", "codex"}:
             raise ValueError("当前来源没有受支持的原生会话格式")
         if store.db.execute("PRAGMA user_version").fetchone()[0] < 30:
             return {"available": False, "reason": "legacy_schema", "assignments_applied": False}
+        if (
+            "project" in values
+            and values["project"] != file["project_id"]
+            and not store.db.execute(
+                "SELECT 1 FROM effective_raw_events e JOIN sessions s USING(session_pk) "
+                "WHERE e.file_instance_id=? AND s.project_id=? LIMIT 1",
+                (source, values["project"]),
+            ).fetchone()
+        ):
+            raise ValueError("来源不属于指定项目")
         return _query(store, values, session, source, limit, after, file["project_id"])
 
 
@@ -137,8 +147,20 @@ def _query(
             (MAX_ROOTS + 1,),
         )
     ]
+    version = db.execute("PRAGMA user_version").fetchone()[0]
+    assignment_version = (
+        db.execute(
+            "SELECT coalesce(max(assignment_id),0) FROM fragment_assignments "
+            "WHERE physical_session_pk=?",
+            (session,),
+        ).fetchone()[0]
+        if version >= 31
+        else 0
+    )
     scope_key = hashlib.sha256(
-        dumps([session, source, project, snapshot, observation_snapshot, roots]).encode()
+        dumps(
+            [session, source, project, snapshot, observation_snapshot, roots, assignment_version]
+        ).encode()
     ).hexdigest()
     if values.get("expected_scope_key", scope_key) != scope_key:
         raise ConflictError("会话归属或根目录线索已变化，请重新读取第一页")
@@ -204,6 +226,7 @@ def _query(
                 "observed_at": row["recorded_at"],
                 "context": dict(context),
                 "project_hint": _hint(context, roots),
+                "assignment": _assignment(store, row["event_id"], project, session, version),
             }
         )
     return {
@@ -211,7 +234,9 @@ def _query(
         "session_pk": session,
         "file_instance_id": source,
         "current_session_project": project,
-        "assignments_applied": False,
+        "assignments_applied": bool(assignment_version),
+        "assignment_supported": version >= 31,
+        "revision": store.revision(),
         "unit": "physical_record",
         "snapshot": snapshot,
         "observation_snapshot": observation_snapshot,
@@ -236,3 +261,28 @@ def _context(row: dict[str, Any]) -> dict[str, Any]:
         "reason": row["reason"] or "metadata_not_observed",
         "origin_event_id": row["event_id"],
     }
+
+
+def _assignment(
+    store: Store, event: int, project: str | None, session: int, version: int
+) -> dict[str, Any]:
+    row = (
+        store.db.execute(
+            "SELECT p.project_id,p.logical_session_pk,p.basis,p.partition_id "
+            "FROM fragment_record_maps m JOIN fragment_partitions p USING(partition_id) "
+            "WHERE m.first_event_id=? ORDER BY m.map_id DESC LIMIT 1",
+            (event,),
+        ).fetchone()
+        if version >= 31
+        else None
+    )
+    return (
+        dict(row)
+        if row
+        else {
+            "project_id": project,
+            "logical_session_pk": session,
+            "basis": "session_manual" if project else "unassigned",
+            "partition_id": None,
+        }
+    )

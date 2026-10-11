@@ -76,7 +76,7 @@ def sources(reader: Reader, events: set[int]) -> list[dict[str, Any]]:
     for identity in sorted(events):
         row = reader.store.db.execute(
             "SELECT r.*,s.tool AS source_tool,f.parser,f.parser_version "
-            "FROM raw_events r JOIN sessions s USING(session_pk) "
+            "FROM effective_raw_events r JOIN sessions s USING(session_pk) "
             "JOIN source_files f USING(file_instance_id) WHERE r.event_id=? AND s.project_id=?",
             (identity, reader.project),
         ).fetchone()

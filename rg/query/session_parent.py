@@ -36,6 +36,8 @@ def query(store: Store, values: dict[str, str]) -> dict[str, Any]:
             "source_metadata_complete": None,
             "identity_metadata_complete": None,
         }
+        if "fragment_id" in session.keys() and session["fragment_id"]:
+            return view | {"state": "fragment_boundary", "reason": "physical_parent_not_inferred"}
         if session["tool"] != "codex":
             return view
         relations, sessions = resolve(store.db)

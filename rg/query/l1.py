@@ -159,7 +159,7 @@ class FileRunGraph:
 
     def _event(self, identity: int) -> dict[str, Any] | None:
         row = self.reader.store.db.execute(
-            "SELECT r.* FROM raw_events r JOIN sessions s USING(session_pk) "
+            "SELECT r.* FROM effective_raw_events r JOIN sessions s USING(session_pk) "
             "WHERE r.event_id=? AND s.project_id=?",
             (identity, self.reader.project),
         ).fetchone()
@@ -190,7 +190,8 @@ class FileRunGraph:
             ):
                 continue
             candidates = self.reader.store.db.execute(
-                "SELECT event_id,kind,occurred_at,recorded_at FROM raw_events WHERE session_pk=? "
+                "SELECT event_id,kind,occurred_at,recorded_at FROM "
+                "effective_raw_events WHERE session_pk=? "
                 "AND call_id=? AND alias_of IS NULL AND "
                 "((kind IN ('tool_call','file_edit') AND exclude_reason IS NULL) OR "
                 "(kind='meta' AND tool_name='apply_patch' "

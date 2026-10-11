@@ -115,7 +115,7 @@ def validate(
             if event_id not in event_ids:
                 raise InvalidCitation("引用事件不在本次原文窗口中")
             row = store.db.execute(
-                "SELECT r.*, s.project_id,f.parser FROM raw_events r JOIN sessions s "
+                "SELECT r.*, s.project_id,f.parser FROM effective_raw_events r JOIN sessions s "
                 "USING(session_pk) JOIN source_files f USING(file_instance_id) WHERE event_id = ?",
                 (event_id,),
             ).fetchone()
@@ -124,7 +124,7 @@ def validate(
             if current_exclusion(store, row):
                 raise InvalidCitation("引用事件按保存原件属于排除内容")
             if store.db.execute(
-                "SELECT 1 FROM dedupe_links WHERE alias_id = ?", (event_id,)
+                "SELECT 1 FROM effective_dedupe_links WHERE alias_id = ?", (event_id,)
             ).fetchone():
                 raise InvalidCitation("不能引用镜像事件")
             raw = store.raw(event_id)
@@ -227,7 +227,8 @@ def persist(
                 ]
             entity_id = payload.get("temp_id") or payload.get("target")
             first = db.execute(
-                "SELECT occurred_at FROM raw_events WHERE event_id = ?", (evidence[0]["event_id"],)
+                "SELECT occurred_at FROM effective_raw_events WHERE event_id = ?",
+                (evidence[0]["event_id"],),
             ).fetchone()
             cursor = db.execute(
                 "INSERT INTO claims (claim_type, entity_id, payload, scope, basis, actor, "

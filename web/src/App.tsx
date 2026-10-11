@@ -226,7 +226,9 @@ export function App() {
         {view === 'review' && <ReviewQueue onResolve={decisions.openResolve} project={projectId} epoch={epoch} actor={actor} onWrite={onWrite} onError={onError} onEdit={onEdit} onEvidence={onEvidence} onClaim={onClaim} />}
         {(view === 'qa' || view === 'exports') && <ProjectPrivacyPanel project={project} projects={projects} onProject={setProjectId} workspace={privacy} />}
         {view === 'qa' && <QaView workspace={qa} onEvidence={onEvidence} />}
-        {view === 'health' && <HealthView project={projectId} epoch={epoch} onEvidence={onEvidence} onError={onError} onVersions={() => { setView('versions'); setSelectedClaim(null); setSelectedEvidence(null); }} />}
+            {view === 'health' && <HealthView project={projectId} epoch={epoch} onEvidence={onEvidence} onError={onError}
+              projects={projects} actor={actor} onAssigned={revision => { setEpoch(value => value + 1); setConflict(false); setMessage(`片段归属已保存，正在重新读取；回执修订 ${revision}。原件与审核历史保留。`); }}
+              onVersions={() => { setView('versions'); setSelectedClaim(null); setSelectedEvidence(null); }} />}
         {view === 'versions' && <VersionsView project={projectId} epoch={epoch} onError={onError} />}
         {view === 'exports' && <HistoryExportView project={project} projects={projects} onProject={setProjectId} workspace={historyExport} />}
         {view === 'fileRuns' && <Suspense fallback={<Loading />}><FileRunGraphView project={project} projects={projects} onProject={setProjectId} workspace={fileRuns} /></Suspense>}

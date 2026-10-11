@@ -308,7 +308,9 @@ def test_upgrade_does_not_read_objects_and_rolls_back_atomically(tmp_path, monke
     with monkeypatch.context() as patch:
         patch.setattr(ObjectStore, "get", lambda *a: pytest.fail("升级不得读原件"))
         with closing(Store(root)) as store:
-            assert store.db.execute("PRAGMA user_version").fetchone()[0] == 30
+            assert (
+                store.db.execute("PRAGMA user_version").fetchone()[0] == migrations.LATEST_VERSION
+            )
             assert view(store)["records_observed"] == 0
     with closing(Store(root)) as store:
         assert store.raw(1) == original

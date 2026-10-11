@@ -221,7 +221,7 @@ class Reader:
         rows = []
         for row in self.store.db.execute(
             "SELECT s.*,ce.role,r.occurred_at,r.recorded_at FROM claim_evidence ce "
-            "JOIN evidence_spans s USING(span_id) JOIN raw_events r USING(event_id) "
+            "JOIN evidence_spans s USING(span_id) JOIN effective_raw_events r USING(event_id) "
             "JOIN sessions se USING(session_pk) WHERE ce.claim_id=? AND se.project_id=? "
             "ORDER BY s.span_id",
             (claim_id, self.project),
@@ -326,7 +326,7 @@ class Reader:
             return self.metadata() | result
         hits = []
         for row in self.store.db.execute(
-            "SELECT r.*,x.text FROM event_search x JOIN raw_events r USING(event_id) "
+            "SELECT r.*,x.text FROM event_search x JOIN effective_raw_events r USING(event_id) "
             "JOIN sessions s USING(session_pk) WHERE s.project_id=? AND instr(x.text,?)>0 "
             "AND r.exclude_reason IS NULL AND r.alias_of IS NULL ORDER BY r.event_id",
             (self.project, text),
@@ -384,7 +384,7 @@ class Reader:
         span = None
         if "span_id" in values:
             span = self.store.db.execute(
-                "SELECT s.* FROM evidence_spans s JOIN raw_events r USING(event_id) "
+                "SELECT s.* FROM evidence_spans s JOIN effective_raw_events r USING(event_id) "
                 "JOIN sessions se USING(session_pk) WHERE s.span_id=? AND se.project_id=?",
                 (values["span_id"], self.project),
             ).fetchone()
@@ -394,7 +394,7 @@ class Reader:
         else:
             event_id = values["event_id"]
         row = self.store.db.execute(
-            "SELECT r.*,f.parser FROM raw_events r JOIN sessions s USING(session_pk) "
+            "SELECT r.*,f.parser FROM effective_raw_events r JOIN sessions s USING(session_pk) "
             "JOIN source_files f USING(file_instance_id) "
             "WHERE r.event_id=? AND s.project_id=?",
             (event_id, self.project),

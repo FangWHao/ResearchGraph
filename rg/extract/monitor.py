@@ -113,7 +113,8 @@ def _coverage(
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     alerts: list[dict[str, Any]] = []
     query = (
-        "FROM coverage c JOIN raw_events r USING(event_id) JOIN sessions s USING(session_pk) "
+        "FROM coverage c JOIN effective_raw_events r USING(event_id) JOIN "
+        "sessions s USING(session_pk) "
         "WHERE c.status='pending' AND (? IS NULL OR s.project_id=?)"
     )
     pending = store.db.execute("SELECT count(*) " + query, (project, project)).fetchone()[0]

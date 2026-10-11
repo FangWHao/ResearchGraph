@@ -5,6 +5,14 @@ import type { L1Node, L1Page, L1Edge } from '../../src/fileRunGraph';
 
 const headers = { Authorization: 'Bearer synthetic-browser-token' };
 const primary = '验收L1文件运行图项目';
+test.beforeEach(async ({ page }, info) => {
+  page.on('requestfailed', request => {
+    if (new URL(request.url()).pathname.startsWith('/api/l1-')) console.log('L1网络失败', JSON.stringify({ test: info.title, url: request.url(), error: request.failure()?.errorText }));
+  });
+  page.on('response', response => {
+    if (new URL(response.url()).pathname.startsWith('/api/l1-') && response.status() >= 400) console.log('L1错误回包', JSON.stringify({ test: info.title, url: response.url(), status: response.status() }));
+  });
+});
 async function open(page: Page, name = primary) {
   await page.goto('/#token=synthetic-browser-token');
   await page.getByLabel('当前项目', { exact: true }).selectOption({ label: name });
@@ -145,7 +153,19 @@ test('真实409续读保留旧图和窗口，主动刷新不混页；401恢复�
   await page.getByLabel('文件运行图发生截止', { exact: true }).fill('2026-10-09T09:01:00Z');
   await page.route('**/api/l1-graph?*', async route => { const response = await route.fetch({ headers: { ...route.request().headers(), Authorization: 'Bearer invalid-synthetic-token' } }); expect(response.status()).toBe(401); await route.fulfill({ response }); });
   await page.getByRole('button', { name: '重新读取文件运行图', exact: true }).click(); await expect(page.getByRole('heading', { name: '打开你的研究决定史' })).toBeVisible();
-  await page.unroute('**/api/l1-graph?*'); await page.getByLabel('访问令牌', { exact: true }).fill('synthetic-browser-token'); await page.getByRole('button', { name: '进入本地工作区', exact: false }).click(); await expect(page.getByLabel('文件运行图发生截止', { exact: true })).toHaveValue('2026-10-09T09:01:00Z');
+  await page.unroute('**/api/l1-graph?*'); await page.getByLabel('访问令牌', { exact: true }).fill('synthetic-browser-token');
+  // 草稿值可在网络恢复前立即出现；要实际完成本次五集合读取再结束场景。
+  const resumed = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/l1-graph' && url.searchParams.get('project') === project && url.searchParams.get('collection') === 'unresolved';
+  });
+  await page.getByRole('button', { name: '进入本地工作区', exact: false }).click();
+  await expect(page.getByLabel('文件运行图发生截止', { exact: true })).toHaveValue('2026-10-09T09:01:00Z');
+  const recovered = await resumed; expect(recovered.status()).toBe(200);
+  const completed: L1Page = await recovered.json(); expect(completed.project_id).toBe(project); expect(completed.next_offset).toBeNull();
+  expect(completed.occurred_until).toMatch(/^2026-10-09T09:01:00(?:\.0{1,6})?(?:Z|\+00:00)$/);
+  await expect(page.getByRole('region', { name: '文件运行图完整性', exact: true })).toContainText('已读完登记图');
+  await expect(page.getByText('阅读条件已改变', { exact: false })).toHaveCount(0);
 });
 
 test('真实翻页中版本冲突不混入旧完整图，响应损坏显示缺口，不静默少画', async ({ page, request }) => {

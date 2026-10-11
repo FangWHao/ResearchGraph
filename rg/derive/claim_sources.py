@@ -43,9 +43,9 @@ def inputs(store: Store, claim_id: int) -> tuple[str, dict[str, Any], list[dict[
     for saved in store.db.execute(
         "SELECT ce.span_id,ce.role,es.byte_start,es.byte_end,es.quote_sha256,r.*,f.parser,"
         "se.project_id AS source_project,"
-        "(SELECT canonical_id FROM dedupe_links WHERE alias_id=r.event_id) AS duplicate "
+        "(SELECT canonical_id FROM effective_dedupe_links WHERE alias_id=r.event_id) AS duplicate "
         "FROM claim_evidence ce JOIN evidence_spans es USING(span_id) "
-        "JOIN raw_events r USING(event_id) JOIN source_files f USING(file_instance_id) "
+        "JOIN effective_raw_events r USING(event_id) JOIN source_files f USING(file_instance_id) "
         "JOIN sessions se USING(session_pk) WHERE ce.claim_id=? ORDER BY ce.span_id,ce.role",
         (claim_id,),
     ):
@@ -54,7 +54,7 @@ def inputs(store: Store, claim_id: int) -> tuple[str, dict[str, Any], list[dict[
             [
                 dict(call)
                 for call in store.db.execute(
-                    "SELECT r.*,f.parser FROM raw_events r JOIN source_files f "
+                    "SELECT r.*,f.parser FROM effective_raw_events r JOIN source_files f "
                     "USING(file_instance_id) "
                     "WHERE r.session_pk=? AND r.call_id=? AND r.alias_of IS NULL "
                     "AND r.kind IN ('tool_call','file_edit','plan_update') "

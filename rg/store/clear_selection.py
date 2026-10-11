@@ -10,7 +10,7 @@ artifact_discoveries artifact_discovery_attempts artifact_job_events artifact_jo
 artifact_observations artifact_versions candidate_locations claim_evidence claims coverage
 claude_chain_records daily_usage decision_requests decision_resolutions dedupe_links edit_records
 edit_request_checks claim_source_checks rule_reference_checks
-entities
+entities fragment_assignments fragment_partitions fragment_record_maps
 event_search evidence_spans explicit_records note_requests extraction_plans extraction_queue
 extraction_queue_events extraction_runs file_hash_cache graph_clock hook_error_checks
 hook_error_reports hook_error_sources ingest_sources jobs
@@ -26,6 +26,7 @@ worktree_discovery_progress worktree_discovery_cursors
 )
 POINTERS = {
     ("sessions", "parent_session_pk"),
+    ("sessions", "physical_session_pk"),
     ("raw_events", "alias_of"),
     ("artifact_observations", "cached_from"),
 }
@@ -72,6 +73,12 @@ class Selection:
                 self.add(
                     table, f"SELECT rowid FROM {identifier(table)} WHERE project_id=?", (project,)
                 )
+        self.add(
+            "raw_events",
+            "SELECT r.rowid AS n FROM raw_events r JOIN effective_raw_events e USING(event_id) "
+            "JOIN sessions s ON s.session_pk=e.session_pk WHERE s.project_id=?",
+            (project,),
+        )
         # 全局计数缓存没有原文或项目归属，清除其摘要，避免留下项目输入指纹。
         self.add("token_cache", "SELECT rowid FROM token_cache")
 
@@ -164,6 +171,15 @@ class Selection:
                     "JOIN temp.clear_rows s ON s.t=? AND s.n=p.rowid",
                     ("$." + column, parent),
                 )
+            # 最后一部分也已选中时，清除空的物理容器与游标；共享来源保留。
+            self.add(
+                "sessions",
+                "SELECT c.rowid AS n FROM sessions c WHERE c.project_basis='fragment_container' "
+                "AND NOT EXISTS (SELECT 1 FROM raw_events r WHERE r.session_pk=c.session_pk "
+                "AND r.event_id NOT IN (SELECT n FROM temp.clear_rows WHERE t='raw_events')) "
+                "AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.physical_session_pk=c.session_pk "
+                "AND s.session_pk NOT IN (SELECT n FROM temp.clear_rows WHERE t='sessions'))",
+            )
             if self.db.total_changes == before:
                 break
 
@@ -203,12 +219,13 @@ class Selection:
             ("input_event_ids", "raw_events", "event_id"),
             ("working_set_ids", "entities", "entity_id"),
         ):
+            effective_parent = "effective_raw_events" if parent == "raw_events" else parent
             owner = "JOIN sessions o ON o.session_pk=p.session_pk" if parent == "raw_events" else ""
             condition = "o.project_id" if owner else "p.project_id"
             if self.db.execute(
                 "SELECT 1 FROM extraction_runs c "
                 f"JOIN json_each(CASE WHEN json_valid(c.{column}) THEN c.{column} ELSE '[]' END) j "
-                f"JOIN {parent} p ON p.{key}=j.value {owner} "
+                f"JOIN {effective_parent} p ON p.{key}=j.value {owner} "
                 f"WHERE {self.selected('extraction_runs')} AND {condition} IS NOT NULL "
                 f"AND {condition}!=? LIMIT 1",
                 (self.project,),
@@ -219,12 +236,13 @@ class Selection:
             ("context_event_ids", "raw_events", "event_id"),
             ("entity_ids", "entities", "entity_id"),
         ):
+            effective_parent = "effective_raw_events" if parent == "raw_events" else parent
             owner = "JOIN sessions o ON o.session_pk=p.session_pk" if parent == "raw_events" else ""
             condition = "o.project_id" if owner else "p.project_id"
             if self.db.execute(
                 "SELECT 1 FROM jobs c JOIN json_each(CASE WHEN json_valid(c.payload) "
                 "THEN json_extract(c.payload,?) ELSE '[]' END) j "
-                f"JOIN {parent} p ON p.{key}=j.value {owner} "
+                f"JOIN {effective_parent} p ON p.{key}=j.value {owner} "
                 f"WHERE {self.selected('jobs')} AND {condition} IS NOT NULL "
                 f"AND {condition}!=? LIMIT 1",
                 ("$." + column, self.project),
@@ -263,7 +281,7 @@ class Selection:
             "OR EXISTS (SELECT 1 FROM spool_receipts p WHERE p.job_id=c.job_id) "
             "OR EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(c.payload) "
             "THEN json_extract(c.payload,'$.event_ids') ELSE '[]' END) j "
-            "JOIN raw_events p ON p.event_id=j.value JOIN sessions o USING(session_pk) "
+            "JOIN effective_raw_events p ON p.event_id=j.value JOIN sessions o USING(session_pk) "
             "WHERE o.project_id IS NOT NULL) "
             "OR EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(c.payload) "
             "THEN json_extract(c.payload,'$.entity_ids') ELSE '[]' END) j "
@@ -279,7 +297,8 @@ class Selection:
             "OR EXISTS (SELECT 1 FROM link_progress p "
             "WHERE p.extraction_run_id=c.extraction_run_id) "
             "OR EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(c.input_event_ids) "
-            "THEN c.input_event_ids ELSE '[]' END) j JOIN raw_events p ON p.event_id=j.value "
+            "THEN c.input_event_ids ELSE '[]' END) j JOIN "
+            "effective_raw_events p ON p.event_id=j.value "
             "JOIN sessions o USING(session_pk) WHERE o.project_id IS NOT NULL) "
             "OR EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(c.working_set_ids) "
             "THEN c.working_set_ids ELSE '[]' END) j JOIN entities p ON p.entity_id=j.value))) "

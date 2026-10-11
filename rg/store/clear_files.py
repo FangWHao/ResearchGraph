@@ -44,18 +44,41 @@ class Files:
         self.signatures: list[tuple] = []
         self.roots = list(db.execute("SELECT path,project_id FROM source_roots"))
         self.sources: dict[str, set[str | None]] = {}
+        fragmented_paths = {
+            r[0]
+            for r in db.execute(
+                "SELECT f.path FROM source_files f JOIN sessions s USING(session_pk) "
+                "WHERE s.project_basis='fragment_container'"
+            )
+        }
+        fragmented_sessions = {
+            tuple(r)
+            for r in db.execute(
+                "SELECT tool,native_session_id FROM sessions WHERE "
+                "project_basis='fragment_container'"
+            )
+        }
         for path, owner in db.execute(
-            "SELECT f.path,s.project_id FROM source_files f JOIN sessions s USING(session_pk)"
+            "SELECT f.path,s.project_id FROM source_files f JOIN sessions s USING(session_pk) "
+            "WHERE s.project_basis!='fragment_container' UNION ALL "
+            "SELECT f.path,s.project_id FROM source_files f JOIN effective_raw_events e "
+            "USING(file_instance_id) JOIN sessions s ON s.session_pk=e.session_pk"
         ):
             self.sources.setdefault(path, set()).add(owner)
         self.sessions: dict[tuple[str, str], set[str | None]] = {}
         for tool, native, owner in db.execute(
-            "SELECT tool,native_session_id,project_id FROM sessions"
+            "SELECT tool,native_session_id,project_id FROM sessions "
+            "WHERE project_basis!='fragment_container' UNION ALL "
+            "SELECT s.tool,s.native_session_id,s.project_id FROM effective_raw_events e "
+            "JOIN sessions s USING(session_pk)"
         ):
             self.sessions.setdefault((tool, native), set()).add(owner)
         if any(
-            self.project in owners and len(owners) > 1
-            for owners in [*self.sources.values(), *self.sessions.values()]
+            self.project in owners and len(owners) > 1 and key not in fragmented_paths
+            for key, owners in self.sources.items()
+        ) or any(
+            self.project in owners and len(owners) > 1 and key not in fragmented_sessions
+            for key, owners in self.sessions.items()
         ):
             self.blockers.append("来源命名空间同时属于多个项目或未分配会话")
         for path, owner in self.roots:
@@ -71,23 +94,23 @@ class Files:
         self.denials = {
             "projects": [digest(self.project.encode())],
             "sessions": sorted(
-                {
-                    session_hash(r[0], r[1])
-                    for r in db.execute(
-                        "SELECT tool,native_session_id FROM sessions WHERE project_id=?",
-                        (self.project,),
-                    )
-                }
+                session_hash(tool, native)
+                for (tool, native), owners in self.sessions.items()
+                if owners == {self.project}
             ),
             "paths": sorted(
                 {
+                    path_hash(path)
+                    for path, owners in self.sources.items()
+                    if owners == {self.project}
+                }
+                | {
                     path_hash(r[0])
                     for r in db.execute(
-                        "SELECT f.path FROM source_files f JOIN sessions s USING(session_pk) "
-                        "WHERE s.project_id=? UNION SELECT path FROM ingest_sources "
-                        "WHERE project_id=?",
-                        (self.project, self.project),
+                        "SELECT path FROM ingest_sources WHERE project_id=?",
+                        (self.project,),
                     )
+                    if self.sources.get(r[0], {self.project}) == {self.project}
                 }
             ),
             "prefixes": sorted({path_hash(r[0]) for r in self.roots if r[1] == self.project}),

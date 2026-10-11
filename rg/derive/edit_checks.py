@@ -19,7 +19,8 @@ def signature(store: Store, row: dict[str, Any]) -> str:
         "SELECT * FROM edit_records WHERE edit_id=?", (row["edit_id"],)
     ).fetchone()
     request = store.db.execute(
-        "SELECT r.*,s.project_id,s.tool FROM raw_events r JOIN sessions s USING(session_pk) "
+        "SELECT r.*,s.project_id,s.tool FROM effective_raw_events r JOIN "
+        "sessions s USING(session_pk) "
         "WHERE r.event_id=?",
         (row["request_event_id"],),
     ).fetchone()

@@ -231,6 +231,17 @@ class Store:
             "pending": "SELECT count(*) FROM coverage WHERE status = 'pending'",
             "manual_jobs": "SELECT count(*) FROM jobs WHERE state = 'failed'",
         }.items():
+            if (
+                name == "unassigned_sessions"
+                and self.db.execute("PRAGMA user_version").fetchone()[0] >= 31
+            ):
+                query = (
+                    "SELECT count(DISTINCT coalesce(s.physical_session_pk,s.session_pk)) "
+                    "FROM sessions s WHERE s.project_id IS NULL AND "
+                    "((s.physical_session_pk IS NULL "
+                    "AND s.project_basis!='fragment_container') OR EXISTS ("
+                    "SELECT 1 FROM effective_raw_events e WHERE e.session_pk=s.session_pk))"
+                )
             result[name] = self.db.execute(query).fetchone()[0]
         result["revision"] = self.revision()
         result["ingest"] = {

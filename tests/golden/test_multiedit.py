@@ -328,6 +328,8 @@ def test_schema25_only_invalidates_old_multiedit_projection_atomically(
             "SELECT 1 FROM sqlite_master WHERE name='edit_request_checks'"
         ).fetchone()
     with monkeypatch.context() as no_raw:
+        # 本断言精确验收迁移25，不把后续新增会话字段误当成25改写历史。
+        no_raw.setattr(migrations, "LATEST_VERSION", 25)
         no_raw.setattr(Store, "raw", lambda *args: pytest.fail("升级不能读取原文"))
         with closing(Store(root)) as upgraded:
             assert upgraded.revision() == revision + int(has_multiedit)
@@ -340,9 +342,14 @@ def test_schema25_only_invalidates_old_multiedit_projection_atomically(
             )
             assert actual == expected
             upgraded_revision = upgraded.revision()
+            old_sessions = [tuple(r) for r in upgraded.db.execute("SELECT * FROM sessions")]
     with closing(Store(root)) as reopened:
         assert reopened.revision() == upgraded_revision
         assert reopened.raw(1) == raw
+        current = [tuple(r) for r in reopened.db.execute("SELECT * FROM sessions")]
+        assert [r[:-2] for r in current] == old_sessions
+        assert all(r[-2:] == (None, "") for r in current)
+        assert reopened.db.execute("PRAGMA foreign_key_check").fetchone() is None
 
 
 def test_graph_never_reads_body_pending_becomes_checked_only_through_background_derive(

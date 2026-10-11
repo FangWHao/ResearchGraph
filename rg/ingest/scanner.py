@@ -48,21 +48,32 @@ def _session(store: Store, path: Path, tool: str, project_id: str | None) -> int
         paths=[str(path), *([cwd] if cwd else [])],
     ):
         return None
+    modern = store.db.execute("PRAGMA user_version").fetchone()[0] >= 31
+    physical = " AND fragment_id=''" if modern else ""
     with store.transaction() as db:
-        db.execute(
-            "INSERT OR IGNORE INTO sessions "
-            "(tool, native_session_id, agent_id, cwd, project_id, project_basis) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (tool, native, agent, cwd, project_id, "manual" if project_id else "unassigned"),
-        )
         row = db.execute(
-            "SELECT session_pk, project_id FROM sessions "
-            "WHERE tool = ? AND native_session_id = ? AND agent_id = ?",
+            "SELECT session_pk,project_id,project_basis FROM sessions "
+            "WHERE tool=? AND native_session_id=? AND agent_id=?" + physical,
             (tool, native, agent),
         ).fetchone()
+        if row is None:
+            cursor = db.execute(
+                "INSERT INTO "
+                "sessions(tool,native_session_id,agent_id,cwd,project_id,project_basis) "
+                "VALUES (?,?,?,?,?,?)",
+                (tool, native, agent, cwd, project_id, "manual" if project_id else "unassigned"),
+            )
+            row = db.execute(
+                "SELECT session_pk,project_id,project_basis FROM sessions WHERE session_pk=?",
+                (cursor.lastrowid,),
+            ).fetchone()
         if row["project_id"] and project_id and row["project_id"] != project_id:
             raise ValueError("会话已属于其他项目，不能静默改归属")
-        if project_id and row["project_id"] is None:
+        if (
+            project_id
+            and row["project_id"] is None
+            and row["project_basis"] != "fragment_container"
+        ):
             db.execute(
                 "UPDATE sessions SET project_id = ?, project_basis = 'manual' WHERE session_pk = ?",
                 (project_id, row["session_pk"]),
@@ -70,7 +81,7 @@ def _session(store: Store, path: Path, tool: str, project_id: str | None) -> int
         if agent and tool == "claude":
             parent = db.execute(
                 "SELECT session_pk FROM sessions WHERE tool = ? "
-                "AND native_session_id = ? AND agent_id = ''",
+                "AND native_session_id = ? AND agent_id = ''" + physical,
                 (tool, native),
             ).fetchone()
             if parent:
@@ -81,7 +92,7 @@ def _session(store: Store, path: Path, tool: str, project_id: str | None) -> int
         elif tool == "claude":
             db.execute(
                 "UPDATE sessions SET parent_session_pk = ? WHERE tool = ? "
-                "AND native_session_id = ? AND agent_id != ''",
+                "AND native_session_id = ? AND agent_id != ''" + physical,
                 (row["session_pk"], tool, native),
             )
         return row["session_pk"]

@@ -307,10 +307,12 @@ class Handler(BaseHTTPRequestHandler):
             self._unread_body = False
             path = urlsplit(self.path).path
             if path in {
-                "/api/exports", "/api/privacy", "/api/view-state", "/api/worktrees/follow"
-            } or path.startswith(
-                "/api/project-clear/"
-            ):
+                "/api/exports",
+                "/api/privacy",
+                "/api/view-state",
+                "/api/worktrees/follow",
+                "/api/project-fragments/assign",
+            } or path.startswith("/api/project-clear/"):
                 from rg.clients.record import unique_pairs
 
                 body = json.loads(raw, object_pairs_hook=unique_pairs)
@@ -348,7 +350,11 @@ class Handler(BaseHTTPRequestHandler):
                 readonly=path in {"/api/qa/retrieve", "/api/qa/preview", "/api/exports"},
             )
             try:
-                if path == "/api/worktrees/follow":
+                if path == "/api/project-fragments/assign":
+                    from rg.store.fragments import assign
+
+                    result = assign(store, body)
+                elif path == "/api/worktrees/follow":
                     from rg.store.worktrees import configure
 
                     if set(body) != {"project_id", "follow_enabled", "expected_revision"}:

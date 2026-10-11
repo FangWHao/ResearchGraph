@@ -71,7 +71,7 @@ def slim_session(
         if not isinstance(counter, ProjectCounter):
             counter = ProjectCounter(store, permission[1], counter)
     rows = store.db.execute(
-        "SELECT r.*, f.parser FROM raw_events r JOIN source_files f "
+        "SELECT r.*, f.parser FROM effective_raw_events r JOIN source_files f "
         "USING(file_instance_id) WHERE r.session_pk = ? ORDER BY r.seq",
         (session_id,),
     ).fetchall()
@@ -81,7 +81,7 @@ def slim_session(
         event = None
         reason = row["exclude_reason"]
         mirror = store.db.execute(
-            "SELECT reason FROM dedupe_links WHERE alias_id = ?", (row["event_id"],)
+            "SELECT reason FROM effective_dedupe_links WHERE alias_id = ?", (row["event_id"],)
         ).fetchone()
         if mirror:
             reason = mirror[0]
@@ -139,7 +139,8 @@ def slim_session(
     result = [
         dict(row)
         for row in store.db.execute(
-            "SELECT r.event_id, r.kind, r.role, r.call_id, s.text, s.tokens FROM raw_events r "
+            "SELECT r.event_id, r.kind, r.role, r.call_id, s.text, s.tokens "
+            "FROM effective_raw_events r "
             "JOIN slim_events s USING(event_id) WHERE r.session_pk = ? ORDER BY r.seq",
             (session_id,),
         )
@@ -147,7 +148,7 @@ def slim_session(
     ]
     for event in result:
         row = store.db.execute(
-            "SELECT f.parser, r.record_index FROM raw_events r JOIN source_files f "
+            "SELECT f.parser, r.record_index FROM effective_raw_events r JOIN source_files f "
             "USING(file_instance_id) WHERE event_id = ?",
             (event["event_id"],),
         ).fetchone()

@@ -7,9 +7,11 @@ import { ArtifactHealthPanel } from './ArtifactHealthPanel';
 import { ParserHealthPanel } from './ParserHealthPanel';
 import { HookErrorPanel } from './HookErrorPanel';
 import { WorktreePanel } from './WorktreePanel';
+import { ProjectFragmentsPanel } from './ProjectFragmentsPanel';
+import type { FragmentSource } from './ProjectFragmentsPanel';
 import { healthCount, healthMetrics, percentage } from './health';
 import type { HealthMetric } from './health';
-import type { HealthData } from './types';
+import type { HealthData, Project } from './types';
 import './health.css';
 
 function Metrics({ items }: { items: HealthMetric[] }) {
@@ -23,16 +25,24 @@ type HealthViewProps = {
   project: string; epoch: number; onEvidence: (target: { event_id: number }) => void;
   onError: (error: unknown) => void;
   onVersions?: () => void;
+  projects?: Project[]; actor?: string; onAssigned?: (revision: number) => void;
 };
 
 export function HealthView(props: HealthViewProps) {
+  const [selected, setSelected] = useState<{ project: string; source: FragmentSource } | null>(null);
+  useEffect(() => setSelected(null), [props.project]);
   return <><WorktreePanel project={props.project} epoch={props.epoch} onError={props.onError} />
     <HookErrorPanel project={props.project} epoch={props.epoch} onError={props.onError} />
     <ParserHealthPanel project={props.project} epoch={props.epoch}
-    onEvidence={props.onEvidence} onError={props.onError} /><HealthContent {...props} /></>;
+    onEvidence={props.onEvidence} onError={props.onError} /><HealthContent {...props}
+      onFragments={source => setSelected({ project: props.project, source })} />
+    {selected?.project === props.project && <ProjectFragmentsPanel project={props.project} epoch={props.epoch}
+      actor={props.actor ?? 'human:本机用户'} projects={props.projects ?? []} source={selected.source}
+      onEvidence={props.onEvidence} onError={props.onError} onAssigned={props.onAssigned ?? (() => {})}
+      onClose={() => setSelected(null)} />}</>;
 }
 
-function HealthContent({ project, epoch, onEvidence, onError, onVersions }: HealthViewProps) {
+function HealthContent({ project, epoch, onEvidence, onError, onVersions, onFragments }: HealthViewProps & { onFragments: (source: FragmentSource) => void }) {
   const [response, setResponse] = useState<{ key: string; data: HealthData } | null>(null);
   const [pages, setPages] = useState({ project, offset: 0, pipelineOffset: 0 });
   const [retry, setRetry] = useState(0);
@@ -137,7 +147,10 @@ function HealthContent({ project, epoch, onEvidence, onError, onVersions }: Heal
       <h3 id="sources-heading">来源与游标 <span>{data.sources.length}</span><span className="eyebrow">当前项目</span></h3>
       {!data.sources.length ? <p className="muted">没有已导入的来源文件。</p> : <div className="table-scroll" role="region" aria-label="来源与游标表，可横向滚动" tabIndex={0}>
         <table><thead><tr><th scope="col">来源</th><th scope="col">最后导入</th><th scope="col">游标滞后</th><th scope="col">会话清理风险</th></tr></thead><tbody>{data.sources.map(source => <tr key={source.file_instance_id}>
-          <td><strong>{source.tool}</strong><span className="path" title={source.path}>{source.path}</span></td><td><DateText value={source.last_read} /></td>
+          <td><strong>{source.tool}</strong><span className="path" title={source.path}>{source.path}</span>
+            <button className="text-button" disabled={!Number.isSafeInteger(source.session_pk) || !source.session_pk || source.session_pk < 1}
+              onClick={() => onFragments({ ...source, session_pk: source.session_pk! })}>查看片段与归属</button>
+            {!source.session_pk && <small>接口未提供物理会话编号，片段入口不可用。</small>}</td><td><DateText value={source.last_read} /></td>
           <td>{source.cursor_lag_bytes == null ? '未知' : `${source.cursor_lag_bytes.toLocaleString()} 字节`}</td>
           <td>{source.cleanup_risk === 'source_missing' ? '来源已缺失，已复制事件仍可查看' : source.cleanup_risk === 'source_truncated' ? '来源长度缩短' : '当前无来源缺失迹象'}<small>{source.status}</small></td>
         </tr>)}</tbody></table>

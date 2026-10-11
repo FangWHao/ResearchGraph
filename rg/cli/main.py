@@ -154,7 +154,7 @@ def parser() -> argparse.ArgumentParser:
     worktrees.add_argument("--offset", type=int, default=0)
     worktrees.add_argument("--expected-revision", type=int)
     fragments = project_sub.add_parser(
-        "fragments", help="只读检查物理片段边界与项目目录线索，不改变归属"
+        "fragments", help="只读检查物理片段、目录线索与正式归属"
     )
     fragments.add_argument("--session", type=int, required=True)
     fragments.add_argument("--source", type=int, required=True)
@@ -164,6 +164,10 @@ def parser() -> argparse.ArgumentParser:
     fragments.add_argument("--snapshot", type=int)
     fragments.add_argument("--observation-snapshot", type=int)
     fragments.add_argument("--expected-scope-key")
+    fragment_assign = project_sub.add_parser(
+        "fragment-assign", help="用带修订的JSON请求明确归属完整物理记录"
+    )
+    fragment_assign.add_argument("--request-file", type=Path, required=True)
     fragment_backfill = project_sub.add_parser(
         "fragment-backfill", help="有界补记已保存物理记录的目录线索，不读取原路径"
     )
@@ -642,6 +646,18 @@ def run(args: argparse.Namespace, store: Store) -> object:
                     if getattr(args, name) is not None
                 },
             )
+        if args.project_command == "fragment-assign":
+            from rg.clients.record import unique_pairs
+            from rg.store.fragments import assign
+
+            with args.request_file.open("rb") as stream:
+                raw = stream.read(65537)
+            if len(raw) > 65536:
+                raise ValueError("归属请求超过64KiB")
+            body = json.loads(raw, object_pairs_hook=unique_pairs)
+            if not isinstance(body, dict):
+                raise ValueError("归属请求必须是JSON对象")
+            return assign(store, body)
         if args.project_command == "fragment-backfill":
             from rg.ingest.project_context import backfill_file
 
@@ -821,7 +837,7 @@ def run(args: argparse.Namespace, store: Store) -> object:
 
         policy = read(store, session[0])
         rows = store.db.execute(
-            "SELECT event_id, kind FROM raw_events WHERE session_pk = ? "
+            "SELECT event_id, kind FROM effective_raw_events WHERE session_pk = ? "
             "AND exclude_reason IS NULL ORDER BY seq LIMIT 3",
             (args.session,),
         ).fetchall()

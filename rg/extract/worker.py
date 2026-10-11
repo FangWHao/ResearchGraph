@@ -167,30 +167,40 @@ class Worker:
             with policy.sending(self.store, self.provider.remote):
                 self._check_model_limits()
             # 相同失败输入的重试使用同一 run，并保留失败状态供监控。
-            if cached:
-                run_id = cached["extraction_run_id"]
-            else:
-                cursor = self.store.db.execute(
-                    "INSERT INTO extraction_runs (job_key, stage, provider, model, prompt_version, "
-                    "schema_version, input_event_ids, working_set_ids, budget_tokens, "
-                    "status, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
-                    (
-                        key,
-                        stage,
-                        self.provider.provider,
-                        self.provider.model,
-                        prompt_version,
-                        schema_version,
-                        dumps(item.input_ids),
-                        dumps(working_ids),
-                        limit,
-                        now(),
-                    ),
-                )
-                run_id = cursor.lastrowid
-                if run_id is None:
-                    raise RuntimeError("无法建立提取运行")
+            with self.store.transaction():
+                mismatched = self.store.db.execute(
+                    "SELECT 1 FROM json_each(?) j JOIN effective_raw_events r "
+                    "ON r.event_id=j.value JOIN sessions s USING(session_pk) "
+                    "WHERE s.project_id IS NOT ? LIMIT 1",
+                    (dumps(item.input_ids), project_id),
+                ).fetchone()
+                if mismatched:
+                    raise InvalidClaim("模型输入片段归属已变化，请重新准备工作集")
+                if cached:
+                    run_id = cached["extraction_run_id"]
+                else:
+                    cursor = self.store.db.execute(
+                        "INSERT INTO extraction_runs (job_key, stage, provider, model, "
+                        "prompt_version, "
+                        "schema_version, input_event_ids, working_set_ids, budget_tokens, "
+                        "status, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+                        (
+                            key,
+                            stage,
+                            self.provider.provider,
+                            self.provider.model,
+                            prompt_version,
+                            schema_version,
+                            dumps(item.input_ids),
+                            dumps(working_ids),
+                            limit,
+                            now(),
+                        ),
+                    )
+                    run_id = cursor.lastrowid
+                    if run_id is None:
+                        raise RuntimeError("无法建立提取运行")
             with self.store.transaction() as db:
                 db.execute(
                     "UPDATE extraction_runs SET status='pending', error=NULL, output_json=NULL, "
@@ -399,7 +409,7 @@ class Worker:
             type(max_event_id) is not int
             or max_event_id < 1
             or not self.store.db.execute(
-                "SELECT 1 FROM raw_events WHERE event_id=? AND session_pk=?",
+                "SELECT 1 FROM effective_raw_events WHERE event_id=? AND session_pk=?",
                 (max_event_id, session_id),
             ).fetchone()
         ):
@@ -438,7 +448,8 @@ class Worker:
             dict(x)
             for x in self.store.db.execute(
                 "SELECT r.event_id,r.object_sha256,r.exclude_reason,r.seq,r.kind,r.call_id,"
-                "d.alias_id AS mirror_id FROM raw_events r LEFT JOIN dedupe_links d "
+                "d.alias_id AS mirror_id FROM effective_raw_events r LEFT JOIN "
+                "effective_dedupe_links d "
                 "ON d.alias_id=r.event_id WHERE r.session_pk=? "
                 "AND (? IS NULL OR r.event_id<=?) ORDER BY r.seq",
                 (session_id, self.max_event_id, self.max_event_id),
@@ -521,9 +532,10 @@ class Worker:
         review_id = self.store.db.execute(
             "SELECT coalesce(max(a.action_id),0) FROM review_actions a WHERE a.actor!=? "
             "OR NOT EXISTS (SELECT 1 FROM claim_evidence ce JOIN evidence_spans es "
-            "USING(span_id) JOIN raw_events r USING(event_id) WHERE ce.claim_id=a.claim_id "
+            "USING(span_id) JOIN effective_raw_events r USING(event_id) WHERE "
+            "ce.claim_id=a.claim_id "
             "AND r.session_pk=?) OR EXISTS (SELECT 1 FROM claim_evidence ce "
-            "JOIN evidence_spans es USING(span_id) JOIN raw_events r USING(event_id) "
+            "JOIN evidence_spans es USING(span_id) JOIN effective_raw_events r USING(event_id) "
             "WHERE ce.claim_id=a.claim_id AND r.session_pk!=?)",
             ("rule:" + RULE_VERSION, session_id, session_id),
         ).fetchone()[0]
@@ -558,7 +570,7 @@ class Worker:
 
     def _pending(self, session_id: int) -> int:
         return self.store.db.execute(
-            "SELECT count(*) FROM coverage c JOIN raw_events r USING(event_id) "
+            "SELECT count(*) FROM coverage c JOIN effective_raw_events r USING(event_id) "
             "WHERE r.session_pk=? AND c.status='pending' "
             "AND (? IS NULL OR r.event_id<=?)",
             (session_id, self.max_event_id, self.max_event_id),
@@ -724,7 +736,7 @@ class Worker:
             return
         except DailyBudgetExceeded:
             session = self.store.db.execute(
-                "SELECT session_pk FROM raw_events WHERE event_id=?", (item.ids[0],)
+                "SELECT session_pk FROM effective_raw_events WHERE event_id=?", (item.ids[0],)
             ).fetchone()[0]
             context = dumps(
                 {
@@ -759,7 +771,8 @@ class Worker:
                 if self.config_key is not None:
                     with self.store.transaction():
                         session = self.store.db.execute(
-                            "SELECT session_pk FROM raw_events WHERE event_id=?", (item.ids[0],)
+                            "SELECT session_pk FROM effective_raw_events WHERE event_id=?",
+                            (item.ids[0],),
                         ).fetchone()[0]
                         register(self.store, self.config_key, session, children)
                         self.store.db.execute(
@@ -787,7 +800,8 @@ class Worker:
         for event in item.events:
             if event["kind"] in {"tool_call", "file_edit"}:
                 row = self.store.db.execute(
-                    "SELECT f.parser, r.record_index FROM raw_events r JOIN source_files f "
+                    "SELECT f.parser, r.record_index FROM effective_raw_events r JOIN "
+                    "source_files f "
                     "USING(file_instance_id) WHERE r.event_id = ?",
                     (event["event_id"],),
                 ).fetchone()

@@ -13,7 +13,7 @@ Event = dict[str, Any]
 def event(store: Store, event_id: int) -> Event:
     row = store.db.execute(
         "SELECT r.*,s.project_id,s.cwd AS session_cwd,s.tool "
-        "FROM raw_events r JOIN sessions s USING(session_pk) WHERE r.event_id=?",
+        "FROM effective_raw_events r JOIN sessions s USING(session_pk) WHERE r.event_id=?",
         (event_id,),
     ).fetchone()
     if row is None:
@@ -55,7 +55,7 @@ def cwd(store: Store, value: Event) -> str | None:
         path = value["record"].get("cwd") or value["session_cwd"]
         return path if isinstance(path, str) else None
     for row in store.db.execute(
-        "SELECT event_id FROM raw_events WHERE session_pk=? AND seq<=? AND kind='meta' "
+        "SELECT event_id FROM effective_raw_events WHERE session_pk=? AND seq<=? AND kind='meta' "
         "ORDER BY seq DESC",
         (value["session_pk"], value["seq"]),
     ):
@@ -103,7 +103,7 @@ def calls(store: Store, value: Event) -> list[Event]:
     result = [
         event(store, row[0])
         for row in store.db.execute(
-            "SELECT event_id FROM raw_events WHERE session_pk=? AND call_id=? "
+            "SELECT event_id FROM effective_raw_events WHERE session_pk=? AND call_id=? "
             "AND kind IN ('tool_call','file_edit') AND alias_of IS NULL AND exclude_reason IS NULL "
             "ORDER BY seq",
             (value["session_pk"], value["call_id"]),
@@ -123,7 +123,7 @@ def calls(store: Store, value: Event) -> list[Event]:
         result = [
             event(store, row[0])
             for row in store.db.execute(
-                "SELECT event_id FROM raw_events WHERE session_pk=? AND call_id=? "
+                "SELECT event_id FROM effective_raw_events WHERE session_pk=? AND call_id=? "
                 "AND kind='meta' AND tool_name='exec_command' "
                 "AND exclude_reason='execution_metadata' AND alias_of IS NULL ORDER BY seq",
                 (value["session_pk"], value["call_id"]),
@@ -144,7 +144,7 @@ def patch_begins(store: Store, value: Event) -> list[Event]:
     return [
         candidate
         for row in store.db.execute(
-            "SELECT event_id FROM raw_events WHERE session_pk=? AND call_id=? "
+            "SELECT event_id FROM effective_raw_events WHERE session_pk=? AND call_id=? "
             "AND kind='meta' AND tool_name='apply_patch' "
             "AND exclude_reason='execution_metadata' AND alias_of IS NULL ORDER BY seq",
             (value["session_pk"], value["call_id"]),
