@@ -216,11 +216,16 @@ def _consume_one(
                 chosen = []
                 error = "source_unassigned_or_ambiguous"
             if chosen and all(path.is_file() for path, _ in chosen):
+                held = False
                 for path, source in chosen:
-                    scan_file(store, path, source.tool, source.project)
+                    scanned = scan_file(store, path, source.tool, source.project)
+                    held |= bool(scanned.get("privacy_held") or scanned.get("privacy_tail_held"))
                 if fault:
                     fault()
-                state = "done"
+                if held:
+                    error = "privacy_record_held"
+                else:
+                    state = "done"
             elif chosen:
                 error = "transcript_not_ready"
     except TaskBusy:

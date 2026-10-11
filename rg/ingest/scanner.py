@@ -11,6 +11,7 @@ from rg.ingest.common import Parsed, injection, parse
 from rg.store.database import Store, now
 from rg.store.locking import exclusive
 from rg.store.objects import digest
+from rg.store.record_denials import guard
 
 PARSER_VERSION = "4"
 
@@ -216,12 +217,20 @@ def scan_file(
         raise ValueError("来源必须为 claude 或 codex")
     path = path.resolve()
     key = digest(str(path).encode())
-    with exclusive(store.root / "locks" / "sources" / (key + ".lock"), "该来源文件正在扫描"):
-        return _scan_file(store, path, tool, project_id, fault)
+    with (
+        exclusive(store.root / "locks" / "sources" / (key + ".lock"), "该来源文件正在扫描"),
+        guard(store.root) as record_denied,
+    ):
+        return _scan_file(store, path, tool, project_id, fault, record_denied)
 
 
 def _scan_file(
-    store: Store, path: Path, tool: str, project_id: str | None, fault: Callable[[], None] | None
+    store: Store,
+    path: Path,
+    tool: str,
+    project_id: str | None,
+    fault: Callable[[], None] | None,
+    record_denied: Callable[[str, str], bool] | None,
 ) -> dict[str, int]:
     session = _session(store, path, tool, project_id)
     if session is None:
@@ -244,6 +253,9 @@ def _scan_file(
         stream.seek(offset)
         while line := stream.readline():
             if not line.endswith(b"\n"):
+                if record_denied is not None:
+                    counts["privacy_tail_held"] += 1
+                    break
                 with store.transaction() as db:
                     db.execute(
                         "UPDATE source_files SET tail_fragment = ?, last_read = ? "
@@ -251,6 +263,10 @@ def _scan_file(
                         (line, now(), file_id),
                     )
                 counts["tail_fragments"] += 1
+                break
+            if record_denied is not None and record_denied(tool, digest(line)):
+                counts["privacy_blocked_records"] += 1
+                counts["privacy_held"] += 1
                 break
             sha = store.objects.put(line)
             status = "parsed"

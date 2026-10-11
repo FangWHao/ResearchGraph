@@ -8,6 +8,7 @@ from pathlib import Path
 
 from rg.snapshot.capture import identifier
 from rg.snapshot.git import Git
+from rg.store import record_denials
 from rg.store.database import Store, dumps
 from rg.store.lease import lease
 from rg.store.locking import exclusive
@@ -77,7 +78,17 @@ def _copy_backup(store: Store, destination: Path) -> dict[str, int]:
             raise ValueError("备份数据库完整性检查失败")
         for name in ["snapshots", "spool", "overviews", "clear-records"]:
             if (store.root / name).exists():
-                shutil.copytree(store.root / name, destination / name, symlinks=True)
+                ignored = (
+                    shutil.ignore_patterns(
+                        record_denials.NAME, record_denials.NAME + "-*", record_denials.NAME + ".*"
+                    )
+                    if name == "clear-records"
+                    else None
+                )
+                shutil.copytree(
+                    store.root / name, destination / name, symlinks=True, ignore=ignored
+                )
+        record_denials.backup(store.root, destination)
         projects = target.execute(
             "SELECT DISTINCT project_id FROM workspace_snapshots WHERE shadow_commit IS NOT NULL"
         ).fetchall()

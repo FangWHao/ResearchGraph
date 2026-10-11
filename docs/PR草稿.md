@@ -1,3 +1,5 @@
+整项目清除增加原始记录级重导入屏障：同一原件改换来源路径或会话头后，扫描在写对象、搜索及L1之前停住，游标不越过，spool保留等待原因。共享原件和相同文字的独立记录保留。索引只保存摘要，先持久提交再删主库，首次原子发布；旧待恢复清单、再次中断、索引损坏／缺失和SQLite备份恢复均核对，屏障丢失时不假报清除完成。正式跨项目归属与共享会话局部清除仍待接通。
+
 显式登记的 Codex／Claude 会话可整理成有原文引用、完整范围及发生／已知双时间的研究决定史。本地研究图、时间线、检索、问答和历史导出保留候选、撤回、阴性结果及人工更正；模型写 candidate，确认只来自人工或独立原话规则。
 
 开启同仓库工作树跟踪后，生产采集循环可自动登记归属唯一的新本机成员及其快照根。默认关闭，首次配置可随建项目完成；暂停保留已有根与历史。共同目录跨项目有歧义、路径与其它项目根相交、当前身份变化或已整项目清除时，保留诊断并跳过。Git探测在提交前再次核对策略及交叉根，远端摘要和cwd不改变会话归属。结构化CLI在输出编码无法表示中文时使用标准JSON转义，保留完整字段与原文，不改变系统编码。迁移29追加策略／发现历史，持久成员及锚点轮转支持重启和坏成员续扫，登记后快照清单发布中断由后续循环修复。
@@ -13,15 +15,15 @@
 ## 已实际退出的验收
 
 ```text
-uv run pytest -q                                      1542 passed in503.68s(0:08:23)，退出0
-片段／采集／解析账本／清除／迁移五组              127 passed in33.87s，退出0
+uv run pytest -q                                      1558 passed in520.44s(0:08:40)，退出0
+记录屏障／清除／片段／采集／存储五组              107 passed in45.92s，退出0
 uv run ruff check rg tests scripts                    All checks passed!，退出0
 uv run pyright rg                                    0 errors, 0 warnings, 0 informations，退出0
 uv run rg project fragments --help                   退出0
-仓库外 Windows3.12.3 -I实际安装十一组                258 passed, 1 skipped in70.52s，退出0
+仓库外 Windows3.12.3 -I实际安装十二组                274 passed, 1 skipped in76.36s，退出0
 ```
 
-本轮前端源文件没有变化，以下为bb59b00已核实的实际基线；新提交CI仍完整复查：
+本轮前端源文件没有变化，以下为f330ac0两类CI已核实的实际基线；新提交CI仍完整复查：
 
 ```text
 cd web && pnpm test                                    210 passed／22文件／1.01s，退出0
@@ -31,9 +33,9 @@ cd web && pnpm test:browser 工作树专项                 7 passed(22.4s)，�
 cd web && pnpm test:browser                            187 passed(4.8m)，退出0
 ```
 
-Windows系统CP936／utf8_mode0不变，跳过仅为不合法换行文件名。152包成员／147运行资源与源码及安装逐字相同，实际凭据／私有文件匹配0。SDK2.3.0两代协议各6工具和两类生成客户端查询通过，只读数据库不变，候选保存与UUID重试不重复。之前前端七文件独立恢复、209项证据冻结与五图原尺寸核对完成，父检查桌面与390两图，科研表及Git原件SHA／计数不变。本轮完整后端1542、扩大127、Windows258及静态／协议均已实际通过；完整后端包装506.855s、原生安装包装71.456s。新HEAD单独golden、完整浏览器、双CI及524文件全历史恢复按终态核对，草稿保持未合并。
+Windows系统CP936／utf8_mode0不变，跳过仅为不合法换行文件名。153包成员／148运行资源与源码及安装逐字相同，实际凭据／私有文件匹配0。SDK2.3.0两代协议各6工具和两类生成客户端查询通过，只读数据库不变，候选保存与UUID重试不重复。前端源未变，之前七文件独立恢复／209项证据冻结／图像核对保留；f330ac0最终两类CI各30步骤／15检查均成功，包含1542后端／1495golden／210前端／253模块／187浏览器及258Windows。当前冻结版本后端1558、扩大107、Windows274及静态／协议均已实际通过；全量包装522.086s、安装包装77.273s。初次错误测试路径未运行，早期静态／类型失败均已修正；全量首轮因补spool等待主动停止实际143，不冒充通过。新HEAD的单独golden、完整浏览器、双CI及527文件全历史恢复按终态核对，草稿保持未合并。
 
-证据见[片段账本验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/物理片段与目录声明账本验收_20261011.md)、[自动工作树验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/自动工作树发现验收_20261011.md)、[笔记验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/人工与候选笔记验收_20261011.md)和[需求落实与剩余项](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。
+证据见[记录屏障验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/原始记录清除屏障验收_20261011.md)、[片段账本验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/物理片段与目录声明账本验收_20261011.md)、[自动工作树验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/自动工作树发现验收_20261011.md)、[笔记验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/人工与候选笔记验收_20261011.md)和[需求落实与剩余项](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。
 
 Atlas正式人工参考、真实提取质量／找答案时间与成本、跨项目片段归属、全量采集版本／实际运行I/O、真实钩子／规模及两周使用仍待验收，完整M0–M4尚未完成。候选自动登记的工程通过不能证明科学结论正确，不能补造真实参考。原生末级符号链接权限、其他文件系统和断电持久性仍保留物理验收边界。
 

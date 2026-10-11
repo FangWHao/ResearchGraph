@@ -8,10 +8,12 @@ import re
 import shutil
 import sqlite3
 import uuid
+from collections.abc import Iterator
 from contextlib import closing
 from pathlib import Path
 from typing import Any
 
+from rg.store import record_denials
 from rg.store.clear_files import LIMIT, Files, read_json
 from rg.store.clear_selection import Selection, identifier
 from rg.store.database import ConflictError, dumps, now
@@ -57,7 +59,9 @@ def connect(root: Path, *, readonly: bool) -> sqlite3.Connection:
     return db
 
 
-def plan(root: Path, db: sqlite3.Connection, project: str) -> tuple[dict, Selection]:
+def plan(
+    root: Path, db: sqlite3.Connection, project: str, *, record_barrier: bool = True
+) -> tuple[dict, Selection]:
     if not db.execute("SELECT 1 FROM projects WHERE project_id=?", (project,)).fetchone():
         raise ValueError("项目不存在")
     selected = Selection(db, project)
@@ -67,6 +71,9 @@ def plan(root: Path, db: sqlite3.Connection, project: str) -> tuple[dict, Select
     selected.expand()
     removed, shared = selected.objects()
     files.object_files(removed, shared)
+    denials: dict[str, Any] = dict(files.denials)
+    if record_barrier:
+        denials["record_barrier"] = _record_summary(db, selected, removed)
     blockers = sorted(set(selected.blockers() + files.blockers))
     revision = db.execute("SELECT revision FROM graph_clock WHERE id=1").fetchone()[0]
     summary = {
@@ -91,10 +98,10 @@ def plan(root: Path, db: sqlite3.Connection, project: str) -> tuple[dict, Select
             values = ["bytes:" + digest(v) if isinstance(v, bytes) else v for v in row]
             hasher.update(dumps(values).encode())
     hasher.update(
-        dumps([files.signatures, sorted(removed), sorted(shared), files.denials]).encode()
+        dumps([files.signatures, sorted(removed), sorted(shared), denials]).encode()
     )
     summary["preview_sha256"] = hasher.hexdigest()
-    return summary | {"remove": sorted(set(files.remove)), "denials": files.denials}, selected
+    return summary | {"remove": sorted(set(files.remove)), "denials": denials}, selected
 
 
 def public(value: dict) -> dict:
@@ -172,6 +179,36 @@ def _delete(db: sqlite3.Connection, selected: Selection) -> None:
         raise
 
 
+def _record_keys(
+    db: sqlite3.Connection, selected: Selection, removed: set[str] | None = None
+) -> Iterator[str]:
+    if removed is None:
+        removed, _ = selected.objects()
+    for tool, sha in db.execute(
+        "SELECT DISTINCT f.parser,c.object_sha256 FROM raw_events c "
+        "JOIN source_files f USING(file_instance_id) WHERE "
+        + selected.selected("raw_events")
+        + " AND f.parser IN ('claude','codex') ORDER BY f.parser,c.object_sha256"
+    ):
+        if sha in removed:
+            yield record_denials.key(tool, sha)
+
+
+def _record_summary(db: sqlite3.Connection, selected: Selection, removed: set[str]) -> dict:
+    hasher, count = hashlib.sha256(), 0
+    for value in _record_keys(db, selected, removed):
+        hasher.update(value.encode())
+        count += 1
+    return {"version": record_denials.VERSION, "count": count, "sha256": hasher.hexdigest()}
+
+
+def _save_record_denials(root: Path, db: sqlite3.Connection, selected: Selection) -> None:
+    record_denials.append(root, _record_keys(db, selected))
+    if (root / "clear-records").exists():
+        _sync(root / "clear-records")
+        _sync(root)
+
+
 def _managed_path(root: Path, relative: str) -> Path:
     if not isinstance(relative, str) or not re.fullmatch(
         r"(?:objects/[a-f0-9]{2}/[a-f0-9]{64}\.zst|"
@@ -186,6 +223,9 @@ def _managed_path(root: Path, relative: str) -> Path:
 
 
 def _finish(root: Path, value: dict, db: sqlite3.Connection) -> dict:
+    with record_denials.guard(root) as contains:
+        if value["denials"].get("record_barrier", {}).get("count", 0) and contains is None:
+            raise ValueError("清除摘要索引缺失，保留清除等待恢复状态")
     # VACUUM 去掉旧页，FTS 已从保留内容重建；WAL 必须实际截断后才报告成功。
     db.execute("PRAGMA secure_delete=ON")
     db.execute("VACUUM")
@@ -250,6 +290,7 @@ def execute(root: Path, project: str, request_id: str, proof: str) -> dict:
             raise ConflictError("清除存在归属阻碍，请先处理后重新预览")
         value.update(request_id=request_id, state="pending", started_at=now())
         _persist(root, value)
+        _save_record_denials(root, db, selected)
         _delete(db, selected)
         return _finish(root, value, db)
 
@@ -268,8 +309,20 @@ def resume(root: Path, request_id: str) -> dict:
             "SELECT 1 FROM projects WHERE project_id=?", (value["project_id"],)
         ).fetchone():
             db.execute("BEGIN IMMEDIATE")
-            current, selected = plan(root, db, value["project_id"])
+            current, selected = plan(
+                root, db, value["project_id"],
+                record_barrier=(
+                    "record_barrier" in value["denials"]
+                    and not value.get("legacy_record_preview", False)
+                ),
+            )
             if current["preview_sha256"] != value["preview_sha256"] or current["blockers"]:
                 raise ConflictError("等待恢复的资料已变化，保留阻止访问状态")
+            if "record_barrier" not in value["denials"]:
+                removed, _ = selected.objects()
+                value["denials"]["record_barrier"] = _record_summary(db, selected, removed)
+                value["legacy_record_preview"] = True
+                _persist(root, value)
+            _save_record_denials(root, db, selected)
             _delete(db, selected)
         return _finish(root, value, db)
