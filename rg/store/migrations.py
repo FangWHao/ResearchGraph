@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 29
+LATEST_VERSION = 30
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -535,6 +535,25 @@ MIGRATIONS[29] = (
             "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
         )
     ),
+)
+
+
+MIGRATIONS[30] = (
+    "CREATE TABLE project_context_observations ("
+    "observation_id INTEGER PRIMARY KEY AUTOINCREMENT,event_id INTEGER NOT NULL "
+    "REFERENCES raw_events,file_instance_id INTEGER NOT NULL REFERENCES source_files,"
+    "state TEXT NOT NULL CHECK(state IN ('declared','absent','invalid','unavailable')),"
+    "source TEXT NOT NULL CHECK(source IN ('codex_session','codex_turn','claude_record','none')),"
+    "cwd TEXT,cwd_sha256 TEXT,reason TEXT NOT NULL,recorded_at TEXT NOT NULL,"
+    "CHECK((state='declared' AND cwd IS NOT NULL AND cwd_sha256 IS NOT NULL) OR "
+    "(state!='declared' AND cwd IS NULL)))",
+    "CREATE INDEX project_context_file ON project_context_observations"
+    "(file_instance_id,event_id,observation_id)",
+    "CREATE INDEX project_context_event ON project_context_observations(event_id,observation_id)",
+    "CREATE TRIGGER project_context_no_update BEFORE UPDATE ON project_context_observations "
+    "BEGIN SELECT RAISE(ABORT,'project context is append-only'); END",
+    "CREATE TRIGGER project_context_no_delete BEFORE DELETE ON project_context_observations "
+    "BEGIN SELECT RAISE(ABORT,'project context is append-only'); END",
 )
 
 

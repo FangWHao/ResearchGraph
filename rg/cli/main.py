@@ -153,6 +153,22 @@ def parser() -> argparse.ArgumentParser:
     worktrees.add_argument("--limit", type=int, default=100)
     worktrees.add_argument("--offset", type=int, default=0)
     worktrees.add_argument("--expected-revision", type=int)
+    fragments = project_sub.add_parser(
+        "fragments", help="只读检查物理片段边界与项目目录线索，不改变归属"
+    )
+    fragments.add_argument("--session", type=int, required=True)
+    fragments.add_argument("--source", type=int, required=True)
+    fragments.add_argument("--project")
+    fragments.add_argument("--limit", type=int, default=20)
+    fragments.add_argument("--after-event", type=int, default=0)
+    fragments.add_argument("--snapshot", type=int)
+    fragments.add_argument("--observation-snapshot", type=int)
+    fragments.add_argument("--expected-scope-key")
+    fragment_backfill = project_sub.add_parser(
+        "fragment-backfill", help="有界补记已保存物理记录的目录线索，不读取原路径"
+    )
+    fragment_backfill.add_argument("--source", type=int, required=True)
+    fragment_backfill.add_argument("--retry-unavailable", action="store_true")
     follow = project_sub.add_parser(
         "follow-worktrees", help="开启或停止自动登记同仓库工作树；已登记历史保留"
     )
@@ -606,6 +622,44 @@ def run(args: argparse.Namespace, store: Store) -> object:
             from rg.store.worktrees import listing
 
             return listing(store, args.project, args.limit, args.offset, args.expected_revision)
+        if args.project_command == "fragments":
+            from rg.query.project_fragments import query
+
+            return query(
+                store,
+                {
+                    name: str(getattr(args, name))
+                    for name in (
+                        "session",
+                        "source",
+                        "project",
+                        "limit",
+                        "after_event",
+                        "snapshot",
+                        "observation_snapshot",
+                        "expected_scope_key",
+                    )
+                    if getattr(args, name) is not None
+                },
+            )
+        if args.project_command == "fragment-backfill":
+            from rg.ingest.project_context import backfill_file
+
+            if (
+                not 0 < args.source <= 9223372036854775807
+                or not store.db.execute(
+                    "SELECT 1 FROM source_files WHERE file_instance_id=?", (args.source,)
+                ).fetchone()
+            ):
+                raise ValueError("来源编号不存在或超出范围")
+            count = backfill_file(store, args.source, retry_unavailable=args.retry_unavailable)
+            remaining = store.db.execute(
+                "SELECT count(*) FROM raw_events r WHERE file_instance_id=? AND record_index=0 "
+                "AND NOT EXISTS (SELECT 1 FROM project_context_observations o "
+                "WHERE o.event_id=r.event_id)",
+                (args.source,),
+            ).fetchone()[0]
+            return {"processed": count, "remaining": remaining, "assignments_applied": False}
         if args.project_command == "follow-worktrees":
             from rg.store.worktrees import configure
 
@@ -1026,7 +1080,10 @@ def main() -> None:
                 "l1-graph",
             }
             or (args.command == "ask" and args.retrieve_only)
-            or (args.command == "project" and args.project_command in {"roots", "worktrees"})
+            or (
+                args.command == "project"
+                and args.project_command in {"roots", "worktrees", "fragments"}
+            )
             or (
                 args.command == "project"
                 and args.project_command == "privacy"

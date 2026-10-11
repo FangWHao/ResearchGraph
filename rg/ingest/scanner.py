@@ -228,6 +228,9 @@ def _scan_file(
         return {"privacy_blocked": 1}
     instance = _instance(store, path, tool, session)
     file_id, offset = instance["file_instance_id"], instance["committed_offset"]
+    from rg.ingest.project_context import backfill_file as backfill_context
+
+    backfill_context(store, file_id)
     if tool == "claude" and store.db.execute("PRAGMA user_version").fetchone()[0] >= 22:
         from rg.ingest.claude_chain import backfill_file as backfill_chain
 
@@ -337,6 +340,9 @@ def _scan_file(
                 from rg.ingest.catalog import append
 
                 append(db, file_id, PARSER_VERSION, tool, record, events, event_ids, status)
+                from rg.ingest.project_context import observe as observe_context
+
+                observe_context(db, file_id, event_ids[0], tool, record, status)
                 if tool == "claude" and db.execute("PRAGMA user_version").fetchone()[0] >= 22:
                     from rg.ingest.claude_chain import observe as observe_chain
 

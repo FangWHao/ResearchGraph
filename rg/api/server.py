@@ -135,6 +135,10 @@ class Handler(BaseHTTPRequestHandler):
     def _dispatch(self, path: str, values: dict[str, str], store: Store) -> Any:
         if path == "/api/projects":
             return views.projects(store)
+        if path == "/api/project-fragments":
+            from rg.query.project_fragments import query
+
+            return query(store, values)
         if path == "/api/worktrees":
             from rg.store.worktrees import listing
 

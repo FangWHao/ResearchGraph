@@ -43,6 +43,7 @@ jobs:
           tests/golden/test_rule_reference_qualification.py
           tests/golden/test_notes.py
           tests/golden/test_worktree_discovery.py
+          tests/golden/test_project_fragments.py
           tests/test_migrations.py
           -q
   backend:
