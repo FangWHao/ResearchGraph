@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import os
+import subprocess
+import uuid
 from contextlib import ExitStack
 
 import pytest
@@ -9,11 +11,112 @@ import pytest
 from rg.artifacts import files as physical_files
 from rg.artifacts.files import current_file
 from rg.export import package
-from rg.snapshot.capture import capture
+from rg.snapshot.capture import capture, publish
 from rg.snapshot.files import WorkspaceFiles
+from rg.store.database import now
 from tests.directory_aliases import directory_alias
 from tests.golden.test_exports import options
 from tests.golden.test_snapshots_hooks import git, project, shadow
+
+
+def prepared_snapshot(store, identity, root, work):
+    """已知字节的公开影子 Git 输入；不测量或绕过生产快照的2秒时限。"""
+    repository = store.root / "snapshots" / f"{identity}.git"
+    repository.mkdir(parents=True, exist_ok=True)
+    template = repository.parent / "public-empty-template"
+    template.mkdir(exist_ok=True)
+
+    def command(*arguments, data=None):
+        return subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repository),
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@localhost",
+                "-c",
+                "core.hooksPath=" + os.devnull,
+                "-c",
+                "commit.gpgsign=false",
+                *arguments,
+            ],
+            input=data,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+
+    if not (repository / "HEAD").exists():
+        command("init", "--bare", "--quiet", "--template=" + str(template))
+    raw = b"original\n"
+    blob = command("hash-object", "-w", "--stdin", data=raw)
+    assert blob.decode() == hashlib.sha1(b"blob 9\0" + raw, usedforsecurity=False).hexdigest()
+    tree = command("mktree", data=b"100644 blob " + blob + b"\tsource.txt\n")
+    commit = command("commit-tree", tree.decode(), data=b"public prepared fixture\n").decode()
+    measured = (work / "large.bin").stat()
+    timestamp = now()
+    record = {
+        "rg_record_type": "workspace_snapshot",
+        "snapshot_key": uuid.uuid4().hex,
+        "project_id": identity,
+        "root_id": root,
+        "worktree": str(work),
+        "trigger": "public_fixture",
+        "requested_at": timestamp,
+        "taken_at": timestamp,
+        "finished_at": timestamp,
+        "head_commit": None,
+        "branch": None,
+        "dirty": None,
+        "shadow_commit": commit,
+        "skipped": None,
+        "duration_ms": 0,
+        "async_race": False,
+        "omitted_files": [
+            {
+                "path": "large.bin",
+                "size": measured.st_size,
+                "mtime_ns": measured.st_mtime_ns,
+                "reason": "large_file",
+            }
+        ],
+        "synthetic_fixture": True,
+    }
+    publish(store.root, "codex", record)
+    from tests.golden.test_snapshots_hooks import queued
+
+    assert queued(store) > 0
+    return record
+
+
+def test_prepared_snapshot_worker_complete_hash_preserves_all_original_assertions(
+    store, tmp_path, monkeypatch
+):
+    from tests.golden import test_artifacts as cases
+
+    monkeypatch.setattr(cases, "snapshot", prepared_snapshot)
+    cases.test_complete_large_file_hash_is_current_only_and_never_copied(
+        store, tmp_path, monkeypatch
+    )
+
+
+def test_prepared_snapshot_cache_reuses_window_and_detects_same_size_mtime_change(
+    store, tmp_path, monkeypatch
+):
+    from tests.golden import test_artifacts as cases
+
+    monkeypatch.setattr(cases, "snapshot", prepared_snapshot)
+    cases.test_cache_reuses_read_window_and_rehashes_same_size_mtime_with_changed_ctime(
+        store, tmp_path, monkeypatch
+    )
+
+
+def test_prepared_snapshot_hash_allows_another_sqlite_writer(store, tmp_path, monkeypatch):
+    from tests.golden import test_artifacts as cases
+
+    monkeypatch.setattr(cases, "snapshot", prepared_snapshot)
+    cases.test_hash_read_does_not_hold_sqlite_write_transaction(store, tmp_path, monkeypatch)
 
 
 def test_snapshot_preserves_unicode_crlf_ignored_large_file_and_real_index(store, tmp_path):

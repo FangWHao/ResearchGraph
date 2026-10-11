@@ -12,16 +12,16 @@
 
 ```text
 uv sync --locked                         Resolved28/2ms，Checked27/56ms，退出0
-uv run pytest -q                         1353 passed in 434.32s (0:07:14)，退出0
+uv run pytest -q（追加三项前）             1353 passed in 434.32s (0:07:14)，退出0
 uv run ruff check rg tests scripts        All checks passed!，退出0
 uv run pyright rg                        0 errors, 0 warnings, 0 informations，退出0
 uv run rg --help                         退出0
-仓库外 Windows3.12.3 -I 实际安装          61 passed in 19.25s，退出0，CP936、utf8_mode0
+仓库外 Windows3.12.3 -I 实际安装          61 passed in 16.17s，退出0，CP936、utf8_mode0
 ```
 
-本轮最终wheel145成员／140运行资源，源码、包及原生Windows独立安装逐字一致，实际目录凭据匹配0、私有文件0。新增17项文件场景，另保留41项存储／清除与3项既有完整摘要案例；没有跳过原生junction、增加重试或放宽超时。旧安装包9项失败、Windows目录基线竞态及POSIX导出竞态均有实际红灯和修复后固定案例。原生末级符号链接创建权限不足，该分支不冒充物理验收通过。
+本轮最终wheel145成员／140运行资源，源码、包及原生Windows独立安装逐字一致，实际目录凭据匹配0、私有文件0。新文件20项场景，包含复用原完整摘要、缓存和并发事务全部断言的三项固定输入测试，另保留41项存储／清除案例；没有跳过原生junction、增加重试或放宽超时。旧安装包9项失败、Windows目录基线竞态及POSIX导出竞态均有实际红灯和修复后固定案例。原生末级符号链接创建权限不足，该分支不冒充物理验收通过。
 
-前一提交4cd3606的推送及PR两类CI均实际通过：完整后端1336、golden1289、前端182、浏览器166、构建245模块、Windows41，以及静态和官方协议检查。前批本地完整后端／golden与浏览器失败另有记录和修正，未替换为本地全量通过。本轮前端不改，沿320项冻结及八文件独立恢复，合成库查询前后逐表摘要不变。本轮完整后端实际1353项通过、退出0；最终提交另核对推送／PR双CI的完整后端、golden、前端、浏览器、构建、静态、两代SDK、两客户端配置、物理MCP及61项原生Windows。草稿保持未合并。
+前一提交4cd3606的推送及PR两类CI均实际通过：完整后端1336、golden1289、前端182、浏览器166、构建245模块、Windows41，以及静态和官方协议检查。前批本地完整后端／golden与浏览器失败另有记录和修正，未替换为本地全量通过。本轮前端不改，沿320项冻结及八文件独立恢复，合成库查询前后逐表摘要不变。追加三项前本地完整后端实际1353项通过、退出0；17fca9b的两套CI后端、golden及浏览器均通过，推送的Windows为1 failed／60 passed（准备影子快照合法超出2秒），PR的Windows61项通过。现三项摘要验收使用已知字节的公开影子Git输入；原Windows计时快照场景及Linux原摘要案例不改、不重试失败来凑通过。调整后Linux20项、仓库外Windows61项实际通过，产品资源未变；最终提交另核对推送／PR双CI的完整后端、golden、前端、浏览器、构建、静态、两代SDK、两客户端配置、物理MCP及61项原生Windows。草稿保持未合并。
 
 证据见[原生Windows快照摘要与导出验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/原生Windows快照摘要与导出验收_20261011.md)、[模型记录来源资格验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/模型记录来源资格验收_20261011.md)、[原生Windows存储与清除验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/原生Windows存储与清除验收_20261011.md)、[链接来源与长窗口验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/链接来源与长窗口验收_20261011.md)及[需求落实与剩余项](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。
 
