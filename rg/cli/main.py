@@ -168,6 +168,10 @@ def parser() -> argparse.ArgumentParser:
         "fragment-assign", help="用带修订的JSON请求明确归属完整物理记录"
     )
     fragment_assign.add_argument("--request-file", type=Path, required=True)
+    fragment_plan = project_sub.add_parser(
+        "fragment-plan", help="只读核对完整片段的科研依赖，不执行迁移"
+    )
+    fragment_plan.add_argument("--request-file", type=Path, required=True)
     fragment_backfill = project_sub.add_parser(
         "fragment-backfill", help="有界补记已保存物理记录的目录线索，不读取原路径"
     )
@@ -646,7 +650,7 @@ def run(args: argparse.Namespace, store: Store) -> object:
                     if getattr(args, name) is not None
                 },
             )
-        if args.project_command == "fragment-assign":
+        if args.project_command in {"fragment-assign", "fragment-plan"}:
             from rg.clients.record import unique_pairs
             from rg.store.fragments import assign
 
@@ -657,6 +661,10 @@ def run(args: argparse.Namespace, store: Store) -> object:
             body = json.loads(raw, object_pairs_hook=unique_pairs)
             if not isinstance(body, dict):
                 raise ValueError("归属请求必须是JSON对象")
+            if args.project_command == "fragment-plan":
+                from rg.store.fragment_dependencies import preview
+
+                return preview(store, body)
             return assign(store, body)
         if args.project_command == "fragment-backfill":
             from rg.ingest.project_context import backfill_file
@@ -1098,7 +1106,7 @@ def main() -> None:
             or (args.command == "ask" and args.retrieve_only)
             or (
                 args.command == "project"
-                and args.project_command in {"roots", "worktrees", "fragments"}
+                and args.project_command in {"roots", "worktrees", "fragments", "fragment-plan"}
             )
             or (
                 args.command == "project"

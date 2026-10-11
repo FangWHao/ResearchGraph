@@ -133,7 +133,10 @@ def assign(store: Store, body: dict[str, Any]) -> dict[str, Any]:
             return _assign(store, body, request_id, signature)
 
 
-def _assign(store: Store, body: dict[str, Any], request_id: str, signature: str) -> dict[str, Any]:
+def selection(
+    store: Store, body: dict[str, Any], *, max_records: int | None = None
+) -> tuple[Any, list[dict[str, Any]]]:
+    """校验当前修订下的完整物理边界；只读预检与正式写入共用。"""
     from rg.query.project_fragments import query
 
     db = store.db
@@ -184,15 +187,29 @@ def _assign(store: Store, body: dict[str, Any], request_id: str, signature: str)
         for r in db.execute(
             "SELECT event_id,byte_start,byte_end FROM raw_events WHERE "
             "file_instance_id=? AND record_index=0 "
-            "AND byte_start BETWEEN ? AND ? AND event_id<=? ORDER BY byte_start",
-            (body["source"], bounds[0][0], bounds[1][0], body["snapshot"]),
+            "AND byte_start BETWEEN ? AND ? AND event_id<=? ORDER BY byte_start LIMIT ?",
+            (
+                body["source"],
+                bounds[0][0],
+                bounds[1][0],
+                body["snapshot"],
+                -1 if max_records is None else max_records + 1,
+            ),
         )
     ]
+    if max_records is not None and len(chosen) > max_records:
+        raise ValueError("片段依赖预检范围过大，请缩小完整物理记录范围")
     if any(
         left["byte_end"] != right["byte_start"]
         for left, right in zip(chosen, chosen[1:], strict=False)
     ):
         raise ValueError("归属范围跨过已清除或未保存的物理记录缺口")
+    return origin, chosen
+
+
+def _assign(store: Store, body: dict[str, Any], request_id: str, signature: str) -> dict[str, Any]:
+    origin, chosen = selection(store, body)
+    db = store.db
     records = [
         dict(r)
         for r in db.execute(
@@ -318,6 +335,52 @@ def _partition(
 
 def _protect_science(store: Store, session: int) -> None:
     """已有科研依赖需单独迁移方案；普通归属操作不能改写既有解释。"""
+    from rg.store.clear_selection import TABLES, identifier
+    from rg.store.fragment_dependency_contract import (
+        JSON_LINKS,
+        SCIENCE,
+        SCIENCE_SCHEMA_SHA256,
+        json_sql,
+        reference_issues,
+        schema_sha256,
+    )
+
+    actual = {
+        r[1]
+        for r in store.db.execute("PRAGMA main.table_list")
+        if r[2] == "table" and not r[1].startswith("sqlite_")
+    }
+    if actual != TABLES or schema_sha256(store.db) != SCIENCE_SCHEMA_SHA256:
+        raise ConflictError("科研表布局已变化，需先升级归属依赖合同")
+
+    if store.db.execute(
+        "SELECT 1 FROM extraction_runs WHERE NOT json_valid(input_event_ids) LIMIT 1"
+    ).fetchone():
+        raise ConflictError("科研输入记录无法核对，需先恢复依赖完整性")
+    # 原生文件版本、显式记录、队列等也能直接引用事件，不能只保护模型 claims。
+    for table in sorted(SCIENCE - {"raw_events"}):
+        for ref in store.db.execute("SELECT * FROM pragma_foreign_key_list(?)", (table,)):
+            if ref[2] != "raw_events":
+                continue
+            if store.db.execute(
+                f"SELECT 1 FROM {identifier(table)} c JOIN raw_events r "
+                f"ON c.{identifier(ref[3])}=r.event_id WHERE r.session_pk=? LIMIT 1",
+                (session,),
+            ).fetchone():
+                raise ConflictError("该来源已有科研依赖，需先核对依赖迁移；不能直接重归属")
+    for link in JSON_LINKS:
+        if link.parent != "raw_events":
+            continue
+        if reference_issues(store.db, link, 1024 * 1024):
+            raise ConflictError("科研输入记录无法核对，需先恢复依赖完整性")
+        each, value, kind = json_sql(link, 1024 * 1024)
+        if store.db.execute(
+            f"SELECT 1 FROM {identifier(link.table)} c,{each} "
+            f"JOIN raw_events r ON r.event_id={value} WHERE {kind}=? "
+            "AND r.session_pk=? LIMIT 1",
+            (link.value_type, session),
+        ).fetchone():
+            raise ConflictError("该来源已有科研依赖，需先核对依赖迁移；不能直接重归属")
     checks = (
         "SELECT 1 FROM claim_evidence c JOIN evidence_spans e USING(span_id) "
         "JOIN raw_events r USING(event_id) WHERE r.session_pk=? LIMIT 1",

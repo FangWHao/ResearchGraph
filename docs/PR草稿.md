@@ -2,6 +2,10 @@
 
 本批接通正式片段归属。迁移31保留原物理会话、L0与实际工具／原生编号，为未产生科研依赖的完整来源记录建立独立逻辑片段。健康页、本机令牌HTTP及CLI可将连续范围分配给项目或收件箱；甲／乙／甲、不同来源和新增尾部各自保留处理边界。查询、证据上下文、L1派生、瘦身、提取、来源资格与清除读取统一投影。原件、候选和审核不改写；cwd仍只是线索。
 
+已产生科研依赖的片段现在可先做只读预检：健康页、鉴权HTTP及 `rg project fragment-plan --request-file` 展示科研连接数量和片段外必需完整原件，覆盖证据、人工审核、同对象版本、模型工作集、重叠上下文及原生运行／编辑／文件版本。预检不读原件或Git、不写临时表、不占用请求UUID。无依赖时同一UUID随后可正式保存；有依赖时仍保留409保护，实际迁移待完成。
+
+依赖分页固定内容摘要，即使图修订未变而模型日志状态改变，旧摘要也会409。未知布局、坏JSON、缺失引用或预算耗尽明确显示无法完整核对。`complete`只表示已声明依赖展开完整，`closure_closed`只表示没有片段外必需原件，两者均不授权迁移或确认。前端改变选择后旧结果失效，晚到响应不覆盖当前意图。
+
 归属核对当前修订、来源内完整物理边界、两个分页截止及范围摘要。UUID与问题／笔记／决定／清单共用操作回执，同意图重试返回原回执及原修订，变更意图409；不同项目或迟到响应不能覆盖当前选择。模型pending登记在同一写事务核对输入的有效项目，准备后归属改变时不计数、不生成。旧缺首块记录保留原归属，来源完整性未核对时拒绝拆分。
 
 整项目清除按有效归属选择原件及派生，另一项目使用的物理来源和记录保留，最后一部分清除时移除容器。实际删除的原生记录进入摘要屏障，换路径或会话头重导入时在写对象、搜索与L1之前停住；游标不越过，spool保留等待原因。屏障先持久提交再删除主库；索引损坏／缺失、首次原子发布、旧待恢复清单、再次中断和SQLite备份恢复均有固定案例。共享字节与外部日志保留。
@@ -11,19 +15,20 @@
 ## 验收
 
 ```text
-uv run pytest -q                          1580 passed in 620.16s (0:10:20)，退出0
-归属／迁移三组                             68 passed in 18.55s，退出0
+uv run pytest -q                          1609 passed in 553.16s (0:09:13)，退出0
+依赖／归属／账本／L1／清单／迁移六组          198 passed in 42.43s，退出0
+新增依赖黄金案例                            29 passed in 9.22s，退出0
 uv run ruff check rg tests scripts         All checks passed!，退出0
 uv run pyright rg                         0 errors, 0 warnings, 0 informations，退出0
-Windows3.12.3 -I仓库外安装十三组             296 passed, 1 skipped in 112.90s，退出0
-cd web && pnpm test                       216 passed／23文件／1.07s，退出0
-cd web && pnpm build                      256模块／1.09s，退出0
-cd web && pnpm test:browser                194 passed (5.2m)，退出0
+Windows3.12.3 -I仓库外安装十四组             325 passed, 1 skipped in 94.29s，退出0
+cd web && pnpm test                       221 passed／23文件／1.16s，退出0
+cd web && pnpm build                      256模块／1.14s，退出0
+cd web && pnpm test:browser                198 passed (5.2m)，退出0
 ```
 
-Windows系统CP936／utf8_mode0不变，155包成员／150运行资源与源码及实际安装逐字相同，凭据与私有文件0。官方MCP2.3.0两代协议及两种生成客户端均六工具通过，只读数据库不变、候选保存与UUID重试核对通过。前端九文件独立恢复与176项冻结相同；追加的一测试独立恢复及22项冻结相同，补足真实401恢复末页和完整读取验收。原断言、30秒和零重试不变。
+Windows系统CP936／utf8_mode0不变，157包成员／152运行资源与源码及实际安装逐字相同，凭据与私有文件0。上一批官方MCP2.3.0两代协议及两种生成客户端均六工具通过；本提交继续由双CI核对。前端本批六文件独立恢复与216项冻结相同，预检及续页前后整库不变；原件、科研、审核、上下文、I/O与输入不变，模型调用0。已有文件运行图测试及其22项冻结不变，保留真实401恢复末页和完整读取验收。原断言、30秒和零重试不变。
 
-早期全量失败和主动停止均保留。浏览器首轮环境缺库实际130；正确环境首轮193／1失败为首次Failed to fetch，专项没有复现，原因仍未知。补恢复完成等待是独立验收缺口，不宣称已证明因果；交付完整集194项实际0。最终提交继续执行单独golden及完整双CI，以同一HEAD的检查结果为准；完整历史恢复独立核对全部537跟踪文件。
+早期失败与修正证据保留。上一批首次Failed to fetch原因仍未知，恢复完成等待补的是独立验收缺口，不宣称已证明因果。本批合成SQL列／状态及审计列数错误已按实际合同修正，完整数据库和数据不变性断言保留。交付完整浏览器198项实际0。最终提交继续执行单独golden及完整双CI，以同一HEAD的检查结果为准；完整历史恢复独立核对全部541跟踪文件。
 
 ## 保留的边界
 
@@ -31,4 +36,4 @@ Windows系统CP936／utf8_mode0不变，155包成员／150运行资源与源码�
 
 本批只使用公开合成资料。真实资料、数据库、缓存、截图和凭据不提交；现有草稿保持未合并。
 
-证据见[正式片段验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/正式片段归属验收_20261011.md)、[记录屏障验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/原始记录清除屏障验收_20261011.md)、[片段账本验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/物理片段与目录声明账本验收_20261011.md)和[需求落实与剩余项](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。
+证据见[科研依赖预检验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/科研依赖只读预检验收_20261011.md)、[正式片段验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/正式片段归属验收_20261011.md)、[记录屏障验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/原始记录清除屏障验收_20261011.md)和[需求落实与剩余项](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。

@@ -12,10 +12,96 @@ from uuid import uuid4
 
 from rg.api.server import Handler, LocalServer
 from rg.ingest.scanner import scan_file
-from rg.store.database import Store, dumps
+from rg.store.database import Store, dumps, now
 from tests.golden.test_read_tools import original, review
 
 TOKEN = "synthetic-project-fragments-token"
+
+
+def dependency_source(store: Store, directory: Path, project: str, root: Path) -> dict:
+    """真实扫描额外来源，保存公开科研引用以验收只读依赖闭包。"""
+    path = directory / "public-dependencies.jsonl"
+    records = [{"type": "session_meta", "payload": {"id": str(uuid4()), "cwd": str(root)}}]
+    records.extend(
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": f"公开科研依赖记录 {n}"}],
+            },
+        }
+        for n in range(1, 27)
+    )
+    path.write_text(
+        "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
+        encoding="utf-8",
+    )
+    scan_file(store, path, "codex", project)
+    source = dict(
+        store.db.execute(
+            "SELECT file_instance_id,session_pk,path,parser FROM source_files WHERE path=?",
+            (str(path),),
+        ).fetchone()
+    )
+    source["events"] = [
+        dict(row)
+        for row in store.db.execute(
+            "SELECT event_id,byte_start,byte_end,object_sha256 FROM raw_events "
+            "WHERE file_instance_id=? AND record_index=0 ORDER BY byte_start",
+            (source["file_instance_id"],),
+        )
+    ]
+    entity, candidate = original(store, project)
+    confirmed_entity, confirmed = original(store, project)
+    review(store, confirmed, "confirm")
+    # 两条科研记录引用全部已存物理记录；请求预检时不执行任何模型调用。
+    for event in source["events"]:
+        raw = store.raw(event["event_id"])
+        span = store.db.execute(
+            "INSERT INTO evidence_spans(event_id,byte_start,byte_end,quote_sha256) "
+            "VALUES (?,0,?,?)",
+            (event["event_id"], len(raw), sha256(raw).hexdigest()),
+        ).lastrowid
+        for claim in (candidate, confirmed):
+            store.db.execute("INSERT INTO claim_evidence VALUES (?,?,'support')", (claim, span))
+    store.db.execute(
+        "INSERT INTO extraction_runs(job_key,stage,input_event_ids,working_set_ids,"
+        "status,created_at) VALUES (?,'pass2',?,?,'ok',?)",
+        (str(uuid4()), dumps([e["event_id"] for e in source["events"]]), dumps([entity]), now()),
+    )
+    run, version = str(uuid4()), str(uuid4())
+    first, last = source["events"][0]["event_id"], source["events"][-1]["event_id"]
+    store.db.execute(
+        "INSERT INTO runs(run_id,project_id,session_pk,state,request_event_id) "
+        "VALUES (?,?,?,'requested',?)",
+        (run, project, source["session_pk"], first),
+    )
+    store.db.execute(
+        "INSERT INTO run_observations(run_id,event_id,state,details,recorded_at) "
+        "VALUES (?,?,'requested','{}',?)",
+        (run, last, now()),
+    )
+    store.db.execute(
+        "INSERT INTO artifact_versions(version_id,project_id,path,algo,digest,source,"
+        "evidence_event_id,observed_at) "
+        "VALUES (?,?,'public.py','sha256',?,'agent_edit',?,?)",
+        (version, project, sha256(b"public candidate").hexdigest(), first, now()),
+    )
+    store.db.execute(
+        "INSERT INTO run_io(run_id,version_id,direction,basis) VALUES (?,?,'out','manual')",
+        (run, version),
+    )
+    edit = str(uuid4())
+    store.db.execute(
+        "INSERT INTO edit_records(edit_id,project_id,session_pk,request_event_id,result_event_id,"
+        "path,operation,after_version,recorded_at) VALUES (?,?,?,?,?,'public.py','edit',?,?)",
+        (edit, project, source["session_pk"], first, last, version, now()),
+    )
+    source["claims"] = {"candidate": candidate, "confirmed": confirmed}
+    source["entities"] = [entity, confirmed_entity]
+    source["run_id"], source["version_id"], source["edit_id"] = run, version, edit
+    return source
 
 
 def seed(directory: Path) -> dict:
@@ -84,12 +170,14 @@ def seed(directory: Path) -> dict:
                     (source["file_instance_id"],),
                 )
             ]
+        dependent = dependency_source(store, directory, first, root_a)
         index = {
             "first_project": first,
             "second_project": second,
             "sources": sources,
             "candidate": candidate,
             "confirmed": confirmed,
+            "dependency_source": dependent,
         }
     (directory / "index.json").write_text(dumps(index), encoding="utf-8")
     return index
@@ -105,12 +193,19 @@ def audit(directory: Path) -> dict:
             "evidence_spans",
             "claim_evidence",
             "model_attempts",
+            "extraction_runs",
+            "runs",
+            "run_observations",
+            "run_io",
+            "artifact_versions",
+            "edit_records",
         )
         rows = {
             name: [list(r) for r in store.db.execute(f"SELECT * FROM {name} ORDER BY rowid")]
             for name in tables
         }
         result = {
+            "database_sha256": sha256("\n".join(store.db.iterdump()).encode()).hexdigest(),
             "research_sha256": sha256(dumps(rows).encode()).hexdigest(),
             "counts": {name: len(items) for name, items in rows.items()},
             "revision": store.revision(),
@@ -123,6 +218,37 @@ def audit(directory: Path) -> dict:
                 for row in store.db.execute(
                     "SELECT object_sha256,min(event_id) FROM raw_events GROUP BY object_sha256"
                 )
+            },
+            "dependency_metadata": {
+                "extraction": [
+                    {
+                        "input_event_ids": json.loads(row[0]),
+                        "working_set_ids": json.loads(row[1]),
+                        "status": row[2],
+                    }
+                    for row in store.db.execute(
+                        "SELECT input_event_ids,working_set_ids,status FROM extraction_runs"
+                    )
+                ],
+                "run_io": [
+                    list(row)
+                    for row in store.db.execute(
+                        "SELECT run_id,version_id,direction,basis FROM run_io"
+                    )
+                ],
+                "runs": [
+                    list(row)
+                    for row in store.db.execute(
+                        "SELECT run_id,project_id,session_pk,state,request_event_id FROM runs"
+                    )
+                ],
+                "edits": [
+                    list(row)
+                    for row in store.db.execute(
+                        "SELECT edit_id,project_id,session_pk,request_event_id,result_event_id,"
+                        "after_version FROM edit_records"
+                    )
+                ],
             },
         }
     result["input_files"] = {
@@ -145,7 +271,7 @@ def main() -> None:
         (cache / "frontend-project-fragments-index.json").write_text(
             json.dumps(index, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
-        print("两个公开项目、Codex 24记录、Claude 5多块记录已真实扫描。", flush=True)
+        print("两个公开项目与额外27条依赖记录已真实扫描；科研引用仅为公开合成。", flush=True)
         return
     before = audit(args.fixture_dir)
 
@@ -165,7 +291,14 @@ def main() -> None:
     finally:
         server.server_close()
         after = audit(args.fixture_dir)
-        protected = ["research_sha256", "counts", "claim_states", "objects", "input_files"]
+        protected = [
+            "research_sha256",
+            "counts",
+            "claim_states",
+            "objects",
+            "input_files",
+            "dependency_metadata",
+        ]
         intact = all(before[key] == after[key] for key in protected)
         (cache / "frontend-project-fragments-audit.json").write_text(
             json.dumps(

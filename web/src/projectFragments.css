@@ -16,4 +16,13 @@
 .fragment-confirm .fragment-check { display: flex; align-items: flex-start; font-size: .88rem; line-height: 1.6; }
 .fragment-check input { width: auto; flex: 0 0 auto; margin-top: 5px; }
 .fragment-panel .pagination { flex-wrap: wrap; }
+.fragment-dependencies { margin: 16px 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+.fragment-dependencies h4, .fragment-dependencies h5 { margin: 10px 0; }
+.fragment-dependency-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); gap: 12px; }
+.fragment-dependency-groups dl { margin: 0; }
+.fragment-dependency-groups dl > div { display: flex; justify-content: space-between; gap: 12px; }
+.fragment-dependency-groups dt, .fragment-dependency-groups dd { margin: 4px 0; }
+.fragment-required-records { list-style: none; padding: 0; display: grid; gap: 10px; }
+.fragment-required-records > li { border-top: 1px solid var(--line); padding-top: 12px; overflow-wrap: anywhere; }
+.fragment-required-records p { margin: 5px 0; }
 @media (max-width: 600px) { .fragment-records > li { padding: 12px; } .fragment-panel > header { padding: 14px; } }

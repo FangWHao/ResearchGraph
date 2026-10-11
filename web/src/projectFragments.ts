@@ -25,6 +25,18 @@ export interface FragmentReceipt {
   session_pk: number; file_instance_id: number; first_event_id: number; last_event_id: number;
   project_id: string | null; records_assigned: number; partitions_created: number;
 }
+export interface FragmentDependencyRecord {
+  first_event_id: number; session_pk: number; file_instance_id: number;
+  byte_start: number; byte_end: number; project_id: string | null;
+}
+export interface FragmentDependencies {
+  revision: number; scope_key: string; snapshot: number; observation_snapshot: number;
+  plan_sha256: string; complete: boolean; closure_closed: boolean; assignment_available: boolean;
+  write_mode: 'direct' | 'dependency_migration' | 'unverifiable'; selected_records: number;
+  dependencies: Record<string, number>; shared_context: Record<string, number>;
+  required_records: FragmentDependencyRecord[]; required_records_total: number;
+  next_offset: number | null; issues: string[]; migration_applied: false;
+}
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const integer = (value: unknown, min = 0): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= min;
 const textOrNull = (value: unknown) => value === null || typeof value === 'string';
@@ -75,6 +87,45 @@ export function parseFragmentReceipt(raw: unknown, intent: FragmentAssignmentInt
   if (!object(raw) || raw.request_id !== intent.request_id || raw.session_pk !== intent.session || raw.file_instance_id !== intent.source || raw.first_event_id !== intent.first_event || raw.last_event_id !== intent.last_event || raw.project_id !== intent.project_id || !integer(raw.revision) || typeof raw.replayed !== 'boolean' || raw.assignments_applied !== true || raw.records_assigned !== records || !integer(raw.partitions_created)) throw new Error('归属回执与当前提交不一致，未更新页面；请重新读取核对。');
   return raw as unknown as FragmentReceipt;
 }
+const counts = (value: unknown): value is Record<string, number> => object(value) && Object.values(value).every(n => integer(n));
+export function parseFragmentDependencies(raw: unknown, page: FragmentPage, selected: number, offset: number, limit: number): FragmentDependencies {
+  if (!object(raw) || !integer(raw.revision) || raw.revision !== page.revision || raw.scope_key !== page.scope_key || raw.snapshot !== page.snapshot || raw.observation_snapshot !== page.observation_snapshot || !hash(raw.plan_sha256) || typeof raw.complete !== 'boolean' || typeof raw.closure_closed !== 'boolean' || typeof raw.assignment_available !== 'boolean' || !['direct', 'dependency_migration', 'unverifiable'].includes(String(raw.write_mode)) || raw.selected_records !== selected || !counts(raw.dependencies) || !counts(raw.shared_context) || !integer(raw.required_records_total) || !Array.isArray(raw.required_records) || !strings(raw.issues) || raw.migration_applied !== false || offset > raw.required_records_total) throw new Error('科研依赖预检响应或读取条件不一致，未采用此结果，请重新读取片段第一页。');
+  if (raw.complete !== (raw.issues.length === 0) || raw.closure_closed !== (raw.complete && raw.required_records_total === 0) || raw.assignment_available !== (raw.write_mode === 'direct') || (!raw.complete && raw.write_mode !== 'unverifiable') || (raw.complete && raw.write_mode === 'unverifiable') || raw.required_records.length !== Math.min(limit, raw.required_records_total - offset) || raw.next_offset !== (offset + raw.required_records.length < raw.required_records_total ? offset + raw.required_records.length : null)) throw new Error('科研依赖预检的完整性或分页矛盾，未将其视为可保存。');
+  const ids = new Set<number>(); let previous: FragmentDependencyRecord | null = null;
+  for (const r of raw.required_records) {
+    if (!object(r) || !integer(r.first_event_id, 1) || !integer(r.session_pk, 1) || !integer(r.file_instance_id, 1) || !integer(r.byte_start) || !integer(r.byte_end, 1) || r.byte_end <= r.byte_start || !textOrNull(r.project_id) || ids.has(r.first_event_id) || (previous && (r.file_instance_id < previous.file_instance_id || (r.file_instance_id === previous.file_instance_id && r.byte_start < previous.byte_end)))) throw new Error('片段外必需记录的完整边界或身份异常，未混入本次预检。');
+    ids.add(r.first_event_id); previous = r as unknown as FragmentDependencyRecord;
+  }
+  return raw as unknown as FragmentDependencies;
+}
+const stableCounts = (value: Record<string, number>) => JSON.stringify(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
+export function appendFragmentDependencies(first: FragmentDependencies, next: FragmentDependencies): FragmentDependencies {
+  for (const key of ['revision', 'scope_key', 'snapshot', 'observation_snapshot', 'plan_sha256', 'complete', 'closure_closed', 'assignment_available', 'write_mode', 'selected_records', 'required_records_total', 'migration_applied'] as const) {
+    if (first[key] !== next[key]) throw new Error('科研依赖摘要或读取条件已变化，未混合续页；请主动重新预检。');
+  }
+  if (stableCounts(first.dependencies) !== stableCounts(next.dependencies) || stableCounts(first.shared_context) !== stableCounts(next.shared_context) || JSON.stringify(first.issues) !== JSON.stringify(next.issues) || first.next_offset !== first.required_records.length) throw new Error('科研依赖分页计数不一致，未混合续页。');
+  const records = [...first.required_records, ...next.required_records];
+  for (let i = 0; i < records.length; i++) {
+    const previous = records[i - 1], record = records[i];
+    if (records.slice(0, i).some(r => r.first_event_id === record.first_event_id) || (previous && (record.file_instance_id < previous.file_instance_id || (record.file_instance_id === previous.file_instance_id && record.byte_start < previous.byte_end)))) throw new Error('科研依赖续页重复或交叠，保留已读结果并停止续读。');
+  }
+  return { ...first, required_records: records, next_offset: next.next_offset };
+}
+const dependencyGroups: { name: string; labels: Record<string, string> }[] = [
+  { name: '证据与科研对象', labels: { entities: '科研对象', claims: '科研记录', evidence_spans: '证据片段', claim_evidence: '证据引用' } },
+  { name: '审核与资格核对', labels: { review_actions: '人工审核', claim_source_checks: '来源核对', rule_reference_checks: '规则证明核对' } },
+  { name: '模型上下文与处理', labels: { extraction_runs: '提取运行', extraction_plans: '提取计划', model_attempts: '模型尝试', candidate_locations: '候选定位', link_progress: '关联进度', jobs: '处理任务', extraction_queue: '提取队列任务', extraction_queue_events: '提取队列记录', pipeline_queue: '处理队列任务', pipeline_queue_events: '处理队列记录' } },
+  { name: '运行、编辑与文件版本', labels: { runs: '运行登记', run_io: '输入输出关联', run_observations: '原生运行观察', edit_records: '编辑记录', edit_request_checks: '编辑请求核对', run_manifests: '候选运行清单', artifact_versions: '文件版本', artifact_observations: '文件观察', artifact_jobs: '文件处理任务', artifact_job_events: '文件任务记录', artifact_discoveries: '文件发现', artifact_discovery_attempts: '文件发现尝试', workspace_snapshots: '工作区快照' } },
+  { name: '直接记录与对象选择', labels: { explicit_records: '直接记录回执', note_requests: '笔记请求', decision_requests: '决定请求', decision_resolutions: '对象选择记录' } },
+];
+export function fragmentDependencyGroups(values: Record<string, number>) {
+  const known = new Set(dependencyGroups.flatMap(group => Object.keys(group.labels)));
+  const groups = dependencyGroups.map(group => ({ name: group.name, items: Object.entries(group.labels).filter(([key]) => values[key] !== undefined).map(([key, label]) => ({ key, label, count: values[key] })) })).filter(group => group.items.length);
+  const other = Object.entries(values).filter(([key]) => !known.has(key)).map(([key, count]) => ({ key, label: `尚未识别的依赖类别（${key}）`, count }));
+  if (other.length) groups.push({ name: '其它依赖记录', items: other });
+  return groups;
+}
+export const dependencyIssueNames: Record<string, string> = { schema_contract_changed: '数据库依赖结构尚无法核对', missing_reference: '存在缺失的依赖引用', missing_physical_first_record: '依赖记录缺少完整物理首事件', unverifiable_json_reference: '依赖引用内容损坏或超限', invalid_reference_container: '依赖引用结构不符合要求', invalid_reference_type: '依赖引用身份类型不符合要求', sql_step_budget: '本次依赖核对达到计算上限', node_budget: '本次依赖记录超过核对上限', edge_budget: '本次依赖连接超过核对上限', metadata_byte_budget: '本次依赖元数据超过核对上限' };
 export const contextNames: Record<string, string> = { declared: '原生目录声明', absent: '本记录没有目录声明', unobserved: '目录元数据尚未观测', invalid: '目录声明无效', unavailable: '目录元数据不可核对' };
 export const hintNames: Record<string, string> = { candidate_path: '路径候选，尚非归属', ambiguous_path: '路径对应多个项目，归属不明', unassigned: '没有可用路径候选' };
 export const directorySources: Record<string, string> = { codex_session: 'Codex 原生会话头', codex_turn: 'Codex 原生轮次上下文', claude_record: 'Claude 原生记录字段', none: '没有可用声明来源' };

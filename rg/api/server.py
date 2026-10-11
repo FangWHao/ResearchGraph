@@ -312,6 +312,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/api/view-state",
                 "/api/worktrees/follow",
                 "/api/project-fragments/assign",
+                "/api/project-fragments/dependencies",
             } or path.startswith("/api/project-clear/"):
                 from rg.clients.record import unique_pairs
 
@@ -347,10 +348,20 @@ class Handler(BaseHTTPRequestHandler):
                 return
             store = Store(
                 self.server.root,
-                readonly=path in {"/api/qa/retrieve", "/api/qa/preview", "/api/exports"},
+                readonly=path
+                in {
+                    "/api/qa/retrieve",
+                    "/api/qa/preview",
+                    "/api/exports",
+                    "/api/project-fragments/dependencies",
+                },
             )
             try:
-                if path == "/api/project-fragments/assign":
+                if path == "/api/project-fragments/dependencies":
+                    from rg.store.fragment_dependencies import preview
+
+                    result = preview(store, body)
+                elif path == "/api/project-fragments/assign":
                     from rg.store.fragments import assign
 
                     result = assign(store, body)

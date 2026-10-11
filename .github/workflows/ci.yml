@@ -45,6 +45,7 @@ jobs:
           tests/golden/test_worktree_discovery.py
           tests/golden/test_project_fragments.py
           tests/golden/test_fragment_assignments.py
+          tests/golden/test_fragment_dependencies.py
           tests/golden/test_record_denials.py
           tests/test_migrations.py
           -q

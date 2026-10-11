@@ -7,11 +7,11 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
-import type { FragmentPage, FragmentReceipt } from '../../src/projectFragments';
+import type { FragmentDependencies, FragmentPage, FragmentReceipt } from '../../src/projectFragments';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const origin = 'http://127.0.0.1:9809', headers = { Authorization: 'Bearer synthetic-project-fragments-token' };
 interface Source { session_pk: number; file_instance_id: number; path: string; parser: string; events: { event_id: number; byte_start: number; byte_end: number; object_sha256: string }[] }
-interface Index { first_project: string; second_project: string; sources: Source[]; candidate: number; confirmed: number }
+interface Index { first_project: string; second_project: string; sources: Source[]; candidate: number; confirmed: number; dependency_source: Source & { claims: { candidate: number; confirmed: number }; entities: string[]; run_id: string; version_id: string; edit_id: string } }
 let directory: string, index: Index, server: ChildProcess | undefined, sequence = 0;
 function capture(tag: string, value: unknown) { const dir = `${root}/.cache/frontend-project-fragments-api`; mkdirSync(dir, { recursive: true }); writeFileSync(`${dir}/${String(++sequence).padStart(3, '0')}-${tag}.json`, JSON.stringify(value, null, 2) + '\n'); }
 test.beforeAll(async () => {
@@ -22,6 +22,8 @@ test.beforeAll(async () => {
   const prepare = spawn(`${root}/.venv/bin/python`, ['-m', 'tests.project_fragments_browser', '--fixture-dir', directory, '--prepare'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }); prepare.stdout!.pipe(prepareLog); prepare.stderr!.pipe(prepareLog);
   expect(await new Promise<number | null>(resolve => prepare.once('exit', resolve))).toBe(0);
   index = JSON.parse(readFileSync(`${root}/.cache/frontend-project-fragments-index.json`, 'utf8'));
+  const inputs = `${root}/.cache/frontend-fragment-dependencies-inputs`; mkdirSync(inputs, { recursive: true });
+  for (const s of [...index.sources, index.dependency_source]) writeFileSync(`${inputs}/${s.path.split('/').at(-1)}`, readFileSync(s.path));
   const log = createWriteStream(`${root}/.cache/frontend-project-fragments-server.log`);
   server = spawn(`${root}/.venv/bin/python`, ['-m', 'tests.project_fragments_browser', '--fixture-dir', directory, '--web-dir', `${root}/web/dist`], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }); server.stdout!.pipe(log); server.stderr!.pipe(log);
   await expect.poll(async () => { if (server?.exitCode !== null) throw new Error('合成服务提前退出'); try { return (await fetch(`${origin}/api/projects`, { headers })).status; } catch { return 0; } }).toBe(200);
@@ -141,4 +143,78 @@ test('390宽多块整记录与候选目录可见，原文只传event编号且字
   await page.getByRole('button', { name: '关闭原文', exact: true }).click();
   await choose(page, current.records!.slice(0, 2).map(r => r.first_event_id), index.second_project);
   const confirmation = panel(page).getByRole('region', { name: '明确指定归属' }); await visible(confirmation, page); await expect(confirmation.locator('[data-fragment-selected-range]')).toContainText('4 个解析事件'); await page.screenshot({ path: '../.cache/frontend-project-fragments-confirm-mobile.png' });
+});
+
+async function inspect(page: Page): Promise<FragmentDependencies> {
+  const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/project-fragments/dependencies');
+  await panel(page).getByRole('button', { name: '只读预检科研依赖', exact: true }).click();
+  const r = await response; expect(r.status()).toBe(200); const result = await r.json(); capture('dependency-body', r.request().postDataJSON()); capture('dependency-result', result);
+  await expect(panel(page).locator('[data-dependency-result]')).toHaveCount(1); return result;
+}
+
+test('真实无依赖预检不写库且不占用UUID，原意图仍可直接保存', async ({ page, request }) => {
+  await enter(page); await choose(page, [source().events[7].event_id], index.second_project);
+  const before = await audit(request); let body: Record<string, unknown> = {};
+  page.on('request', r => { if (new URL(r.url()).pathname === '/api/project-fragments/dependencies') body = r.postDataJSON(); });
+  const result = await inspect(page);
+  expect(result).toMatchObject({ complete: true, closure_closed: true, write_mode: 'direct', assignment_available: true, dependencies: {}, required_records_total: 0, migration_applied: false });
+  expect(await audit(request)).toEqual(before); await expect(panel(page).getByRole('button', { name: '保存明确归属', exact: true })).toBeEnabled();
+  const receipt = page.waitForResponse(r => new URL(r.url()).pathname === '/api/project-fragments/assign');
+  await panel(page).getByRole('button', { name: '保存明确归属', exact: true }).click(); const saved = await receipt;
+  expect(saved.status()).toBe(200); expect(saved.request().postDataJSON().request_id).toBe(body.request_id); expect((await saved.json()).replayed).toBe(false);
+  capture('after-precheck-assign-body', saved.request().postDataJSON()); await expect(panel(page).locator('[data-dependency-result]')).toHaveCount(0);
+});
+
+test('真实科研依赖保留审核与候选，片段外完整记录按固定计划分页且不迁移', async ({ page, request }) => {
+  const s = index.dependency_source; await enter(page, s); await choose(page, [s.events[0].event_id], index.second_project);
+  const before = await audit(request); const result = await inspect(page);
+  expect(before.dependency_metadata).toEqual({ extraction: [{ input_event_ids: s.events.map(e => e.event_id), working_set_ids: [s.entities[0]], status: 'ok' }], run_io: [[s.run_id, s.version_id, 'out', 'manual']], runs: [[s.run_id, index.first_project, s.session_pk, 'requested', s.events[0].event_id]], edits: [[s.edit_id, index.first_project, s.session_pk, s.events[0].event_id, s.events.at(-1)!.event_id, s.version_id]] });
+  expect(result).toMatchObject({ complete: true, closure_closed: false, assignment_available: false, write_mode: 'dependency_migration', migration_applied: false, selected_records: 1, required_records_total: 26, next_offset: 20, dependencies: { claims: 2, entities: 2, review_actions: 1, evidence_spans: 27, claim_evidence: 54, extraction_runs: 1, runs: 1, run_observations: 1, run_io: 1, artifact_versions: 1, edit_records: 1 } });
+  expect(result.required_records.map(r => r.first_event_id)).toEqual(s.events.slice(1, 21).map(e => e.event_id));
+  await expect(panel(page).getByRole('checkbox')).not.toBeChecked(); await expect(panel(page).getByRole('button', { name: '保存明确归属', exact: true })).toBeDisabled();
+  const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/project-fragments/dependencies'); await panel(page).getByRole('button', { name: '读取后续必需记录', exact: true }).click();
+  const next = await response; expect(next.status()).toBe(200); expect(next.request().postDataJSON()).toMatchObject({ offset: 20, expected_plan_sha256: result.plan_sha256, expected_revision: result.revision, expected_scope_key: result.scope_key, snapshot: result.snapshot, observation_snapshot: result.observation_snapshot });
+  const last = await next.json(); capture('dependency-continuation-body', next.request().postDataJSON()); capture('dependency-continuation-result', last);
+  expect(last.plan_sha256).toBe(result.plan_sha256); expect(last.next_offset).toBeNull();
+  const staleBody = { ...next.request().postDataJSON(), expected_plan_sha256: '0'.repeat(64) };
+  const stale = await request.post(`${origin}/api/project-fragments/dependencies`, { headers, data: staleBody }); expect(stale.status()).toBe(409); capture('wrong-plan-body', staleBody); capture('wrong-plan-result', await stale.json());
+  await expect(panel(page).locator('[data-required-record]')).toHaveCount(26); expect(await panel(page).locator('[data-required-record]').evaluateAll(nodes => nodes.map(node => Number(node.getAttribute('data-required-record'))))).toEqual(s.events.slice(1).map(e => e.event_id));
+  expect(await audit(request)).toEqual(before);
+  for (const [claim, state] of [[s.claims.candidate, 'candidate'], [s.claims.confirmed, 'confirmed']] as const) {
+    const r = await request.get(`${origin}/api/claims/${claim}`, { headers }); expect(r.status()).toBe(200); const record = (await r.json()).claim; expect(record.effective_state).toBe(state); capture('dependency-claim', record);
+  }
+  await visible(panel(page).locator('[data-dependency-result]'), page); await page.screenshot({ path: '../.cache/frontend-fragment-dependencies-desktop.png' });
+  await visible(panel(page).locator('.fragment-dependency-groups'), page); await page.screenshot({ path: '../.cache/frontend-fragment-dependencies-groups-desktop.png' });
+  await page.setViewportSize({ width: 390, height: 844 }); await visible(panel(page).locator('[data-dependency-result]'), page); await page.screenshot({ path: '../.cache/frontend-fragment-dependencies-summary-mobile.png' });
+  const card = panel(page).locator('[data-required-record]').first(); await visible(card, page); await page.screenshot({ path: '../.cache/frontend-fragment-dependencies-record-mobile.png' });
+  const rawResponse = page.waitForResponse(r => new URL(r.url()).pathname === `/api/evidence/${s.events[1].event_id}`); await card.getByRole('button', { name: '打开必需记录原文', exact: true }).click(); const raw = await rawResponse; expect(raw.status()).toBe(200); expect(new URL(raw.url()).searchParams.has('start')).toBe(false); expect(new URL(raw.url()).searchParams.has('end')).toBe(false); capture('dependency-evidence', await raw.json());
+  await expect(page.getByRole('dialog', { name: '原文证据', exact: true })).toBeVisible();
+});
+
+test('真实过期依赖预检409保留范围，刷新前不能保存或自动重发', async ({ page, request }) => {
+  await enter(page); await choose(page, [source().events[8].event_id], index.second_project);
+  const selected = await panel(page).locator('[data-fragment-selected-range]').textContent(), current = await get(request);
+  await post(request, source(), current, source().events[23].event_id, index.second_project);
+  const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/project-fragments/dependencies'); await panel(page).getByRole('button', { name: '只读预检科研依赖', exact: true }).click(); const r = await response;
+  expect(r.status()).toBe(409); capture('stale-dependency', await r.json()); await expect(panel(page).getByRole('button', { name: '保存明确归属', exact: true })).toBeDisabled();
+  expect(await panel(page).locator('[data-fragment-selected-range]').textContent()).toBe(selected); await expect(panel(page).getByRole('button', { name: '只读预检科研依赖', exact: true })).toBeDisabled();
+  await refresh(page); await choose(page, [source().events[8].event_id], 'inbox'); expect((await inspect(page)).assignment_available).toBe(true);
+});
+
+test('迟到真实依赖200与401不进入新目标或撤销新页面鉴权', async ({ page }) => {
+  await ignoreAbort(page); await enter(page, index.dependency_source); await choose(page, [index.dependency_source.events[0].event_id], index.second_project);
+  let release = () => {}, seen = false; const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/project-fragments/dependencies', async route => { const response = await route.fetch(); expect(response.status()).toBe(200); seen = true; await held; await route.fulfill({ response }); });
+  try {
+    await panel(page).getByRole('button', { name: '只读预检科研依赖', exact: true }).click(); await expect.poll(() => seen).toBe(true);
+    await panel(page).getByLabel('片段目标项目').selectOption('inbox'); const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/project-fragments/dependencies'); release(); expect((await response).status()).toBe(200);
+    await expect(panel(page).locator('[data-dependency-result]')).toHaveCount(0); await expect(panel(page).getByLabel('片段目标项目')).toHaveValue('inbox');
+  } finally { release(); await page.unroute('**/api/project-fragments/dependencies'); }
+  let restore = () => {}, blocked = false; const delayed = new Promise<void>(resolve => { restore = resolve; });
+  await page.route('**/api/project-fragments/dependencies', async route => { const response = await route.fetch({ headers: { ...route.request().headers(), authorization: 'Bearer synthetic-invalid' } }); expect(response.status()).toBe(401); blocked = true; await delayed; await route.fulfill({ response }); });
+  try {
+    await panel(page).getByRole('button', { name: '只读预检科研依赖', exact: true }).click(); await expect.poll(() => blocked).toBe(true);
+    await panel(page).getByRole('button', { name: '关闭片段面板', exact: true }).click(); const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/project-fragments/dependencies'); restore(); expect((await response).status()).toBe(401);
+    await expect(page.getByLabel('当前项目', { exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: '采集健康', exact: true })).toBeVisible();
+  } finally { restore(); await page.unroute('**/api/project-fragments/dependencies'); }
 });
