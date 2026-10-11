@@ -20,7 +20,7 @@ artifact_discovery_attempts claim_source_checks rule_reference_checks edit_reque
 explicit_records note_requests decision_requests decision_resolutions
 """.split()
 )
-SCIENCE_SCHEMA_SHA256 = "04234f1624949c022fdb4d6e6e9f8d3d159416e081869afef845bf4d9462914d"
+SCIENCE_SCHEMA_SHA256 = "cea7e90978fab21869fb02cad20136a7eee02f31a2c9306481af4010f3abc025"
 
 
 def schema_sha256(db: sqlite3.Connection) -> str:

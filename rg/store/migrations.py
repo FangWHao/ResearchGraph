@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import sqlite3
 
+from rg.store.alias_schema import MIGRATION as ALIAS_MIGRATION
 from rg.store.fragment_schema import MIGRATION as FRAGMENT_MIGRATION
 from rg.store.gap_schema import MIGRATION as GAP_MIGRATION
 from rg.store.ownership_schema import MIGRATION as OWNERSHIP_MIGRATION
 from rg.store.ownership_schema import views as ownership_views
 
-LATEST_VERSION = 33
+LATEST_VERSION = 34
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -567,8 +568,11 @@ MIGRATIONS[32] = GAP_MIGRATION
 MIGRATIONS[33] = OWNERSHIP_MIGRATION
 
 
+MIGRATIONS[34] = ALIAS_MIGRATION
+
+
 def migrate(db: sqlite3.Connection) -> None:
-    """重建实体表遵循 SQLite 的事务复制流程，原外键开关在失败时也恢复。"""
+    """重建表遵循 SQLite 的事务复制流程，原外键开关在失败时也恢复。"""
     version = db.execute("PRAGMA user_version").fetchone()[0]
     if version >= LATEST_VERSION:
         _upgrade(db)
@@ -595,22 +599,34 @@ def _upgrade(db: sqlite3.Connection) -> None:
                 db.commit()
                 return
             associated = []
-            if version in {27, 30}:
-                table = "entities" if version == 27 else "sessions"
+            views = []
+            if version in {27, 30, 33}:
+                table = {27: "entities", 30: "sessions", 33: "raw_events"}[version]
                 associated = db.execute(
                     "SELECT sql FROM sqlite_schema WHERE tbl_name=? "
                     "AND type IN ('index','trigger') AND sql IS NOT NULL",
                     (table,),
                 ).fetchall()
+            if version == 33:
+                if db.execute("PRAGMA foreign_key_check").fetchone() is not None:
+                    raise sqlite3.IntegrityError("原数据库外键校验失败")
+                # 重命名新表时 SQLite 会解析所有视图；先保存、暂停，再原样恢复。
+                views = db.execute(
+                    "SELECT name,sql FROM sqlite_schema WHERE type='view'"
+                ).fetchall()
+                for name, _ in views:
+                    db.execute('DROP VIEW "' + name.replace('"', '""') + '"')
             for statement in MIGRATIONS[version + 1]:
                 db.execute(statement)
             if version == 32:
                 ownership_views(db)
-            if version in {27, 30}:
+            if version in {27, 30, 33}:
                 for row in associated:
                     db.execute(row[0])
+                for _, sql in views:
+                    db.execute(sql)
                 if db.execute("PRAGMA foreign_key_check").fetchone() is not None:
-                    raise sqlite3.IntegrityError("笔记迁移外键校验失败")
+                    raise sqlite3.IntegrityError("表迁移外键校验失败")
             db.execute(f"PRAGMA user_version = {version + 1}")
             db.commit()
             version += 1

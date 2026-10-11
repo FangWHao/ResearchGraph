@@ -128,6 +128,16 @@ class Closure:
             table, rowid = node
             row = self.rows[node]
             if table == "raw_events":
+                alias = self.db.execute(
+                    "SELECT alias_of FROM effective_raw_events WHERE event_id=?", (rowid,)
+                ).fetchone()[0]
+                self.find("raw_events", "event_id", alias, node)
+                for mirror in self.db.execute(
+                    "SELECT event_id FROM effective_raw_events WHERE alias_of=? "
+                    "ORDER BY event_id LIMIT ?",
+                    (rowid, MAX_NODES + 1),
+                ):
+                    self.add("raw_events", mirror[0], node)
                 self.processing_context(row, node)
                 for sibling in self.db.execute(
                     "SELECT event_id FROM raw_events WHERE file_instance_id=? AND byte_start=? "

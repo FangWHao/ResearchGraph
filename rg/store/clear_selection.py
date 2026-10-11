@@ -72,6 +72,8 @@ class Selection:
             for t in TABLES
             for r in db.execute("SELECT * FROM pragma_foreign_key_list(?)", (t,))
         ]
+        if db.execute("PRAGMA user_version").fetchone()[0] >= 34:
+            self.foreign.append(("raw_events", "alias_of", "raw_events", "event_id"))
         db.execute("DROP TABLE IF EXISTS temp.clear_rows")
         db.execute("CREATE TEMP TABLE clear_rows(t TEXT,n INTEGER,PRIMARY KEY(t,n))")
         for table, cols in self.columns.items():
@@ -266,6 +268,9 @@ class Selection:
             ):
                 issues.append("存在跨项目依赖：" + table)
         for child, column, parent, key in self.foreign:
+            if child == "raw_events" and column == "alias_of":
+                issues.extend(self._alias_blockers())
+                continue
             if self.db.execute(
                 f"SELECT 1 FROM {identifier(child)} c JOIN {identifier(parent)} p "
                 f"ON c.{identifier(column)}=p.{identifier(key)} "
@@ -382,6 +387,40 @@ class Selection:
         ).fetchone():
             issues.append("存在无法确定输入归属的模型记录")
         return sorted(set(issues))
+
+    def _alias_blockers(self) -> list[str]:
+        # 只有已解析的原生重复记录且当前别名失效时，才能跨清除边界保留历史编号。
+        verified = (
+            "e.alias_of IS NULL AND c.exclude_reason='duplicate' AND c.kind!='unknown' "
+            "AND c.kind=p.kind AND f.parser IN ('claude','codex') AND f.parser=pf.parser "
+            "AND (c.line_sha256=p.line_sha256 OR "
+            "(c.native_id IS NOT NULL AND c.native_id=p.native_id)) "
+            "AND EXISTS (SELECT 1 FROM raw_events a JOIN parser_records r ON r.event_id=a.event_id "
+            "WHERE a.file_instance_id=c.file_instance_id AND a.byte_start=c.byte_start "
+            "AND a.record_index=0 AND r.status='parsed' AND r.unknown_events=0) "
+            "AND EXISTS (SELECT 1 FROM raw_events a JOIN parser_records r ON r.event_id=a.event_id "
+            "WHERE a.file_instance_id=p.file_instance_id AND a.byte_start=p.byte_start "
+            "AND a.record_index=0 AND r.status='parsed' AND r.unknown_events=0)"
+        )
+        base = (
+            "SELECT 1 FROM raw_events c JOIN raw_events p ON p.event_id=c.alias_of "
+            "JOIN effective_raw_events e ON e.event_id=c.event_id "
+            "JOIN source_files f ON f.file_instance_id=c.file_instance_id "
+            "JOIN source_files pf ON pf.file_instance_id=p.file_instance_id "
+            f"WHERE NOT coalesce(({verified}),0) AND "
+        )
+        issues = []
+        if self.db.execute(
+            base + f"{self.selected('raw_events', 'p')} AND NOT "
+            f"({self.selected('raw_events')}) LIMIT 1"
+        ).fetchone():
+            issues.append("保留记录仍引用待清除记录：raw_events.alias_of")
+        if self.db.execute(
+            base + f"{self.selected('raw_events')} AND NOT "
+            f"({self.selected('raw_events', 'p')}) LIMIT 1"
+        ).fetchone():
+            issues.append("待清除记录引用其他项目：raw_events.alias_of")
+        return issues
 
     def counts(self) -> dict[str, int]:
         return {

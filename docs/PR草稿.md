@@ -4,6 +4,8 @@
 
 完整研究图在单次读取快照内批量还原历史实体归属，非模型记录直接使用不需要来源诊断的资格；模型记录及独立原话规则继续完整核对。2033条合成完整图固定双截止下逐字一致，SQL由33467降为2346。手机画布在新完整图读取或布局未完成时暂禁选择与折叠，完成后恢复；稳定选择监听及当前布局选择避免覆盖用户刚勾选的节点，旧版本／缺口仍显示原拒绝诊断。
 
+迁移34保持原始别名指针及所有L0字段不变，以不复用的事件编号保存历史关系，新写入别名必须有目标。清除时继续显式核对跨项目引用；只有具备完整原生解析回执、身份匹配且当前已失效的重复别名才允许分开清除。未知、缺失回执、身份冲突和仍有效的别名继续阻止清除。科研闭包跟随当前别名，已清除的旧目标不成为新的输入；保留项目原件、候选和确认状态不改写。
+
 整项目清除按当前归属选择记录和副本，保留其他项目使用的共享证据。原始文件版本及快照提交不改写，必要物理外键容器只保留匿名占位且不显示为项目。共享影子Git只保留仍被快照引用的确切提交及树，浅边界阻止旧父提交带回删除内容；过期引用、日志和未引用对象实际清理后才完成。清理中断可幂等恢复，最后一份资料清除后回收容器及仓库。Windows备份排除正在持有的运行锁，清除已选Git打包文件时处理只读属性；其他权限失败仍保留恢复入口。
 
 持续采集、离线钩子、影子快照、持久队列、有界提取、六个MCP工具、研究图、时间线、检索、问答和历史导出保留。模型只写candidate；确认来自人工或独立原话规则，四个状态维度分开。模型发送前实测token，输入默认128000可调，项目默认禁止外发；截断、超预算及执行器压缩结果作废。完整物理片段与清除缺口独立处理，L0及原生身份不改写；目录仍是线索。
@@ -11,23 +13,23 @@
 ## 验收
 
 ```text
-uv run pytest -q                         1649 passed in 612.82s (0:10:12)，退出0
-科研迁移／资格／读取四组                  129 passed in 35.25s，退出0
-手机真实API原四项＋新回归                  5 passed (20.1s)，退出0
-uv run ruff check rg tests scripts        All checks passed!，退出0
-uv run pyright rg                        0 errors, 0 warnings, 0 informations，退出0
-Windows3.12.3 -I仓库外安装十六组            365 passed, 1 skipped in 117.81s，退出0
-cd web && pnpm test                      227 passed／23文件／1.04s，退出0
-cd web && pnpm build                     256模块／1.05s，退出0
-cd web && pnpm test:browser               205 passed (5.4m)，退出0
+uv run pytest -q                         1664 passed in640.93s (0:10:40)，退出0
+uv run pytest tests/golden/test_alias_clear.py -q
+                                         15 passed in6.21s，退出0
+uv run ruff check rg tests                All checks passed!，退出0
+uv run pyright                           0 errors, 0 warnings, 0 informations，退出0
+Windows3.12.3 -I仓库外安装十七组            380 passed, 1 skipped in128.59s，退出0
+cd web && pnpm test                      227 passed／23文件／1.10s，退出0
+cd web && pnpm build                     256模块／1.20s，退出0
+cd web && pnpm test:browser               205 passed(5.4m)，退出0
 ```
 
-完整浏览器在后端实际成功退出及专项服务释放后运行，205项全部通过。CLI完整迁移与同意图重试实际0，原件和科研不变、模型调用0。164成员wheel／159资源与源码及Windows安装逐字一致，CP936／utf8_mode0不变，凭据及私有文件0。迁移六文件父独立恢复相同，原220项及文件运行图22项全部冻结不变；手机两文件另经父独立恢复与90项证据核对。正式断言、30秒与零重试保留。
+完整浏览器在后端实际成功退出及专项服务释放后运行，205项全部通过。CLI完整迁移与同意图重试实际0，原件和科研不变、模型调用0。165成员wheel／160资源与源码及Windows安装逐字一致，CP936／utf8_mode0不变，凭据及私有文件0。迁移六文件父独立恢复相同，原220项及文件运行图22项全部冻结不变；手机两文件另经父独立恢复与90项证据核对。正式断言、30秒与零重试保留。
 
-旧499fcbe的两组云端浏览器实际16失败／188通过，原日志保留。新SQL约束在旧代码红灯、修复代码绿灯；隔离旧真实前端构建同一生产claims200响应回归复现忙时仍可选，最终版本通过。当前提交的单独golden、两代MCP／两种客户端及双CI由[草稿检查页](https://github.com/FangWHao/ResearchGraph/pull/1/checks)核对，本地通过不代替云端结果；完整历史与跟踪文件另做独立恢复。
+新SQL约束与生产claims200手机回归均已在隔离旧实现红灯、修复实现绿灯。失效原生别名的同一清除案例也在旧实现准确复现阻塞，新代码15项固定案例通过，原未知依赖保护保留。单独golden、两代MCP／两种客户端及同提交双CI由[草稿检查页](https://github.com/FangWHao/ResearchGraph/pull/1/checks)核对；本地通过不代替云端结果，完整历史与跟踪文件另做独立恢复。
 
 ## 保留的边界
 
-原始跨分区别名、自动归属配置与跨设备迁移仍待完成。Atlas正式人工参考0／25、问题0／5，以及真实质量／错误率、找答案时间与成本、完整真实客户端采集／实际I/O、钩子／规模和两周使用仍未验收；完整M0–M4尚未完成。合成工程测试不替代科研质量。本批只使用公开合成资料，真实资料、数据库、缓存、截图与凭据不提交；现有草稿保持未合并。
+自动归属配置与跨设备迁移仍待完成。Atlas正式人工参考0／25、问题0／5，以及真实质量／错误率、找答案时间与成本、完整真实客户端采集／实际I/O、钩子／规模和两周使用仍未验收；完整M0–M4尚未完成。合成工程测试不替代科研质量。本批只使用公开合成资料，真实资料、数据库、缓存、截图与凭据不提交；现有草稿保持未合并。
 
-证据见[科研依赖迁移验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/科研依赖明确迁移验收_20261012.md)与[需求落实及剩余项](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。
+证据见[失效原生别名清除验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/失效原生别名清除验收_20261012.md)、[科研依赖迁移验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/科研依赖明确迁移验收_20261012.md)与[需求落实及剩余项](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。

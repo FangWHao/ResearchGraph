@@ -150,12 +150,16 @@ def historical_source(db: sqlite3.Connection, row: dict, at: str) -> dict:
         if alias
         else None
     )
-    same = alias is not None and (
-        event_session(db, alias, at) == result["session_pk"]
-        or (
-            result["session_pk"] == physical["session_pk"]
-            and canonical
-            and event_session(db, alias, at) == canonical[0]
+    same = (
+        canonical is not None
+        and alias is not None
+        and (
+            event_session(db, alias, at) == result["session_pk"]
+            or (
+                result["session_pk"] == physical["session_pk"]
+                and canonical
+                and event_session(db, alias, at) == canonical[0]
+            )
         )
     )
     result["alias_of"] = alias if same else None
