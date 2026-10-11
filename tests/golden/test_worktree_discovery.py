@@ -538,6 +538,33 @@ def test_cli_initial_optin_policy_conflict_and_discovery(tmp_path):
     assert result.returncode == 0 and not json.loads(result.stdout)["follow_enabled"]
 
 
+@pytest.mark.parametrize("encoding", ["cp1252", "ascii"])
+def test_cli_json_preserves_unicode_paths_on_limited_output_encoding(store, tmp_path, encoding):
+    project, repo, linked = scene(store, tmp_path)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            f"import sys; sys.stdout.reconfigure(encoding={encoding!r}); "
+            "from rg.cli.main import main; main()",
+            "--data-dir",
+            str(store.root),
+            "project",
+            "worktrees",
+            "--project",
+            project,
+        ],
+        capture_output=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, repr(result.stderr)
+    value = json.loads(result.stdout)
+    assert value == worktrees.listing(store, project)
+    assert value["roots"][0]["path"] == str(repo)
+    assert result.stdout.decode(encoding).encode(encoding) == result.stdout
+
+
 def test_http_auth_strict_config_readonly_and_conflict(store, tmp_path):
     project, repo, linked = scene(store, tmp_path)
     web = tmp_path / "web"

@@ -948,6 +948,17 @@ def _serve(args: argparse.Namespace, data_root: Path) -> dict:
     return {"server": "stopped"}
 
 
+def json_output(value: object) -> str:
+    text = json.dumps(value, ensure_ascii=False, indent=2)
+    if sys.stdout.encoding:
+        try:
+            text.encode(sys.stdout.encoding)
+        except UnicodeEncodeError:
+            # 重定向输出可能使用 CP1252／ASCII；JSON 转义保留完整字段而不改系统编码。
+            return json.dumps(value, ensure_ascii=True, indent=2)
+    return text
+
+
 def main() -> None:
     cli = parser()
     args = cli.parse_args()
@@ -1040,7 +1051,7 @@ def main() -> None:
         print(
             result
             if args.command in {"context", "ask", "run-evidence"}
-            else json.dumps(result, ensure_ascii=False, indent=2)
+            else json_output(result)
         )
     except (ValueError, RuntimeError, OSError, sqlite3.Error) as error:
         cli.exit(1, f"错误：{error}\n")
