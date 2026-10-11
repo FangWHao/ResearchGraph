@@ -13,6 +13,7 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any
 
+from rg.ingest.privacy_gaps import skip
 from rg.store import record_denials
 from rg.store.clear_files import LIMIT, Files, read_json
 from rg.store.clear_selection import Selection, identifier
@@ -97,9 +98,7 @@ def plan(
         ):
             values = ["bytes:" + digest(v) if isinstance(v, bytes) else v for v in row]
             hasher.update(dumps(values).encode())
-    hasher.update(
-        dumps([files.signatures, sorted(removed), sorted(shared), denials]).encode()
-    )
+    hasher.update(dumps([files.signatures, sorted(removed), sorted(shared), denials]).encode())
     summary["preview_sha256"] = hasher.hexdigest()
     return summary | {"remove": sorted(set(files.remove)), "denials": denials}, selected
 
@@ -160,6 +159,15 @@ def _delete(db: sqlite3.Connection, selected: Selection) -> None:
         )
         for name, _ in triggers:
             db.execute("DROP TRIGGER " + identifier(name))
+        # 共享来源中的删除保留物理缺口，补记器无需也不得回读已清除原件。
+        for record in db.execute(
+            "SELECT r.file_instance_id,r.byte_start,r.byte_end,f.parser,r.object_sha256 "
+            "FROM raw_events r JOIN source_files f USING(file_instance_id) "
+            "WHERE r.record_index=0 AND r.rowid IN "
+            "(SELECT n FROM temp.clear_rows WHERE t='raw_events') AND f.rowid NOT IN "
+            "(SELECT n FROM temp.clear_rows WHERE t='source_files') ORDER BY r.byte_start"
+        ).fetchall():
+            skip(db, *record)
         for table in sorted(selected.counts()):
             db.execute(
                 f"DELETE FROM {identifier(table)} WHERE rowid IN "
@@ -310,7 +318,9 @@ def resume(root: Path, request_id: str) -> dict:
         ).fetchone():
             db.execute("BEGIN IMMEDIATE")
             current, selected = plan(
-                root, db, value["project_id"],
+                root,
+                db,
+                value["project_id"],
                 record_barrier=(
                     "record_barrier" in value["denials"]
                     and not value.get("legacy_record_preview", False)

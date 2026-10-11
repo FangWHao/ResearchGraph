@@ -157,9 +157,32 @@ def _query(
         if version >= 31
         else 0
     )
+    gaps = {"records": 0, "bytes": 0, "last_skip": 0, "last_continuation": 0}
+    if version >= 32:
+        row = db.execute(
+            "SELECT count(*) AS records,coalesce(sum(byte_end-byte_start),0) AS bytes,"
+            "coalesce(max(skip_id),0) AS last_skip FROM source_record_skips "
+            "WHERE file_instance_id=?",
+            (source,),
+        ).fetchone()
+        gaps.update(dict(row))
+        gaps["last_continuation"] = db.execute(
+            "SELECT coalesce(max(continuation_id),0) FROM source_continuations "
+            "WHERE file_instance_id=?",
+            (source,),
+        ).fetchone()[0]
     scope_key = hashlib.sha256(
         dumps(
-            [session, source, project, snapshot, observation_snapshot, roots, assignment_version]
+            [
+                session,
+                source,
+                project,
+                snapshot,
+                observation_snapshot,
+                roots,
+                assignment_version,
+                gaps,
+            ]
         ).encode()
     ).hexdigest()
     if values.get("expected_scope_key", scope_key) != scope_key:
@@ -193,17 +216,26 @@ def _query(
         "origin_event_id": None,
     }
     if rows:
+        boundary = _privacy_boundary(store, source, rows[0]["byte_start"], version)
+        if boundary:
+            context = _privacy_context()
         previous = db.execute(
             "SELECT r.event_id,o.state,o.source,o.cwd,o.cwd_sha256,o.reason "
             + base
-            + "AND r.byte_start<? AND (o.observation_id IS NULL OR o.state!='absent') "
+            + "AND r.byte_start<? AND r.byte_start>=? "
+            "AND (o.observation_id IS NULL OR o.state!='absent') "
             "ORDER BY r.byte_start DESC LIMIT 1",
-            (*params, rows[0]["byte_start"]),
+            (*params, rows[0]["byte_start"], boundary),
         ).fetchone()
         if previous:
             context = _context(dict(previous))
     items = []
+    last_boundary = _privacy_boundary(store, source, rows[0]["byte_start"], version) if rows else 0
     for row in rows[:limit]:
+        boundary = _privacy_boundary(store, source, row["byte_start"], version)
+        if boundary > last_boundary:
+            context = _privacy_context()
+        last_boundary = boundary
         if row["state"] != "absent":
             context = _context(dict(row))
         siblings = db.execute(
@@ -244,10 +276,34 @@ def _query(
         "records_total": totals["records_total"],
         "records_observed": totals["records_observed"],
         "records_unavailable": totals["records_unavailable"],
+        "privacy_skipped_records": gaps["records"],
+        "privacy_skipped_bytes": gaps["bytes"],
         "observations_complete": totals["records_total"] == totals["records_observed"],
         "after_event": after,
         "next_after_event": items[-1]["first_event_id"] if len(rows) > limit else None,
         "records": items,
+    }
+
+
+def _privacy_boundary(store: Store, source: int, offset: int, version: int) -> int:
+    if version < 32:
+        return 0
+    row = store.db.execute(
+        "SELECT byte_end FROM source_record_skips WHERE file_instance_id=? AND byte_end<=? "
+        "ORDER BY byte_start DESC LIMIT 1",
+        (source, offset),
+    ).fetchone()
+    return row[0] if row else 0
+
+
+def _privacy_context() -> dict[str, Any]:
+    return {
+        "state": "unavailable",
+        "source": "none",
+        "cwd": None,
+        "cwd_sha256": None,
+        "reason": "privacy_gap",
+        "origin_event_id": None,
     }
 
 
@@ -266,6 +322,14 @@ def _context(row: dict[str, Any]) -> dict[str, Any]:
 def _assignment(
     store: Store, event: int, project: str | None, session: int, version: int
 ) -> dict[str, Any]:
+    if version >= 32:
+        effective = store.db.execute(
+            "SELECT e.session_pk,s.project_id FROM effective_raw_events e "
+            "JOIN sessions s USING(session_pk) WHERE e.event_id=?",
+            (event,),
+        ).fetchone()
+        if effective:
+            project, session = effective["project_id"], effective["session_pk"]
     row = (
         store.db.execute(
             "SELECT p.project_id,p.logical_session_pk,p.basis,p.partition_id "

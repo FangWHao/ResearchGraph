@@ -19,7 +19,8 @@ pipeline_queue_events project_context_observations project_privacy projects raw_
 remote_previews review_actions run_io
 run_manifests run_observations runs segment_coverage session_parent_observations session_results
 sessions slim_events
-source_files source_roots spool_receipts token_cache view_states workspace_snapshots
+source_files source_roots source_record_skips source_continuations
+spool_receipts token_cache view_states workspace_snapshots
 worktree_follow_actions worktree_discovery_observations
 worktree_discovery_progress worktree_discovery_cursors
 """.split()
@@ -172,6 +173,15 @@ class Selection:
                     ("$." + column, parent),
                 )
             # 最后一部分也已选中时，清除空的物理容器与游标；共享来源保留。
+            self.add(
+                "sessions",
+                "SELECT c.rowid AS n FROM sessions c WHERE c.project_id IS NULL "
+                "AND c.fragment_id LIKE 'privacy:%' AND c.physical_session_pk IN ("
+                "SELECT r.session_pk FROM raw_events r JOIN temp.clear_rows x "
+                "ON x.t='raw_events' AND x.n=r.rowid) AND NOT EXISTS ("
+                "SELECT 1 FROM effective_raw_events r WHERE r.session_pk=c.session_pk "
+                "AND r.event_id NOT IN (SELECT n FROM temp.clear_rows WHERE t='raw_events'))",
+            )
             self.add(
                 "sessions",
                 "SELECT c.rowid AS n FROM sessions c WHERE c.project_basis='fragment_container' "

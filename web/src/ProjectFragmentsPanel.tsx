@@ -115,7 +115,8 @@ export function ProjectFragmentsPanel({ project, epoch, actor, projects, source,
       {failure && <p className="error-message" role="alert">{failure} {data && '保留上次成功页，操作已停用。'} 409 后需主动重新读取，再核对并提交。</p>}
       {busy && <p role="status">正在读取物理片段…</p>}
       {data?.available === false && <p className="missing-note">当前接口没有可用的片段账本（{data.reason}），无法判断记录边界或保存归属。</p>}
-      {data?.available && <><p className="small muted">来源共 {data.records_total} 条物理记录 · 已观测 {data.records_observed} · 不可核对 {data.records_unavailable} · 本页 {data.records?.length}。解析事件数与物理记录数分别统计。</p>
+      {data?.available && <><p className="small muted">已保留 {data.records_total} 条物理记录 · 已观测 {data.records_observed} · 不可核对 {data.records_unavailable} · 本页 {data.records?.length}。解析事件数与物理记录数分别统计；保留记录观测完整不代表整个来源没有清除缺口。</p>
+        <p data-fragment-privacy-gap className="fragment-privacy-gap missing-note">此物理来源持久清除缺口：跳过记录 {data.privacy_skipped_records ?? '未提供'} 条，跳过字节 {data.privacy_skipped_bytes ?? '未提供'}。{data.privacy_skipped_records === undefined || data.privacy_skipped_bytes === undefined ? '此接口没有完整缺口统计，不能判断整个来源是否无缺口。' : data.privacy_skipped_records || data.privacy_skipped_bytes ? '已清除原件不重新保存；缺口两侧分别处理，目录上下文不跨越缺口继承。' : '本来源账本未记录持久清除缺口；不代表所有采集或研究处理已经完成。'}</p>
         <p className="small muted">原文截止 #{data.snapshot} · 观测截止 #{data.observation_snapshot} · 归属修订 {data.revision ?? '未提供'}</p>
         {!data.observations_complete && <p className="missing-note">目录元数据尚有缺口；不能把未观测当作没有目录声明。</p>}
         {!data.assignment_supported && <p className="missing-note">此接口尚未接通明确归属；当前只读，不提交归属。</p>}
@@ -126,6 +127,7 @@ export function ProjectFragmentsPanel({ project, epoch, actor, projects, source,
           <div className="fragment-record-head"><button className="button secondary" aria-pressed={ids.includes(r.first_event_id)} disabled={busy || !!failure || writing} onClick={() => select(r.first_event_id)}>选择记录 #{r.first_event_id}</button><button className="text-button" onClick={() => onEvidence({ event_id: r.first_event_id })}>打开记录原文</button></div>
           <dl><div><dt>来源文件字节</dt><dd>[{r.byte_start}, {r.byte_end}) · {r.byte_end - r.byte_start} 字节</dd></div><div><dt>解析事件</dt><dd>{r.event_count} · 顺序 {r.first_seq}–{r.last_seq}</dd></div><div><dt>原件 SHA256</dt><dd className="mono">{r.object_sha256}</dd></div></dl>
           <p>{contextNames[r.context.state] ?? `目录状态未知（${r.context.state}）`}：<code>{r.context.cwd ?? '未提供可用目录'}</code></p>
+          {r.context.reason === 'privacy_gap' && <p data-fragment-privacy-context className="missing-note">此前存在清除缺口，目录上下文不可核对；不沿用缺口之前的目录声明。</p>}
           <p className="small muted">{directorySources[r.context.source] ?? r.context.source} · {r.context.origin_event_id ? `${r.context.origin_event_id === r.first_event_id ? '本记录声明' : '同来源沿用'} #${r.context.origin_event_id}` : '线索来源未知'} · 最近观测 <DateText value={r.observed_at} /></p>
           <p>{hintNames[r.project_hint.state] ?? `路径候选状态未知（${r.project_hint.state}）`}{r.project_hint.projects.length ? `：${r.project_hint.projects.map(projectName).join('、')}` : ''}{r.project_hint.candidates_partial && '（候选仅预览，仍有遗漏）'}</p>
           <p className="small muted">{hintReasons[r.project_hint.reason] ?? r.project_hint.reason}</p>
@@ -134,7 +136,7 @@ export function ProjectFragmentsPanel({ project, epoch, actor, projects, source,
         <div className="pagination"><button className="button secondary" disabled={busy || writing || !!failure || page.index === 0} onClick={() => navigate(page.index - 1)}>上一页片段</button><span>第 {page.index + 1} 页</span><button className="button secondary" disabled={busy || writing || !!failure || data.next_after_event == null} onClick={() => navigate(page.index + 1)}>下一页片段</button></div>
         <section className="fragment-confirm" aria-label="明确指定归属"><h3>明确指定归属</h3>
           <label>目标项目<select aria-label="片段目标项目" value={target} disabled={writing} onChange={e => { cancel(); setTarget(e.target.value); setConfirmed(false); }}><option value="">请选择，不按路径自动决定</option><option value="inbox">收件箱（未指定项目）</option>{projects.map(p => <option key={p.project_id} value={p.project_id}>{p.name}</option>)}</select></label>
-          {range ? <p data-fragment-selected-range>将修改 {range.records} 条完整物理记录、{range.events} 个解析事件；首事件 #{range.first.first_event_id} 至 #{range.last.first_event_id}，来源文件字节 [{range.first.byte_start}, {range.last.byte_end})。目标：{target ? projectName(target === 'inbox' ? null : target) : '尚未选择'}。</p> : <p className="missing-note">尚未选择本页连续的完整记录范围。</p>}
+          {range ? <p data-fragment-selected-range>将修改 {range.records} 条完整物理记录、{range.events} 个解析事件；首事件 #{range.first.first_event_id} 至 #{range.last.first_event_id}，来源文件字节 [{range.first.byte_start}, {range.last.byte_end})。目标：{target ? projectName(target === 'inbox' ? null : target) : '尚未选择'}。</p> : <p data-fragment-invalid-range className="missing-note">{ids.length ? '所选记录之间不连续或存在字节缺口，不能跨缺口指定归属；请清除选择后，只选同一侧连续的完整记录。' : '尚未选择本页连续的完整记录范围。'}</p>}
           <section className="fragment-dependencies" aria-label="科研依赖只读预检">
             <h4>科研依赖只读预检</h4><p className="small muted">核对选定范围关联的证据、科研记录与处理上下文，列出片段外必需的完整记录。只读预检不保存归属、不迁移科研历史、不占用提交编号。</p>
             <button className="button secondary" disabled={!range || !target || busy || writing || checking || !!failure || !canAssignFragments(data)} onClick={() => { void inspect(); }}>{checking ? '正在核对科研依赖…' : '只读预检科研依赖'}</button>

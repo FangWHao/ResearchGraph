@@ -10,6 +10,7 @@ from typing import Any
 
 import zstandard
 
+from rg.ingest.privacy_gaps import advance_metadata
 from rg.store.database import Store, now
 from rg.store.locking import TaskBusy, exclusive
 from rg.store.objects import digest
@@ -145,13 +146,9 @@ def backfill_file(store: Store, file_id: int) -> int:
         "ORDER BY r.byte_start LIMIT ?",
         (file_id, BACKFILL_BATCH),
     ).fetchall()
-    if not rows:
-        return 0
     with store.transaction() as db:
-        offset = db.execute(
-            "SELECT parent_observed_offset FROM source_files WHERE file_instance_id=?", (file_id,)
-        ).fetchone()[0]
         for row in rows:
+            offset = advance_metadata(db, file_id, "parent_observed_offset")
             if row["byte_start"] != offset:
                 raise ValueError("已存原文记录不连续，父线程补记保留缺口")
             if row["eligible"] and not row["observed"]:
@@ -167,7 +164,7 @@ def backfill_file(store: Store, file_id: int) -> int:
                     observe(db, row["session_pk"], row["event_id"], record)
             if not checkpoint(db, row["event_id"]):
                 raise RuntimeError("父线程补记游标变化，保留原批次")
-            offset = row["byte_end"]
+        advance_metadata(db, file_id, "parent_observed_offset")
     return len(rows)
 
 

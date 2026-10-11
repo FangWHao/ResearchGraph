@@ -3,8 +3,9 @@ from __future__ import annotations
 import sqlite3
 
 from rg.store.fragment_schema import MIGRATION as FRAGMENT_MIGRATION
+from rg.store.gap_schema import MIGRATION as GAP_MIGRATION
 
-LATEST_VERSION = 31
+LATEST_VERSION = 32
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -560,6 +561,7 @@ MIGRATIONS[30] = (
 
 
 MIGRATIONS[31] = FRAGMENT_MIGRATION
+MIGRATIONS[32] = GAP_MIGRATION
 
 
 def migrate(db: sqlite3.Connection) -> None:

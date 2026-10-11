@@ -248,6 +248,7 @@ def _scan_file(
         return {"privacy_blocked": 1}
     instance = _instance(store, path, tool, session)
     file_id, offset = instance["file_instance_id"], instance["committed_offset"]
+    modern = store.db.execute("PRAGMA user_version").fetchone()[0] >= 32
     from rg.ingest.project_context import backfill_file as backfill_context
 
     backfill_context(store, file_id)
@@ -260,6 +261,7 @@ def _scan_file(
 
         backfill_file(store, file_id)
     counts: Counter[str] = Counter()
+    logical_sessions = {session}
     with path.open("rb") as stream:
         stream.seek(offset)
         while line := stream.readline():
@@ -276,6 +278,20 @@ def _scan_file(
                 counts["tail_fragments"] += 1
                 break
             if record_denied is not None and record_denied(tool, digest(line)):
+                if modern:
+                    from rg.ingest.privacy_gaps import advance_metadata, skip
+
+                    end = offset + len(line)
+                    with store.transaction() as db:
+                        skip(db, file_id, offset, end, tool, digest(line))
+                        if fault:
+                            fault()
+                        _advance(db, path, file_id, end)
+                        advance_metadata(db, file_id, "chain_observed_offset")
+                        advance_metadata(db, file_id, "parent_observed_offset")
+                    counts["privacy_skipped_records"] += 1
+                    offset = end
+                    continue
                 counts["privacy_blocked_records"] += 1
                 counts["privacy_held"] += 1
                 break
@@ -298,6 +314,12 @@ def _scan_file(
                 events = [Parsed("unknown", excluded="bad_json")]
             end = offset + len(line)
             with store.transaction() as db:
+                logical = session
+                if modern:
+                    from rg.ingest.privacy_gaps import continuation
+
+                    logical = continuation(db, file_id, offset, session)
+                logical_sessions.add(logical)
                 event_ids: list[int] = []
                 seq = db.execute(
                     "SELECT coalesce(max(seq), 0) FROM raw_events WHERE session_pk = ?", (session,)
@@ -305,10 +327,12 @@ def _scan_file(
                 for index, event in enumerate(events):
                     if event.call_id and event.kind == "tool_result":
                         call = db.execute(
-                            "SELECT tool_name FROM raw_events WHERE session_pk = ? "
+                            "SELECT tool_name FROM "
+                            + ("effective_raw_events" if modern else "raw_events")
+                            + " WHERE session_pk = ? "
                             "AND call_id = ? AND tool_name IS NOT NULL "
                             "ORDER BY event_id DESC LIMIT 1",
-                            (session, event.call_id),
+                            (logical, event.call_id),
                         ).fetchone()
                         if call and call[0]:
                             event.tool_name = call[0]
@@ -347,8 +371,14 @@ def _scan_file(
                     if event_id is None:
                         raise RuntimeError("未获得事件 ID")
                     event_ids.append(event_id)
-                    if not alias and not event.excluded:
-                        _mirror(db, session, event_id, record, event)
+                    effective_excluded = excluded
+                    if modern and alias:
+                        effective_excluded = db.execute(
+                            "SELECT exclude_reason FROM effective_raw_events WHERE event_id=?",
+                            (event_id,),
+                        ).fetchone()[0]
+                    if not effective_excluded:
+                        _mirror(db, logical, event_id, record, event)
                         if event.kind in {"user_msg", "assistant_msg", "plan_update"}:
                             db.execute(
                                 "INSERT INTO event_search VALUES (?, ?)", (event_id, event.text)
@@ -360,7 +390,13 @@ def _scan_file(
                     for stage in ["slim", "pass1", "pass2"]:
                         db.execute(
                             "INSERT INTO coverage VALUES (?, ?, NULL, ?)",
-                            (event_id, stage, f"excluded:{excluded}" if excluded else "pending"),
+                            (
+                                event_id,
+                                stage,
+                                f"excluded:{effective_excluded}"
+                                if effective_excluded
+                                else "pending",
+                            ),
                         )
                     counts["events"] += 1
                     counts["aliases" if alias else event.kind] += 1
@@ -384,20 +420,18 @@ def _scan_file(
                         checkpoint(db, event_ids[0])
                 if fault:
                     fault()
-                prefix_length = min(end, 4096)
-                with path.open("rb") as prefix_stream:
-                    prefix = prefix_stream.read(prefix_length)
-                db.execute(
-                    "UPDATE source_files SET committed_offset = ?, tail_fragment = NULL, "
-                    "prefix_sha256 = ?, prefix_length = ?, last_read = ? "
-                    "WHERE file_instance_id = ?",
-                    (end, digest(prefix), prefix_length, now(), file_id),
-                )
+                _advance(db, path, file_id, end)
                 db.execute(
                     "UPDATE sessions SET first_at = coalesce(first_at, ?), last_at = ? "
                     "WHERE session_pk = ?",
                     (events[0].timestamp, events[-1].timestamp, session),
                 )
+                if logical != session:
+                    db.execute(
+                        "UPDATE sessions SET first_at=coalesce(first_at,?),last_at=? "
+                        "WHERE session_pk=?",
+                        (events[0].timestamp, events[-1].timestamp, logical),
+                    )
             offset = end
     if tool == "codex" and store.db.execute("PRAGMA user_version").fetchone()[0] >= 21:
         from rg.ingest.parents import refresh
@@ -408,10 +442,21 @@ def _scan_file(
         from rg.store.locking import TaskBusy
 
         try:
-            derive(store, session=session)
+            derive(store, session=session if len(logical_sessions) == 1 else None)
         except TaskBusy:
             counts["l1_busy"] += 1
     return dict(counts)
+
+
+def _advance(db: sqlite3.Connection, path: Path, file_id: int, end: int) -> None:
+    prefix_length = min(end, 4096)
+    with path.open("rb") as stream:
+        prefix = stream.read(prefix_length)
+    db.execute(
+        "UPDATE source_files SET committed_offset=?,tail_fragment=NULL,"
+        "prefix_sha256=?,prefix_length=?,last_read=? WHERE file_instance_id=?",
+        (end, digest(prefix), prefix_length, now(), file_id),
+    )
 
 
 def mark_deleted(store: Store) -> int:

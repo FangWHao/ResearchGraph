@@ -53,29 +53,30 @@ def erase(root: Path, project: str):
 
 
 @pytest.mark.parametrize("tool", ["claude", "codex"])
-def test_relocated_record_is_held_before_object_write_and_cursor_never_skips(tmp_path, tool):
+def test_relocated_record_is_audited_before_object_write_and_cursor_continues(tmp_path, tool):
     root, project, other, private = scene(tmp_path, tool)
     erase(root, project)
     source = tmp_path / "changed-native-and-path.jsonl"
     prefix = header("synthetic-new", tool)
-    source.write_bytes(prefix + private + line("synthetic-new", "later public", tool))
+    after = line("synthetic-new", "later public", tool)
+    source.write_bytes(prefix + private + after)
     with closing(Store(root)) as store:
         result = scan_file(store, source, tool, other)
-        assert result["privacy_held"] == result["privacy_blocked_records"] == 1
-        assert result["events"] == 1
+        assert result["privacy_skipped_records"] == 1
+        assert result["events"] == 2
         row = store.db.execute("SELECT * FROM source_files").fetchone()
-        assert row["committed_offset"] == len(prefix) and row["tail_fragment"] is None
+        assert row["committed_offset"] == len(prefix + private + after)
+        assert row["tail_fragment"] is None
         assert not store.objects.path(digest(private)).exists()
-        assert store.db.execute("SELECT count(*) FROM raw_events").fetchone()[0] == 1
+        assert store.db.execute("SELECT count(*) FROM raw_events").fetchone()[0] == 2
         assert not store.db.execute(
             "SELECT 1 FROM event_search WHERE text LIKE ?", ("%" + MARKER + "%",)
         ).fetchone()
-        assert scan_file(store, source, tool, other) == {
-            "privacy_blocked_records": 1, "privacy_held": 1
-        }
+        assert scan_file(store, source, tool, other) == {}
         assert store.db.execute("SELECT committed_offset FROM source_files").fetchone()[0] == len(
-            prefix
+            prefix + private + after
         )
+        assert store.db.execute("SELECT count(*) FROM source_record_skips").fetchone()[0] == 1
     raw = (root / "clear-records" / record_denials.NAME).read_bytes()
     assert MARKER.encode() not in raw and b"synthetic-old" not in raw
     assert str(source).encode() not in raw and digest(private).encode() not in raw
@@ -97,7 +98,7 @@ def test_same_text_in_a_distinct_record_is_allowed_and_partial_tail_is_not_copie
         ).fetchone()
         assert tuple(row) == (len(prefix), None)
         partial.write_bytes(prefix + private)
-        assert scan_file(store, partial, "claude", other)["privacy_held"] == 1
+        assert scan_file(store, partial, "claude", other)["privacy_skipped_records"] == 1
 
 
 def test_shared_original_bytes_are_retained_and_not_denied(tmp_path):
@@ -202,7 +203,7 @@ def test_sqlite_backup_restores_the_record_barrier_for_changed_source(tmp_path):
     source = tmp_path / "relocated.jsonl"
     source.write_bytes(header("synthetic-new", "claude") + private)
     with closing(Store(destination)) as restored:
-        assert scan_file(restored, source, "claude", other)["privacy_held"] == 1
+        assert scan_file(restored, source, "claude", other)["privacy_skipped_records"] == 1
         assert not restored.objects.path(digest(private)).exists()
     assert (destination / "clear-records" / record_denials.NAME).is_file()
 
@@ -229,6 +230,7 @@ def test_legacy_pending_clear_resumes_with_a_record_barrier(tmp_path, monkeypatc
         value.update(request_id=request, state="pending", started_at="synthetic")
         clear._persist(root, value)
     with monkeypatch.context() as patch:
+
         def fail(*args):
             raise RuntimeError("synthetic legacy resume interrupted after index")
 
@@ -261,26 +263,27 @@ def test_first_index_publication_failure_is_resumable(tmp_path, monkeypatch):
         assert denied is not None and denied("claude", digest(private))
 
 
-def test_spool_hint_does_not_claim_done_when_the_record_is_privacy_held(tmp_path):
+def test_spool_hint_is_done_only_after_complete_record_is_audited(tmp_path):
     root, project, other, private = scene(tmp_path)
     erase(root, project)
     source = tmp_path / "relocated.jsonl"
     prefix = header("synthetic-new", "claude")
     source.write_bytes(prefix + private)
-    payload = dumps({
-        "hook_event_name": "Stop", "session_id": "synthetic-new", "transcript_path": str(source)
-    }).encode()
+    payload = dumps(
+        {"hook_event_name": "Stop", "session_id": "synthetic-new", "transcript_path": str(source)}
+    ).encode()
     hint = enqueue(root, "claude", payload)
     with closing(Store(root)) as store:
         assert register(store)["spool_registered"] == 1
         counts = consume(store, [Source(source, "claude", other, "file")])
-        assert counts["spool_waiting"] == 1 and counts["spool_done"] == 0
+        assert counts.get("spool_waiting", 0) == 0 and counts["spool_done"] == 1
         row = store.db.execute("SELECT state,error FROM jobs WHERE kind='spool_hint'").fetchone()
-        assert tuple(row) == ("queued", "privacy_record_held")
-        assert hint.exists() and not store.objects.path(digest(private)).exists()
-        assert consume(store, [Source(source, "claude", other, "file")])["spool_waiting"] == 1
+        assert tuple(row) == ("done", None)
+        assert not hint.exists() and not store.objects.path(digest(private)).exists()
+        assert store.db.execute("SELECT count(*) FROM source_record_skips").fetchone()[0] == 1
+        assert consume(store, [Source(source, "claude", other, "file")])["spool_done"] == 0
         assert store.db.execute("SELECT committed_offset FROM source_files").fetchone()[0] == len(
-            prefix
+            prefix + private
         )
 
 
@@ -307,3 +310,34 @@ def test_missing_index_after_main_commit_keeps_clear_pending_until_restored(tmp_
     assert clear.resume(root, request)["state"] == "complete"
     with record_denials.guard(root) as denied:
         assert denied is not None and denied("claude", digest(private))
+
+
+def test_spool_partial_private_tail_stays_queued_until_completed_gap_is_audited(tmp_path):
+    root, project, other, private = scene(tmp_path)
+    erase(root, project)
+    source = tmp_path / "partial-spool.jsonl"
+    prefix = header("synthetic-new", "claude")
+    source.write_bytes(prefix + private[:-1])
+    hint = enqueue(
+        root,
+        "claude",
+        dumps(
+            {
+                "hook_event_name": "Stop",
+                "session_id": "synthetic-new",
+                "transcript_path": str(source),
+            }
+        ).encode(),
+    )
+    with closing(Store(root)) as store:
+        register(store)
+        counts = consume(store, [Source(source, "claude", other, "file")])
+        assert counts["spool_waiting"] == 1 and counts["spool_done"] == 0
+        assert hint.exists() and not store.objects.path(digest(private)).exists()
+        assert store.db.execute("SELECT count(*) FROM source_record_skips").fetchone()[0] == 0
+        assert store.db.execute("SELECT tail_fragment FROM source_files").fetchone()[0] is None
+        source.write_bytes(prefix + private)
+        assert consume(store, [Source(source, "claude", other, "file")])["spool_done"] == 1
+        assert not hint.exists()
+        assert store.db.execute("SELECT count(*) FROM source_record_skips").fetchone()[0] == 1
+        assert not store.objects.path(digest(private)).exists()

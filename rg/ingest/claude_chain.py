@@ -10,6 +10,7 @@ from typing import Any
 import zstandard
 
 from rg.ingest.parents import native_id
+from rg.ingest.privacy_gaps import advance_metadata
 from rg.store.database import Store, now
 from rg.store.locking import TaskBusy, exclusive
 from rg.store.objects import digest
@@ -81,10 +82,9 @@ def backfill_file(store: Store, file_id: int) -> int:
         "ORDER BY r.byte_start LIMIT ?",
         (file_id, BACKFILL_BATCH),
     ).fetchall()
-    if not rows:
-        return 0
     with store.transaction() as db:
         for row in rows:
+            advance_metadata(db, file_id, "chain_observed_offset")
             try:
                 raw = store.raw(row[0])
             except zstandard.ZstdError as exc:
@@ -96,6 +96,7 @@ def backfill_file(store: Store, file_id: int) -> int:
             if not isinstance(record, dict):
                 record = {}
             observe(db, file_id, row[0], record)
+        advance_metadata(db, file_id, "chain_observed_offset")
     return len(rows)
 
 

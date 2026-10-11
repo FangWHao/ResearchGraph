@@ -11,25 +11,25 @@ import type { FragmentDependencies, FragmentPage, FragmentReceipt } from '../../
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const origin = 'http://127.0.0.1:9809', headers = { Authorization: 'Bearer synthetic-project-fragments-token' };
 interface Source { session_pk: number; file_instance_id: number; path: string; parser: string; events: { event_id: number; byte_start: number; byte_end: number; object_sha256: string }[] }
-interface Index { first_project: string; second_project: string; sources: Source[]; candidate: number; confirmed: number; dependency_source: Source & { claims: { candidate: number; confirmed: number }; entities: string[]; run_id: string; version_id: string; edit_id: string } }
+interface Index { first_project: string; second_project: string; sources: Source[]; candidate: number; confirmed: number; dependency_source: Source & { claims: { candidate: number; confirmed: number }; entities: string[]; run_id: string; version_id: string; edit_id: string }; privacy_source: Source & { removed: Source['events'][number]; old_source: Source; clear_receipt: { state: string }; scan_counts: Record<string, number>; aliases: { event_id: number; alias_of: number }[]; input_sha256: string; previous_inode: number; current_inode: number } }
 let directory: string, index: Index, server: ChildProcess | undefined, sequence = 0;
-function capture(tag: string, value: unknown) { const dir = `${root}/.cache/frontend-project-fragments-api`; mkdirSync(dir, { recursive: true }); writeFileSync(`${dir}/${String(++sequence).padStart(3, '0')}-${tag}.json`, JSON.stringify(value, null, 2) + '\n'); }
+function capture(tag: string, value: unknown) { const dir = `${root}/.cache/frontend-clear-continuation-api`; mkdirSync(dir, { recursive: true }); writeFileSync(`${dir}/${String(++sequence).padStart(3, '0')}-${tag}.json`, JSON.stringify(value, null, 2) + '\n'); }
 test.beforeAll(async () => {
   let occupied = false; try { await fetch(origin); occupied = true; } catch { /* 不停止未知进程。 */ }
   if (occupied) throw new Error('9809已有监听服务。');
   directory = mkdtempSync(join(tmpdir(), 'researchgraph-fragments-')); mkdirSync(`${root}/.cache`, { recursive: true });
-  const prepareLog = createWriteStream(`${root}/.cache/frontend-project-fragments-prepare.log`);
+  const prepareLog = createWriteStream(`${root}/.cache/frontend-clear-continuation-prepare.log`);
   const prepare = spawn(`${root}/.venv/bin/python`, ['-m', 'tests.project_fragments_browser', '--fixture-dir', directory, '--prepare'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }); prepare.stdout!.pipe(prepareLog); prepare.stderr!.pipe(prepareLog);
   expect(await new Promise<number | null>(resolve => prepare.once('exit', resolve))).toBe(0);
-  index = JSON.parse(readFileSync(`${root}/.cache/frontend-project-fragments-index.json`, 'utf8'));
-  const inputs = `${root}/.cache/frontend-fragment-dependencies-inputs`; mkdirSync(inputs, { recursive: true });
-  for (const s of [...index.sources, index.dependency_source]) writeFileSync(`${inputs}/${s.path.split('/').at(-1)}`, readFileSync(s.path));
-  const log = createWriteStream(`${root}/.cache/frontend-project-fragments-server.log`);
+  index = JSON.parse(readFileSync(`${root}/.cache/frontend-clear-continuation-index.json`, 'utf8'));
+  const inputs = `${root}/.cache/frontend-clear-continuation-dependencies-inputs`; mkdirSync(inputs, { recursive: true });
+  for (const s of [...index.sources, index.dependency_source, index.privacy_source]) writeFileSync(`${inputs}/${s.path.split('/').at(-1)}`, readFileSync(s.path));
+  const log = createWriteStream(`${root}/.cache/frontend-clear-continuation-server.log`);
   server = spawn(`${root}/.venv/bin/python`, ['-m', 'tests.project_fragments_browser', '--fixture-dir', directory, '--web-dir', `${root}/web/dist`], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }); server.stdout!.pipe(log); server.stderr!.pipe(log);
   await expect.poll(async () => { if (server?.exitCode !== null) throw new Error('合成服务提前退出'); try { return (await fetch(`${origin}/api/projects`, { headers })).status; } catch { return 0; } }).toBe(200);
 });
 test.afterAll(async () => {
-  if (server && server.exitCode === null) { const stopped = new Promise<number | null>(resolve => server!.once('exit', resolve)); server.kill('SIGINT'); expect(await stopped).toBe(0); expect(JSON.parse(readFileSync(`${root}/.cache/frontend-project-fragments-audit.json`, 'utf8'))).toMatchObject({ 原件候选审核未改写: true }); }
+  if (server && server.exitCode === null) { const stopped = new Promise<number | null>(resolve => server!.once('exit', resolve)); server.kill('SIGINT'); expect(await stopped).toBe(0); expect(JSON.parse(readFileSync(`${root}/.cache/frontend-clear-continuation-audit.json`, 'utf8'))).toMatchObject({ 原件候选审核未改写: true }); }
   if (directory) rmSync(directory, { recursive: true, force: true });
 });
 const source = (tool = 'codex') => index.sources.find(s => s.parser === tool)!;
@@ -76,7 +76,7 @@ test('完整物理记录分页保留字节和原件摘要，目录切换只产�
   await enter(page); expect(await panel(page).getByLabel('片段目标项目').inputValue()).toBe(''); await expect(panel(page).getByRole('button', { name: '保存明确归属', exact: true })).toBeDisabled();
   const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/project-fragments' && new URL(r.url()).searchParams.get('after_event') === String(first.next_after_event)); await panel(page).getByRole('button', { name: '下一页片段', exact: true }).click(); const next = await response; expect(next.status()).toBe(200);
   const params = new URL(next.request().url()).searchParams; expect(params.get('snapshot')).toBe(String(first.snapshot)); expect(params.get('observation_snapshot')).toBe(String(first.observation_snapshot)); expect(params.get('expected_scope_key')).toBe(first.scope_key);
-  await expect(panel(page).locator('[data-fragment-record]')).toHaveCount(4); await visible(panel(page).locator('[data-fragment-record]').first(), page); await page.screenshot({ path: '../.cache/frontend-project-fragments-page-desktop.png' });
+  await expect(panel(page).locator('[data-fragment-record]')).toHaveCount(4); await visible(panel(page).locator('[data-fragment-record]').first(), page); await page.screenshot({ path: '../.cache/frontend-clear-continuation-page-desktop.png' });
   const after = await audit(request); expect(after).toEqual(before);
 });
 
@@ -85,7 +85,7 @@ test('主动确认连续范围才归属另一项目并刷新首屏，既有候�
   await choose(page, chosen, index.second_project); await expect(panel(page).locator('[data-fragment-selected-range]')).toContainText('2 条完整物理记录');
   const r = page.waitForResponse(r => new URL(r.url()).pathname === '/api/project-fragments/assign'); await panel(page).getByRole('button', { name: '保存明确归属', exact: true }).click(); const response = await r; expect(response.status()).toBe(200); capture('assign-body', response.request().postDataJSON()); const receipt: FragmentReceipt = await response.json(); capture('assign-receipt', receipt); expect(receipt.records_assigned).toBe(2); expect(receipt.project_id).toBe(index.second_project);
   await expect(panel(page).locator(`[data-fragment-record="${chosen[0]}"] [data-fragment-assignment]`)).toContainText('验收物理片段项目乙'); await expect(panel(page).getByRole('checkbox')).not.toBeChecked();
-  const refreshed = await get(request); expect(refreshed.records![2].assignment?.project_id).toBe(index.first_project); await visible(panel(page).locator('[data-fragment-record]').first(), page); await page.screenshot({ path: '../.cache/frontend-project-fragments-assigned-desktop.png' });
+  const refreshed = await get(request); expect(refreshed.records![2].assignment?.project_id).toBe(index.first_project); await visible(panel(page).locator('[data-fragment-record]').first(), page); await page.screenshot({ path: '../.cache/frontend-clear-continuation-assigned-desktop.png' });
   const after = await audit(request); for (const key of ['research_sha256', 'counts', 'objects', 'input_files', 'claim_states']) expect(after[key]).toEqual(before[key]); expect(after.revision).toBeGreaterThan(before.revision);
 });
 
@@ -136,13 +136,13 @@ test('迟到真实200不会进入切换后的项目，晚401不能撤销新页�
 
 test('390宽多块整记录与候选目录可见，原文只传event编号且字节摘要相同', async ({ page, request }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await enter(page, source('claude')); const current = await get(request, source('claude')); expect(current.records).toHaveLength(5); expect(current.records!.every(r => r.event_count === 2)).toBe(true);
-  const first = current.records![0], card = panel(page).locator(`[data-fragment-record="${first.first_event_id}"]`); await visible(card, page); await page.screenshot({ path: '../.cache/frontend-project-fragments-multiblock-mobile.png' });
+  const first = current.records![0], card = panel(page).locator(`[data-fragment-record="${first.first_event_id}"]`); await visible(card, page); await page.screenshot({ path: '../.cache/frontend-clear-continuation-multiblock-mobile.png' });
   const response = page.waitForResponse(r => new URL(r.url()).pathname === `/api/evidence/${first.first_event_id}`); await card.getByRole('button', { name: '打开记录原文', exact: true }).click(); const r = await response; expect(r.status()).toBe(200); expect(new URL(r.request().url()).searchParams.has('start')).toBe(false); expect(new URL(r.request().url()).searchParams.has('end')).toBe(false); const raw = await r.json(); capture('raw', raw);
   const original = readFileSync(source('claude').path).subarray(first.byte_start, first.byte_end); expect(createHash('sha256').update(original).digest('hex')).toBe(first.object_sha256); expect(raw.event.event_id).toBe(first.first_event_id); expect(raw.event.source_byte_start).toBe(first.byte_start); expect(raw.event.source_byte_end).toBe(first.byte_end);
-  await expect(page.getByRole('dialog', { name: '原文证据' })).toBeVisible(); await page.screenshot({ path: '../.cache/frontend-project-fragments-evidence-mobile.png' });
+  await expect(page.getByRole('dialog', { name: '原文证据' })).toBeVisible(); await page.screenshot({ path: '../.cache/frontend-clear-continuation-evidence-mobile.png' });
   await page.getByRole('button', { name: '关闭原文', exact: true }).click();
   await choose(page, current.records!.slice(0, 2).map(r => r.first_event_id), index.second_project);
-  const confirmation = panel(page).getByRole('region', { name: '明确指定归属' }); await visible(confirmation, page); await expect(confirmation.locator('[data-fragment-selected-range]')).toContainText('4 个解析事件'); await page.screenshot({ path: '../.cache/frontend-project-fragments-confirm-mobile.png' });
+  const confirmation = panel(page).getByRole('region', { name: '明确指定归属' }); await visible(confirmation, page); await expect(confirmation.locator('[data-fragment-selected-range]')).toContainText('4 个解析事件'); await page.screenshot({ path: '../.cache/frontend-clear-continuation-confirm-mobile.png' });
 });
 
 async function inspect(page: Page): Promise<FragmentDependencies> {
@@ -183,10 +183,10 @@ test('真实科研依赖保留审核与候选，片段外完整记录按固定�
   for (const [claim, state] of [[s.claims.candidate, 'candidate'], [s.claims.confirmed, 'confirmed']] as const) {
     const r = await request.get(`${origin}/api/claims/${claim}`, { headers }); expect(r.status()).toBe(200); const record = (await r.json()).claim; expect(record.effective_state).toBe(state); capture('dependency-claim', record);
   }
-  await visible(panel(page).locator('[data-dependency-result]'), page); await page.screenshot({ path: '../.cache/frontend-fragment-dependencies-desktop.png' });
-  await visible(panel(page).locator('.fragment-dependency-groups'), page); await page.screenshot({ path: '../.cache/frontend-fragment-dependencies-groups-desktop.png' });
-  await page.setViewportSize({ width: 390, height: 844 }); await visible(panel(page).locator('[data-dependency-result]'), page); await page.screenshot({ path: '../.cache/frontend-fragment-dependencies-summary-mobile.png' });
-  const card = panel(page).locator('[data-required-record]').first(); await visible(card, page); await page.screenshot({ path: '../.cache/frontend-fragment-dependencies-record-mobile.png' });
+  await visible(panel(page).locator('[data-dependency-result]'), page); await page.screenshot({ path: '../.cache/frontend-clear-continuation-dependencies-desktop.png' });
+  await visible(panel(page).locator('.fragment-dependency-groups'), page); await page.screenshot({ path: '../.cache/frontend-clear-continuation-dependencies-groups-desktop.png' });
+  await page.setViewportSize({ width: 390, height: 844 }); await visible(panel(page).locator('[data-dependency-result]'), page); await page.screenshot({ path: '../.cache/frontend-clear-continuation-dependencies-summary-mobile.png' });
+  const card = panel(page).locator('[data-required-record]').first(); await visible(card, page); await page.screenshot({ path: '../.cache/frontend-clear-continuation-dependencies-record-mobile.png' });
   const rawResponse = page.waitForResponse(r => new URL(r.url()).pathname === `/api/evidence/${s.events[1].event_id}`); await card.getByRole('button', { name: '打开必需记录原文', exact: true }).click(); const raw = await rawResponse; expect(raw.status()).toBe(200); expect(new URL(raw.url()).searchParams.has('start')).toBe(false); expect(new URL(raw.url()).searchParams.has('end')).toBe(false); capture('dependency-evidence', await raw.json());
   await expect(page.getByRole('dialog', { name: '原文证据', exact: true })).toBeVisible();
 });
@@ -217,4 +217,68 @@ test('迟到真实依赖200与401不进入新目标或撤销新页面鉴权', as
     await panel(page).getByRole('button', { name: '关闭片段面板', exact: true }).click(); const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/project-fragments/dependencies'); restore(); expect((await response).status()).toBe(401);
     await expect(page.getByLabel('当前项目', { exact: true })).toBeVisible(); await expect(page.getByRole('button', { name: '采集健康', exact: true })).toBeVisible();
   } finally { restore(); await page.unroute('**/api/project-fragments/dependencies'); }
+});
+
+async function enterContinuation(page: Page) {
+  const s = index.privacy_source;
+  await page.goto(`${origin}/#token=synthetic-project-fragments-token`);
+  await page.getByLabel('当前项目', { exact: true }).selectOption(index.first_project);
+  const healthResponse = page.waitForResponse(r => new URL(r.url()).pathname === '/api/health');
+  await page.getByRole('button', { name: '采集健康', exact: true }).click();
+  const health = await (await healthResponse).json(); capture('continuation-health', health);
+  const position = health.sources.findIndex((r: { file_instance_id: number }) => r.file_instance_id === s.file_instance_id);
+  expect(position).toBeGreaterThanOrEqual(0);
+  await page.locator('[aria-labelledby="sources-heading"] tbody tr').nth(position).getByRole('button', { name: '查看片段与归属', exact: true }).click();
+  await expect(panel(page).locator(`[data-fragment-record="${s.events[0].event_id}"]`)).toBeVisible();
+}
+
+test('真实清除后换inode续采保留缺口，跨缺口禁止预检和保存，390目录不继承', async ({ page, request }) => {
+  const s = index.privacy_source, before = await audit(request), first = await get(request, s), second = await get(request, s, first);
+  expect(s.clear_receipt.state).toBe('complete'); expect(s.current_inode).not.toBe(s.previous_inode);
+  expect(s.scan_counts.aliases).toBe(27); expect(s.aliases.map(a => a.event_id)).toEqual(s.events.map(e => e.event_id));
+  expect(s.aliases.map(a => a.alias_of)).toEqual(s.old_source.events.filter(e => e.event_id !== s.removed.event_id).map(e => e.event_id));
+  expect(s.scan_counts.privacy_skipped_records).toBe(1); expect(first).toMatchObject({ records_total: 27, records_observed: 27, observations_complete: true, privacy_skipped_records: 1, privacy_skipped_bytes: s.removed.byte_end - s.removed.byte_start });
+  expect(second).toMatchObject({ snapshot: first.snapshot, observation_snapshot: first.observation_snapshot, scope_key: first.scope_key, privacy_skipped_records: first.privacy_skipped_records, privacy_skipped_bytes: first.privacy_skipped_bytes, next_after_event: null });
+  const records = [...first.records!, ...second.records!]; expect(records.map(r => ({ event_id: r.first_event_id, byte_start: r.byte_start, byte_end: r.byte_end, object_sha256: r.object_sha256 }))).toEqual(s.events);
+  const bytes = readFileSync(s.path); expect(createHash('sha256').update(bytes).digest('hex')).toBe(s.input_sha256);
+  for (const r of records) expect(createHash('sha256').update(bytes.subarray(r.byte_start, r.byte_end)).digest('hex')).toBe(r.object_sha256);
+  expect(records[1].byte_end).toBe(s.removed.byte_start); expect(records[2].byte_start).toBe(s.removed.byte_end);
+  expect(records[1].context.cwd).not.toBeNull();
+  for (const r of records.slice(2)) expect(r.context).toMatchObject({ state: 'unavailable', reason: 'privacy_gap', cwd: null, origin_event_id: null });
+  expect(records[2].assignment?.project_id).toBe(index.first_project);
+  for (const r of records.slice(3)) expect(r.assignment?.project_id).toBeNull();
+  expect(records[1].assignment?.logical_session_pk).not.toBe(records[2].assignment?.logical_session_pk);
+  await enterContinuation(page); await visible(panel(page).locator('[data-fragment-privacy-gap]'), page); await page.screenshot({ path: '../.cache/frontend-clear-continuation-gap-desktop.png' });
+  await panel(page).getByRole('button', { name: `选择记录 #${records[1].first_event_id}`, exact: true }).click();
+  await panel(page).getByRole('button', { name: `选择记录 #${records[2].first_event_id}`, exact: true }).click();
+  await panel(page).getByLabel('片段目标项目').selectOption(index.second_project);
+  await expect(panel(page).locator('[data-fragment-invalid-range]')).toBeVisible();
+  await expect(panel(page).getByRole('button', { name: '只读预检科研依赖', exact: true })).toBeDisabled();
+  await expect(panel(page).getByRole('checkbox')).toBeDisabled(); await expect(panel(page).getByRole('button', { name: '保存明确归属', exact: true })).toBeDisabled();
+  await visible(panel(page).locator('[data-fragment-invalid-range]'), page); await page.screenshot({ path: '../.cache/frontend-clear-continuation-range-desktop.png' });
+  await panel(page).getByRole('button', { name: '清除范围选择', exact: true }).click();
+  await choose(page, [records[2].first_event_id, records[3].first_event_id], index.second_project);
+  await expect(panel(page).locator('[data-fragment-selected-range]')).toContainText('2 条完整物理记录'); await expect(panel(page).getByRole('button', { name: '保存明确归属', exact: true })).toBeEnabled();
+  await page.setViewportSize({ width: 390, height: 844 }); await visible(panel(page).locator('[data-fragment-privacy-gap]'), page); await page.screenshot({ path: '../.cache/frontend-clear-continuation-gap-mobile.png' });
+  const card = panel(page).locator(`[data-fragment-record="${records[2].first_event_id}"]`); await visible(card, page); await expect(card.locator('[data-fragment-privacy-context]')).toBeVisible(); await page.screenshot({ path: '../.cache/frontend-clear-continuation-context-mobile.png' });
+  await expect(card.locator('code')).toHaveText('未提供可用目录');
+  const response = page.waitForResponse(r => new URL(r.url()).pathname === `/api/evidence/${records[2].first_event_id}`); await card.getByRole('button', { name: '打开记录原文', exact: true }).click(); const raw = await response; expect(raw.status()).toBe(200); expect(new URL(raw.url()).searchParams.has('start')).toBe(false); capture('continuation-retained-raw', await raw.json());
+  expect(await audit(request)).toEqual(before);
+});
+
+test('旧响应清除统计保持未知，续页缺口计数变化拒绝混页并保留原页', async ({ page }) => {
+  await enterContinuation(page); const s = index.privacy_source;
+  const firstIds = await panel(page).locator('[data-fragment-record]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-fragment-record')));
+  await page.route('**/api/project-fragments?*', async route => { const response = await route.fetch(); const raw = await response.json(); capture('actual-continuation-before-counter-mutation', raw); await route.fulfill({ response, json: { ...raw, privacy_skipped_records: raw.privacy_skipped_records + 1 } }); });
+  try {
+    await panel(page).getByRole('button', { name: '下一页片段', exact: true }).click(); await expect(panel(page).getByRole('alert')).toBeVisible();
+    expect(await panel(page).locator('[data-fragment-record]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-fragment-record')))).toEqual(firstIds);
+    await expect(panel(page).getByRole('button', { name: '下一页片段', exact: true })).toBeDisabled();
+  } finally { await page.unroute('**/api/project-fragments?*'); }
+  await page.route('**/api/project-fragments?*', async route => { const response = await route.fetch(); const raw = await response.json(); delete raw.privacy_skipped_records; delete raw.privacy_skipped_bytes; await route.fulfill({ response, json: raw }); });
+  try {
+    await refresh(page); await expect(panel(page).locator('[data-fragment-privacy-gap]')).toContainText('跳过记录 未提供 条，跳过字节 未提供');
+    await expect(panel(page).locator('[data-fragment-privacy-gap]')).toContainText('不能判断整个来源是否无缺口');
+    await panel(page).getByRole('button', { name: '下一页片段', exact: true }).click(); await expect(panel(page).locator(`[data-fragment-record="${s.events[20].event_id}"]`)).toBeVisible(); await expect(panel(page).getByRole('alert')).toHaveCount(0);
+  } finally { await page.unroute('**/api/project-fragments?*'); }
 });

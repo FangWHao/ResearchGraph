@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { appendFragmentDependencies, assertFragmentContinuation, canAssignFragments, fragmentDependencyGroups, fragmentSelection, parseFragmentDependencies, parseFragmentPage, parseFragmentReceipt, selectedFragmentRange } from '../src/projectFragments';
 import type { FragmentDependencies, FragmentPage, PhysicalFragment } from '../src/projectFragments';
 const record = (id: number, start: number, events = 1): PhysicalFragment => ({ first_event_id: id, byte_start: start, byte_end: start + 30, object_sha256: 'a'.repeat(64), first_seq: id, last_seq: id + events - 1, event_count: events, has_user_turn: true, observation_state: 'absent', observed_at: null, context: { state: 'declared', source: 'codex_turn_context', cwd: '/public/project', cwd_sha256: 'b'.repeat(64), reason: 'native', origin_event_id: 1 }, project_hint: { state: 'candidate_path', basis: 'path_hint', projects: ['project-b'], matching_root_ids: ['root-b'], candidates_partial: false, reason: 'registered_path_hint' }, assignment: { project_id: 'project-a', logical_session_pk: 1, basis: 'session_manual', partition_id: null } });
-const records = [record(1, 0, 3), record(5, 40), record(6, 70)];
+const records = [record(1, 0, 3), record(5, 30), record(6, 60)];
 const page = (): FragmentPage => ({ available: true, revision: 9, session_pk: 1, file_instance_id: 2, current_session_project: 'project-a', assignments_applied: true, assignment_supported: true, unit: 'physical_record', snapshot: 6, observation_snapshot: 9, scope_key: 'c'.repeat(64), records_total: 3, records_observed: 3, records_unavailable: 0, observations_complete: true, after_event: 0, next_after_event: null, records });
 const expected = { session: 1, source: 2, after: 0, limit: 20 };
 
@@ -18,6 +18,27 @@ describe('物理片段完整范围与只读线索', () => {
     for (const ids of [[1, 6], [1, 1], [99], []]) expect(selectedFragmentRange(records, ids)).toBeNull();
     expect(fragmentSelection(records, 99, 5)).toEqual([5]);
     expect(fragmentSelection(records, 1, 99)).toEqual([]);
+  });
+  it('相邻已读记录仍可能隔着清除字节缺口，不能以列表相邻冒充完整范围', () => {
+    const gapped = [records[0], record(5, 90), record(6, 120)];
+    expect(fragmentSelection(gapped, 1, 5)).toEqual([1, 5]);
+    expect(selectedFragmentRange(gapped, [1, 5])).toBeNull();
+    expect(selectedFragmentRange(gapped, [6, 5, 1])).toBeNull();
+    expect(selectedFragmentRange(gapped, [1])?.records).toBe(1);
+    expect(selectedFragmentRange(gapped, [6, 5])?.records).toBe(2);
+    expect(parseFragmentPage({ ...page(), records: gapped }, expected).records).toEqual(gapped);
+  });
+  it('清除缺口计数保留未知旧字段，拒绝非法值并固定续页计数', () => {
+    expect(parseFragmentPage(page(), expected).privacy_skipped_records).toBeUndefined();
+    const complete = { ...page(), privacy_skipped_records: 1, privacy_skipped_bytes: 60 };
+    expect(parseFragmentPage(complete, expected)).toMatchObject({ observations_complete: true, privacy_skipped_records: 1, privacy_skipped_bytes: 60 });
+    expect(parseFragmentPage({ ...page(), privacy_skipped_records: 1 }, expected).privacy_skipped_bytes).toBeUndefined();
+    for (const key of ['privacy_skipped_records', 'privacy_skipped_bytes'] as const) {
+      for (const value of [-1, 0.5, null, '1', Number.MAX_SAFE_INTEGER + 1]) expect(() => parseFragmentPage({ ...complete, [key]: value }, expected)).toThrow();
+      expect(() => assertFragmentContinuation(complete, { ...complete, [key]: 2 })).toThrow();
+      const missing = { ...complete }; delete missing[key]; expect(() => assertFragmentContinuation(complete, missing)).toThrow();
+    }
+    assertFragmentContinuation(complete, { ...complete, after_event: 6, records: [] });
   });
   it('旧后端仅只读，缺字段不能补造零修订或已接通归属', () => {
     const old = page(); delete old.revision; delete old.assignments_applied; delete old.assignment_supported;

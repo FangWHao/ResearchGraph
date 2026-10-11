@@ -14,6 +14,7 @@ export interface FragmentPage {
   current_session_project?: string | null; assignments_applied?: boolean; assignment_supported?: boolean; unit?: string;
   snapshot?: number; observation_snapshot?: number; scope_key?: string; records_total?: number;
   records_observed?: number; records_unavailable?: number; observations_complete?: boolean;
+  privacy_skipped_records?: number; privacy_skipped_bytes?: number;
   after_event?: number; next_after_event?: number | null; records?: PhysicalFragment[];
 }
 export interface FragmentAssignmentIntent {
@@ -50,6 +51,9 @@ export function parseFragmentPage(raw: unknown, expected: { session: number; sou
     if (typeof raw.reason !== 'string') return malformed();
     return raw as unknown as FragmentPage;
   }
+  for (const key of ['privacy_skipped_records', 'privacy_skipped_bytes']) {
+    if (raw[key] !== undefined && !integer(raw[key])) return malformed();
+  }
   if (raw.session_pk !== expected.session || raw.file_instance_id !== expected.source || raw.after_event !== expected.after || raw.unit !== 'physical_record' || !integer(raw.snapshot) || !integer(raw.observation_snapshot) || !hash(raw.scope_key) || !textOrNull(raw.current_session_project) || (raw.revision !== undefined && !integer(raw.revision)) || (raw.assignments_applied !== undefined && typeof raw.assignments_applied !== 'boolean') || !integer(raw.records_total) || !integer(raw.records_observed) || !integer(raw.records_unavailable) || raw.records_observed > raw.records_total || raw.records_unavailable > raw.records_observed || typeof raw.observations_complete !== 'boolean' || raw.observations_complete !== (raw.records_total === raw.records_observed) || !Array.isArray(raw.records) || raw.records.length > expected.limit || (raw.next_after_event !== null && !integer(raw.next_after_event, 1))) return malformed();
   let end = -1;
   const ids = new Set<number>();
@@ -64,7 +68,7 @@ export function parseFragmentPage(raw: unknown, expected: { session: number; sou
   return raw as unknown as FragmentPage;
 }
 export function assertFragmentContinuation(first: FragmentPage, next: FragmentPage) {
-  for (const key of ['available', 'session_pk', 'file_instance_id', 'current_session_project', 'assignments_applied', 'assignment_supported', 'revision', 'snapshot', 'observation_snapshot', 'scope_key', 'records_total', 'records_observed', 'records_unavailable', 'observations_complete'] as const) {
+  for (const key of ['available', 'session_pk', 'file_instance_id', 'current_session_project', 'assignments_applied', 'assignment_supported', 'revision', 'snapshot', 'observation_snapshot', 'scope_key', 'records_total', 'records_observed', 'records_unavailable', 'observations_complete', 'privacy_skipped_records', 'privacy_skipped_bytes'] as const) {
     if (first[key] !== next[key]) throw new Error('片段分页的截止、归属或计数已变化，请重新读取第一页；未混合不同读取页。');
   }
 }
@@ -73,6 +77,7 @@ export function selectedFragmentRange(records: PhysicalFragment[], selected: num
   const positions = selected.map(id => records.findIndex(r => r.first_event_id === id)).sort((a, b) => a - b);
   if (positions[0] < 0 || positions.some((p, i) => p !== positions[0] + i)) return null;
   const range = positions.map(p => records[p]);
+  if (range.some((record, i) => i > 0 && range[i - 1].byte_end !== record.byte_start)) return null;
   return { first: range[0], last: range.at(-1)!, records: range.length, events: range.reduce((n, r) => n + r.event_count, 0) };
 }
 export function fragmentSelection(records: PhysicalFragment[], anchor: number | null, clicked: number): number[] {

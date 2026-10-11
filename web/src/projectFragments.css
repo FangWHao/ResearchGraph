@@ -16,6 +16,7 @@
 .fragment-confirm .fragment-check { display: flex; align-items: flex-start; font-size: .88rem; line-height: 1.6; }
 .fragment-check input { width: auto; flex: 0 0 auto; margin-top: 5px; }
 .fragment-panel .pagination { flex-wrap: wrap; }
+.fragment-privacy-gap { overflow-wrap: anywhere; line-height: 1.7; }
 .fragment-dependencies { margin: 16px 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
 .fragment-dependencies h4, .fragment-dependencies h5 { margin: 10px 0; }
 .fragment-dependency-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); gap: 12px; }

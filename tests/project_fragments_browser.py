@@ -12,10 +12,150 @@ from uuid import uuid4
 
 from rg.api.server import Handler, LocalServer
 from rg.ingest.scanner import scan_file
+from rg.query.project_fragments import query
+from rg.store import clear
 from rg.store.database import Store, dumps, now
+from rg.store.fragments import assign
 from tests.golden.test_read_tools import original, review
 
 TOKEN = "synthetic-project-fragments-token"
+
+
+def assignment(store: Store, source: dict, event: int, project: str) -> dict:
+    """生产归属入口只处理选定的完整公开物理记录。"""
+    page = query(
+        store,
+        {"session": str(source["session_pk"]), "source": str(source["file_instance_id"])},
+    )
+    return assign(
+        store,
+        {
+            "request_id": str(uuid4()),
+            "session": source["session_pk"],
+            "source": source["file_instance_id"],
+            "first_event": event,
+            "last_event": event,
+            "project_id": project,
+            "expected_revision": page["revision"],
+            "expected_scope_key": page["scope_key"],
+            "snapshot": page["snapshot"],
+            "observation_snapshot": page["observation_snapshot"],
+            "actor": "human:公开清除续采验收",
+        },
+    )
+
+
+def saved_source(store: Store, path: Path) -> dict:
+    source = dict(
+        store.db.execute(
+            "SELECT file_instance_id,session_pk,path,parser FROM source_files "
+            "WHERE path=? ORDER BY file_instance_id DESC LIMIT 1",
+            (str(path),),
+        ).fetchone()
+    )
+    source["events"] = [
+        dict(row)
+        for row in store.db.execute(
+            "SELECT event_id,byte_start,byte_end,object_sha256 FROM raw_events "
+            "WHERE file_instance_id=? AND record_index=0 ORDER BY byte_start",
+            (source["file_instance_id"],),
+        )
+    ]
+    return source
+
+
+def prepare_clear_source(store: Store, directory: Path, project: str, root: Path) -> dict:
+    path = directory / "public-clear-continuation.jsonl"
+    records = [{"type": "session_meta", "payload": {"id": str(uuid4()), "cwd": str(root)}}]
+    records.extend(
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": f"公开清除续采记录 {n}"}],
+            },
+        }
+        for n in range(1, 28)
+    )
+    path.write_text(
+        "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records),
+        encoding="utf-8",
+    )
+    scan_file(store, path, "codex", project)
+    source = saved_source(store, path)
+    removed = source["events"][2]
+    target_root = directory / "public-only-cleared"
+    target_root.mkdir()
+    target = store.project("验收仅清除中间公开记录项目", [target_root])
+    receipt = assignment(store, source, removed["event_id"], target)
+    return {"source": source, "removed": removed, "target": target, "assignment": receipt}
+
+
+def continue_clear_source(directory: Path, project: str, prepared: dict) -> dict:
+    """关闭库后真实清除，换 inode 重扫相同公开字节，禁止修改扫描游标。"""
+    root = directory / "store"
+    preview = clear.preview(root, prepared["target"])
+    assert preview["blockers"] == []
+    receipt = clear.execute(root, prepared["target"], str(uuid4()), preview["preview_sha256"])
+    assert receipt["state"] == "complete"
+    path = Path(prepared["source"]["path"])
+    original = path.read_bytes()
+    previous_inode = path.stat().st_ino
+    replacement = directory / "replacement.tmp"
+    replacement.write_bytes(original)
+    replacement.replace(path)
+    assert path.stat().st_ino != previous_inode
+    with closing(Store(root)) as store:
+        counts = scan_file(store, path, "codex", None)
+        assert counts["privacy_skipped_records"] == 1
+        assert counts["aliases"] == 27
+        source = saved_source(store, path)
+        assert source["file_instance_id"] != prepared["source"]["file_instance_id"]
+        removed = prepared["removed"]
+        assert len(source["events"]) == 27
+        assert not any(e["byte_start"] == removed["byte_start"] for e in source["events"])
+        assert not store.objects.path(removed["object_sha256"]).exists()
+        aliases = [
+            dict(row)
+            for row in store.db.execute(
+                "SELECT event_id,alias_of FROM raw_events WHERE file_instance_id=? "
+                "AND record_index=0 ORDER BY byte_start",
+                (source["file_instance_id"],),
+            )
+        ]
+        assert [r["alias_of"] for r in aliases] == [
+            e["event_id"] for e in prepared["source"]["events"] if e != removed
+        ]
+        # 只将新实例一条保留原件明确归属给健康页项目，缺口后其它记录仍收件箱。
+        kept_assignment = assignment(store, source, source["events"][2]["event_id"], project)
+        page = query(
+            store,
+            {"session": str(source["session_pk"]), "source": str(source["file_instance_id"])},
+        )
+        assert page["privacy_skipped_records"] == 1
+        assert page["privacy_skipped_bytes"] == removed["byte_end"] - removed["byte_start"]
+        assert page["records_total"] == page["records_observed"] == 27
+        assert page["observations_complete"] is True
+        assert all(
+            r["context"]["reason"] == "privacy_gap" and r["context"]["cwd"] is None
+            for r in page["records"][2:]
+        )
+        assert store.db.execute("SELECT count(*) FROM model_attempts").fetchone()[0] == 0
+    return source | {
+        "removed": removed,
+        "old_source": prepared["source"],
+        "initial_assignment": prepared["assignment"],
+        "kept_assignment": kept_assignment,
+        "clear_preview": preview,
+        "clear_receipt": receipt,
+        "scan_counts": counts,
+        "first_page": page,
+        "aliases": aliases,
+        "input_sha256": sha256(original).hexdigest(),
+        "previous_inode": previous_inode,
+        "current_inode": path.stat().st_ino,
+    }
 
 
 def dependency_source(store: Store, directory: Path, project: str, root: Path) -> dict:
@@ -171,6 +311,7 @@ def seed(directory: Path) -> dict:
                 )
             ]
         dependent = dependency_source(store, directory, first, root_a)
+        clear_source = prepare_clear_source(store, directory, first, root_a)
         index = {
             "first_project": first,
             "second_project": second,
@@ -179,6 +320,7 @@ def seed(directory: Path) -> dict:
             "confirmed": confirmed,
             "dependency_source": dependent,
         }
+    index["privacy_source"] = continue_clear_source(directory, first, clear_source)
     (directory / "index.json").write_text(dumps(index), encoding="utf-8")
     return index
 
@@ -250,6 +392,12 @@ def audit(directory: Path) -> dict:
                     )
                 ],
             },
+            "privacy_metadata": {
+                name: [
+                    list(row) for row in store.db.execute(f"SELECT * FROM {name} ORDER BY rowid")
+                ]
+                for name in ("source_record_skips", "source_continuations")
+            },
         }
     result["input_files"] = {
         path.name: sha256(path.read_bytes()).hexdigest() for path in directory.glob("*.jsonl")
@@ -268,7 +416,7 @@ def main() -> None:
     cache.mkdir(exist_ok=True)
     if args.prepare:
         index = seed(args.fixture_dir)
-        (cache / "frontend-project-fragments-index.json").write_text(
+        (cache / "frontend-clear-continuation-index.json").write_text(
             json.dumps(index, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
         print("两个公开项目与额外27条依赖记录已真实扫描；科研引用仅为公开合成。", flush=True)
@@ -298,9 +446,10 @@ def main() -> None:
             "objects",
             "input_files",
             "dependency_metadata",
+            "privacy_metadata",
         ]
         intact = all(before[key] == after[key] for key in protected)
-        (cache / "frontend-project-fragments-audit.json").write_text(
+        (cache / "frontend-clear-continuation-audit.json").write_text(
             json.dumps(
                 {"服务前": before, "服务后": after, "原件候选审核未改写": intact},
                 ensure_ascii=False,

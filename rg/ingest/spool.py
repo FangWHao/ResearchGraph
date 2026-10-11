@@ -219,7 +219,11 @@ def _consume_one(
                 held = False
                 for path, source in chosen:
                     scanned = scan_file(store, path, source.tool, source.project)
-                    held |= bool(scanned.get("privacy_held") or scanned.get("privacy_tail_held"))
+                    held |= bool(
+                        scanned.get("privacy_blocked")
+                        or scanned.get("privacy_held")
+                        or scanned.get("privacy_tail_held")
+                    )
                 if fault:
                     fault()
                 if held:
