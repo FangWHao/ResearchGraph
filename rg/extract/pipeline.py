@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from rg.derive.claim_sources import policy as source_qualification_policy
 from rg.extract.linker import LINK_SCHEMA, link, source_policy
 from rg.extract.overview import OVERVIEW_SCHEMA, ChangedInput, overview, records
 from rg.extract.queue import Queue
@@ -45,6 +46,7 @@ class Stages:
                 worker.daily_budget,
                 scope,
                 "pipeline-v1",
+                source_qualification_policy(),
             ]
             if stage == "link":
                 configuration.append(source_policy())

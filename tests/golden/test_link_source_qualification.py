@@ -198,6 +198,7 @@ def test_exact_legacy_completed_key_cannot_bypass_current_source_check(store, mo
     with monkeypatch.context() as legacy:
         legacy.setattr(linker, "source_policy", lambda: "link-scheduler1")
         legacy.setattr(linker, "source_exclusion", lambda *args, **kwargs: None)
+        legacy.setattr(linker, "assess", lambda *args, **kwargs: {"input_eligible": True})
         old = link(Worker(store, provider), project)
     assert old["processed"] == 1 and provider.calls == 1
     counts = provider.counts

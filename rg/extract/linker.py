@@ -10,6 +10,8 @@ from typing import Any
 
 import zstandard
 
+from rg.derive.claim_sources import assess
+from rg.derive.claim_sources import policy as source_qualification_policy
 from rg.extract.locator import _bounded_prefix
 from rg.extract.monitor import set_status
 from rg.extract.privacy import ProjectCounter
@@ -31,7 +33,12 @@ LINK_VERSION = "2"
 
 
 def source_policy() -> dict[str, str]:
-    return {"link": LINK_VERSION, "parser": PARSER_VERSION, "slim": SLIM_VERSION}
+    return {
+        **source_qualification_policy(),
+        "link": LINK_VERSION,
+        "parser": PARSER_VERSION,
+        "slim": SLIM_VERSION,
+    }
 
 
 LINK_SCHEMA = obj(
@@ -294,6 +301,9 @@ def _schedule(
         )
         run: int | None = None
         try:
+            for card in pair.cards:
+                if not assess(store, card["claim_id"], refresh=True)["input_eligible"]:
+                    raise InvalidClaim("链接对象来源无法核对或已排除")
             # 仅第一侧取原文，另一侧只有结构化卡片；没有两段会话共同输入。
             span = store.db.execute(
                 "SELECT es.* FROM evidence_spans es JOIN claim_evidence ce USING(span_id) "

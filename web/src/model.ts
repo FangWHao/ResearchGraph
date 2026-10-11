@@ -1,4 +1,4 @@
-import type { Claim, Kind, ReviewState } from './types';
+import type { Claim, Kind, ReviewState, SourceIssue } from './types';
 import { claimInstant, compareInstants } from './exactTime';
 
 export const kindNames: Record<Kind, string> = {
@@ -38,6 +38,16 @@ export function label(claim: Claim): string {
   return claim.payload.label ?? claim.payload.reason ?? relationNames[claim.payload.relation ?? ''] ?? claim.claim_type;
 }
 function activeClaim(claim: Claim): boolean { return claim.effective_state !== 'dismissed' && claim.replacement_ids.length === 0 && claim.replaced !== true; }
+export function sourceIssue(claim: Claim): SourceIssue | null {
+  if (claim.input_eligible !== false) return null;
+  const status = claim.source_qualification?.status;
+  return { claim_id: claim.claim_id, status: status === 'excluded' || status === 'pending' ? status : 'unavailable' };
+}
+export function sourceIssues(claims: Claim[], entityId: string, scope: Claim['scope']): SourceIssue[] {
+  return claims.filter(item => scopeKey(item.scope) === scopeKey(scope) && item.replacement_ids.length === 0 && item.replaced !== true
+    && (item.entity_id === entityId || item.payload.target === entityId || item.payload.source === entityId))
+    .flatMap(item => { const issue = sourceIssue(item); return issue ? [issue] : []; });
+}
 export function entityVersions(claims: Claim[]): Claim[] {
   const candidates = new Map<string, Claim[]>();
   for (const claim of claims) {
@@ -58,8 +68,13 @@ export function timeline(claims: Claim[], entityId: string): Claim[] {
 }
 function eventOrder(claim: Claim): bigint { return claimInstant(claim, 'occurred') ?? claimInstant(claim, 'recorded') ?? 0n; }
 function eventState(events: Claim[], field: 'action' | 'state', unknown: string): string {
-  const stamped = events.filter(item => item.effective_state === 'confirmed' && activeClaim(item)).map(item => ({ item, time: claimInstant(item, 'occurred') }));
+  const confirmed = events.filter(item => item.effective_state === 'confirmed' && activeClaim(item));
+  const stamped = confirmed.filter(item => item.input_eligible !== false).map(item => ({ item, time: claimInstant(item, 'occurred') }));
   if (!stamped.length) return unknown;
+  const known = stamped.flatMap(event => event.time === null ? [] : [event.time]);
+  const latestKnown = known.length ? known.reduce((max, time) => time > max ? time : max) : null;
+  const uncertain = confirmed.filter(item => item.input_eligible === false && sourceIssue(item)?.status !== 'excluded');
+  if (uncertain.some(item => { const time = claimInstant(item, 'occurred'); return time === null || latestKnown === null || time >= latestKnown; })) return unknown;
   if (stamped.some(event => event.time == null)) return 'time_unknown';
   const latest = stamped.reduce((max, event) => event.time! > max ? event.time! : max, stamped[0].time!);
   const states = new Set(stamped.filter(event => event.time === latest).map(event => event.item.payload[field] ?? unknown));

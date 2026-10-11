@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 25
+LATEST_VERSION = 26
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -343,9 +343,7 @@ MIGRATIONS = {
         "CREATE TRIGGER edit_record_revision AFTER INSERT ON edit_records BEGIN "
         "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
     ),
-    18: (
-        "ALTER TABLE source_roots ADD COLUMN git_metadata TEXT NOT NULL DEFAULT '{}'",
-    ),
+    18: ("ALTER TABLE source_roots ADD COLUMN git_metadata TEXT NOT NULL DEFAULT '{}'",),
     19: (
         "CREATE TABLE parser_records(record_id INTEGER PRIMARY KEY,event_id INTEGER NOT NULL "
         "UNIQUE REFERENCES raw_events,file_instance_id INTEGER NOT NULL REFERENCES source_files,"
@@ -453,6 +451,22 @@ MIGRATIONS = {
         "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
         "UPDATE graph_clock SET revision=revision+1 WHERE id=1 AND "
         "EXISTS(SELECT 1 FROM edit_records WHERE operation='multiedit')",
+    ),
+    26: (
+        "CREATE TABLE claim_source_checks(check_id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "claim_id INTEGER NOT NULL REFERENCES claims,project_id TEXT NOT NULL REFERENCES projects,"
+        "input_signature TEXT NOT NULL,payload TEXT NOT NULL,recorded_at TEXT NOT NULL)",
+        "CREATE INDEX claim_source_lookup ON "
+        "claim_source_checks(claim_id,input_signature,check_id)",
+        "CREATE TRIGGER claim_source_no_update BEFORE UPDATE ON claim_source_checks BEGIN "
+        "SELECT RAISE(ABORT,'claim source check is append-only'); END",
+        "CREATE TRIGGER claim_source_no_delete BEFORE DELETE ON claim_source_checks BEGIN "
+        "SELECT RAISE(ABORT,'claim source check is append-only'); END",
+        "CREATE TRIGGER claim_source_revision AFTER INSERT ON claim_source_checks BEGIN "
+        "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
+        "UPDATE graph_clock SET revision=revision+1 WHERE id=1 AND EXISTS "
+        "(SELECT 1 FROM claims WHERE extraction_run_id IS NOT NULL OR basis='model_inference' "
+        "OR substr(actor,1,6)='model:')",
     ),
 }
 

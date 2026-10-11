@@ -17,6 +17,12 @@ export interface Payload {
   inputs?: { port: string; ref: string }[];
   [key: string]: unknown;
 }
+export type SourceQualificationStatus = 'not_required' | 'not_excluded' | 'pending' | 'excluded' | 'unavailable';
+export interface SourceQualification {
+  status: SourceQualificationStatus; input_eligible: boolean; policy?: Record<string, string>;
+  references?: Record<string, unknown>[]; checked_at?: string;
+}
+export interface SourceIssue { claim_id: number; status: SourceQualificationStatus }
 export interface Claim {
   kind?: string;
   claim_id: number; claim_type: string; entity_id: string | null;
@@ -32,6 +38,7 @@ export interface Claim {
   pending_decision?: PendingDecision | null;
   replaces?: { claim_id: number; payload: Payload; scope: Record<string, string> | null };
   human_comparisons?: { claim_id: number; actor: string; scope: Record<string, string>; payload: Payload; differing_fields: string[] }[];
+  source_qualification?: SourceQualification; input_eligible?: boolean;
 }
 export interface Project {
   project_id: string; name: string; remote_model_allowed: number; sessions: number; claims: number;

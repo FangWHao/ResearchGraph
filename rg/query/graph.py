@@ -46,6 +46,8 @@ def provenance(reader: Reader, claim: dict[str, Any]) -> dict[str, Any]:
             "replaces_claim",
             "replacement_ids",
             "replaced",
+            "source_qualification",
+            "input_eligible",
         )
     } | {
         "citation_id": f"C{claim['claim_id']}",

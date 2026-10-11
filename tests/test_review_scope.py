@@ -12,6 +12,7 @@ def test_decision_in_other_scope_does_not_change_this_scope(store: Store, tmp_pa
     ids = persist(store, output, project, run, set(), {1}, "test-segment")
     store.review(ids[1], "confirm", "human:tester", store.revision())
     current = working_set(store, project, "方法甲", FakeProvider())[0]
+    assert current["state"] == "time_unknown"  # 原件没有发生时间，不补造采用时序。
     other = output["claims"][1]
     other["target"] = current["id"]
     other["action"] = "rejected"
@@ -20,4 +21,4 @@ def test_decision_in_other_scope_does_not_change_this_scope(store: Store, tmp_pa
     run = new_run(store, output, "other-scope")
     new = persist(store, output, project, run, {current["id"]}, {1}, "test-segment")
     store.review(new[0], "confirm", "human:tester", store.revision())
-    assert working_set(store, project, "方法甲", FakeProvider())[0]["state"] == "accepted"
+    assert working_set(store, project, "方法甲", FakeProvider())[0]["state"] == current["state"]

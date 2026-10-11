@@ -6,8 +6,11 @@ import sqlite3
 from contextlib import closing
 from typing import Any
 
+from rg.derive.claim_sources import assess, recorded
 from rg.extract.paths import file_paths
 from rg.extract.privacy import ProjectCounter
+from rg.query.reader import event_state
+from rg.query.time import instant
 from rg.slim.tokens import TokenCounter
 from rg.store.database import Store, dumps
 from rg.store.scopes import known_scope
@@ -25,6 +28,10 @@ def working_set(
     paths: set[str] | None = None,
     before_offset: int | None = None,
 ) -> list[dict[str, Any]]:
+    def qualification(claim: int) -> dict[str, Any]:
+        saved = recorded(store, claim)
+        return assess(store, claim, refresh=saved["status"] == "unavailable")
+
     if scope is not None and (
         not scope
         or any(
@@ -34,11 +41,18 @@ def working_set(
     ):
         raise ValueError("显式范围必须为非空字符串字段")
     rows = store.db.execute(
-        "SELECT e.entity_id, e.kind, c.claim_id, c.payload, c.scope FROM entities e JOIN claims c "
+        "SELECT c.*, e.kind FROM entities e JOIN claims c "
         "USING(entity_id) WHERE e.project_id = ? AND c.claim_type = ? "
         "ORDER BY c.claim_id DESC",
         (project_id, "entity_version"),
     ).fetchall()
+    rows = [
+        r
+        for r in rows
+        if (scope is None or json.loads(r["scope"] or "{}") == scope)
+        and store.claim_state(r["claim_id"]) != "dismissed"
+        and qualification(r["claim_id"])["input_eligible"]
+    ]
     candidates = []
     matches = _label_matches(
         [(r["claim_id"], json.loads(r["payload"]).get("label", "")) for r in rows],
@@ -99,11 +113,13 @@ def working_set(
         state = "proposed" if known_scope(row_scope) else "unknown_scope"
         # 人工或独立原话规则确认后才改变当前采用状态，候选不能悄悄成为事实。
         decisions = store.db.execute(
-            "SELECT claim_id, payload, scope FROM claims WHERE entity_id = ? "
+            "SELECT c.*,EXISTS(SELECT 1 FROM claims x WHERE x.replaces_claim=c.claim_id) "
+            "AS replaced FROM claims c WHERE entity_id = ? "
             "AND claim_type = 'decision_event' ORDER BY "
             "occurred_at DESC, claim_id DESC",
             (entity_id,),
         ).fetchall()
+        state_rows = []
         for decision in decisions:
             if (
                 known_scope(row_scope)
@@ -111,8 +127,19 @@ def working_set(
                 and json.loads(decision["scope"] or "{}") == json.loads(row["scope"] or "{}")
                 and store.claim_state(decision["claim_id"]) == "confirmed"
             ):
-                state = json.loads(decision["payload"])["action"]
-                break
+                checked = qualification(decision["claim_id"])
+                state_rows.append(
+                    dict(decision)
+                    | {
+                        "payload": json.loads(decision["payload"]),
+                        "effective_state": "confirmed",
+                        "occurred_time_unknown": instant(decision["occurred_at"]) is None,
+                        "source_qualification": checked,
+                        "input_eligible": checked["input_eligible"],
+                    }
+                )
+        if state_rows:
+            state = event_state(state_rows, "action", "unknown")["state"]
         if row["kind"] not in {"question", "approach", "decision"} and rank != 0:
             continue
         if state in {"rejected", "withdrawn", "superseded"} and rank != 0:

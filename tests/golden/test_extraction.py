@@ -283,7 +283,8 @@ def test_working_set_budget_and_reextraction_keeps_human(store: Store, tmp_path:
     ids = persist(store, output, project, run, set(), {1}, "test-segment")
     store.review(ids[1], "confirm", "human:tester", store.revision())
     working = working_set(store, project, "方法甲", FakeProvider(), budget=3000)
-    assert working[0]["state"] == "accepted"
+    # 原件没有发生时间；人工确认不补造采用动作的时序。
+    assert working[0]["state"] == "time_unknown"
     assert len(dumps(working).encode()) <= 3000
     output["claims"] = [output["claims"][1]]
     output["claims"][0]["target"] = working[0]["id"]
@@ -292,7 +293,7 @@ def test_working_set_budget_and_reextraction_keeps_human(store: Store, tmp_path:
     new_ids = persist(store, output, project, run, {working[0]["id"]}, {1}, "test-segment")
     assert store.claim_state(new_ids[0]) == "candidate"
     assert store.claim_state(ids[1]) == "confirmed"
-    assert working_set(store, project, "方法甲", FakeProvider())[0]["state"] == "accepted"
+    assert working_set(store, project, "方法甲", FakeProvider())[0]["state"] == "time_unknown"
 
 
 def test_missing_tool_return_is_preserved(store: Store, tmp_path: Path):

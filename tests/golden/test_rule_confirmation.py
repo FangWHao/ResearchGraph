@@ -122,9 +122,14 @@ def test_verified_user_action_appends_rule_review(
     assert review["actor"] == "rule:" + RULE_VERSION
     assert proof["target_ids"] == [target] and proof["scope"] == item["scope"]
     assert proof["event_id"] == span["event_id"] and proof["basis"] == "direct_record"
-    assert store.revision() == before + 2
+    # 候选、规则审核与来源诊断分别触发修订；没有改写候选。
+    assert store.revision() == before + 3
+    from rg.derive.claim_sources import recorded
+
+    assert recorded(store, claim)["status"] == "not_excluded"
+    reviewed_revision = store.revision()
     assert confirm_explicit(store, [claim], project, {target}) == 0
-    assert store.revision() == before + 2
+    assert store.revision() == reviewed_revision
 
 
 @pytest.mark.parametrize("mode", ["codex", "escaped"])
@@ -242,7 +247,7 @@ def test_manual_confirmation_is_protected_and_manual_dismissal_wins(store: Store
     assert len(comparison) == 1 and comparison[0]["claim_id"] == first
     assert "action" in comparison[0]["differing_fields"]
     assert comparison[0]["payload"]["action"] == "accepted"
-    assert working_set(store, project, "方法甲", FakeProvider())[0]["state"] == "accepted"
+    assert working_set(store, project, "方法甲", FakeProvider())[0]["state"] == "time_unknown"
     store.review(first, "dismiss", "human:tester", store.revision())
     assert confirm_explicit(store, [first], project, {target}) == 0
     assert store.claim_state(first) == "dismissed"
@@ -350,7 +355,7 @@ def test_rule_confirmation_runs_in_real_worker_and_updates_next_working_set(
     assert store.health()["pending"] == 3  # seed 直接入库，没有走三阶段覆盖。
     claim = store.db.execute("SELECT max(claim_id) FROM claims").fetchone()[0]
     assert store.claim_state(claim) == "confirmed"
-    assert working_set(store, project, "方法甲", FakeProvider())[0]["state"] == "accepted"
+    assert working_set(store, project, "方法甲", FakeProvider())[0]["state"] == "time_unknown"
     assert Worker(store, provider).process(session, {"dataset_version": "data_v2"})["claims"] == 0
     assert provider.calls == 2
 

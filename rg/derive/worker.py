@@ -80,6 +80,11 @@ def _derive(
     checked = validate_edits(store, limit, retry_unavailable=retry_failed)
     if checked:
         counts["edit_checks"] += checked
+    from rg.derive.claim_sources import check_batch
+
+    qualified = check_batch(store, limit)
+    if qualified["claim_sources_checked"]:
+        counts.update(qualified)
     counts["l1_remaining"] = store.db.execute(
         "SELECT count(*) FROM l1_derivations d JOIN raw_events r USING(event_id) "
         "WHERE d.state IN ('queued','waiting') AND (? IS NULL OR r.session_pk=?)",

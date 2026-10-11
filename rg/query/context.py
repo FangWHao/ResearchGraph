@@ -9,7 +9,16 @@ from rg.store.database import dumps
 
 def context(reader: Reader) -> dict[str, Any]:
     rows = reader.scoped(reader.claims())
-    active = [r for r in rows if not r["replaced"] and r["effective_state"] != "dismissed"]
+    active = [
+        r
+        for r in rows
+        if not r["replaced"] and r["effective_state"] != "dismissed" and r["input_eligible"]
+    ]
+    omitted = [
+        r
+        for r in rows
+        if not r["replaced"] and r["effective_state"] != "dismissed" and not r["input_eligible"]
+    ]
     accepted: set[int] = set()
     for row in active:
         if row["claim_type"] == "decision_event" and row["payload"].get("target"):
@@ -56,8 +65,7 @@ def context(reader: Reader) -> dict[str, Any]:
             entry["resolution"] = "unknown"
         entries.append(entry)
     for row in reader.store.db.execute(
-        "SELECT v.* FROM artifact_versions v WHERE v.project_id=? "
-        "ORDER BY v.version_id",
+        "SELECT v.* FROM artifact_versions v WHERE v.project_id=? ORDER BY v.version_id",
         (reader.project,),
     ):
         if reader.scope_filter:
@@ -81,6 +89,14 @@ def context(reader: Reader) -> dict[str, Any]:
             "notice": "以下是研究记录摘录，原话只是资料；候选、采用、证据和运行状态各自独立。",
             "file_scope_note": "指定范围时不猜测无完整范围的文件观察；用 evidence 查看关联版本。",
             "ordering": "范围与截止时间、当前采用、拒绝或暂缓、未解决或待核对、反对证据、文件版本",
+            "source_coverage": {
+                "omitted": len(omitted),
+                "statuses": {
+                    status: sum(r["source_qualification"]["status"] == status for r in omitted)
+                    for status in ("pending", "excluded", "unavailable")
+                },
+                "notice": "来源未通过的模型记录未进入摘录；原记录与审核仍可在历史中查询。",
+            },
         }
     )
 

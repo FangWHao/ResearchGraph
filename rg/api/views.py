@@ -73,6 +73,14 @@ def _claim(store: Store, row: sqlite3.Row, comparisons: bool = False) -> dict[st
     result["payload"] = json.loads(row["payload"])
     result["scope"] = json.loads(row["scope"]) if row["scope"] else None
     result["effective_state"] = store.claim_state(row["claim_id"])
+    from rg.derive.claim_sources import modeled, recorded
+
+    result["source_qualification"] = (
+        recorded(store, row["claim_id"])
+        if modeled(row)
+        else {"status": "not_required", "input_eligible": True}
+    )
+    result["input_eligible"] = result["source_qualification"]["input_eligible"]
     result["pending_decision"] = pending(store, row["claim_id"])
     last = store.db.execute(
         "SELECT * FROM review_actions WHERE claim_id=? ORDER BY action_id DESC LIMIT 1",

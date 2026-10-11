@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from rg.derive.claim_sources import recorded
 from rg.extract.monitor import set_status
 from rg.extract.schemas import STRING, obj
 from rg.extract.segmenter import Segment
@@ -55,6 +56,8 @@ def records(
     for row in rows:
         current_scope = json.loads(row["scope"] or "{}")
         if scope is not None and current_scope != scope:
+            continue
+        if not recorded(store, row["claim_id"])["input_eligible"]:
             continue
         if (
             session is not None

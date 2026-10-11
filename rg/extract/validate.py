@@ -7,6 +7,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
+from rg.derive.claim_sources import assess
 from rg.extract.monitor import set_status
 from rg.extract.progress import complete
 from rg.extract.redact import redact
@@ -244,6 +245,8 @@ def persist(
                     (claim_id, span_id, span.get("role", "support")),
                 )
         confirm_explicit(store, ids, project_id, allowed_ids, owned_windows, expected_scope)
+        for claim_id in ids:
+            assess(store, claim_id)
         set_status(store, run_id, "ok", attempt_id=attempt_id)
         complete(store, progress_config, segment_id, "covered")
     return ids

@@ -148,7 +148,7 @@ test('双截止历史详情保留当时候选和更正前内容，原文不混�
 });
 
 test('真实第二页409保留旧完整图且禁止折叠，主动重读新修订；错页不混入旧图', async ({ page, request }) => {
-  await open(page); const before = await reading(page), snapshotBefore = await snapshot(page);
+  await open(page); await canvasVisible(page); const before = await reading(page), snapshotBefore = await snapshot(page);
   let intercepted = false, status = 0;
   await page.route('**/api/semantic-graph?*', async route => {
     if (new URL(route.request().url()).searchParams.get('offset') !== '100' || intercepted) { await route.continue(); return; }
