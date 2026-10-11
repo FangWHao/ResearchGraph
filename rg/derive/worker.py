@@ -85,6 +85,11 @@ def _derive(
     qualified = check_batch(store, limit)
     if qualified["claim_sources_checked"]:
         counts.update(qualified)
+    from rg.derive.rule_references import check_batch as check_rules
+
+    qualified_rules = check_rules(store, limit)
+    if qualified_rules["rule_references_checked"]:
+        counts.update(qualified_rules)
     counts["l1_remaining"] = store.db.execute(
         "SELECT count(*) FROM l1_derivations d JOIN raw_events r USING(event_id) "
         "WHERE d.state IN ('queued','waiting') AND (? IS NULL OR r.session_pk=?)",

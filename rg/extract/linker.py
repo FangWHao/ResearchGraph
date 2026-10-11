@@ -10,8 +10,8 @@ from typing import Any
 
 import zstandard
 
-from rg.derive.claim_sources import assess
-from rg.derive.claim_sources import policy as source_qualification_policy
+from rg.derive.eligibility import assess
+from rg.derive.eligibility import policy as source_qualification_policy
 from rg.extract.locator import _bounded_prefix
 from rg.extract.monitor import set_status
 from rg.extract.privacy import ProjectCounter
@@ -225,7 +225,7 @@ def _schedule(
     retry_attempts: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     store = worker.store
-    prompt = Path(__file__).with_name("prompts").joinpath("link.txt").read_text()
+    prompt = Path(__file__).with_name("prompts").joinpath("link.txt").read_text(encoding="utf-8")
     header = worker.provider.request(prompt, "", LINK_SCHEMA, min(worker.output_budget, 1000))
     processing = [
         worker.provider.provider,

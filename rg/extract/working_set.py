@@ -6,7 +6,7 @@ import sqlite3
 from contextlib import closing
 from typing import Any
 
-from rg.derive.claim_sources import assess, recorded
+from rg.derive.eligibility import assess, recorded
 from rg.extract.paths import file_paths
 from rg.extract.privacy import ProjectCounter
 from rg.extract.working_scopes import context, scope_shape
@@ -32,7 +32,14 @@ def working_set(
 ) -> list[dict[str, Any]]:
     def qualification(claim: int) -> dict[str, Any]:
         saved = recorded(store, claim)
-        return assess(store, claim, refresh=saved["status"] == "unavailable")
+        return assess(
+            store,
+            claim,
+            refresh=any(
+                saved[k]["status"] == "unavailable"
+                for k in ("source_qualification", "rule_qualification")
+            ),
+        )
 
     if scope is not None and not scope_shape(scope):
         raise ValueError("显式范围必须为非空字符串字段")
@@ -134,8 +141,7 @@ def working_set(
                         "payload": json.loads(decision["payload"]),
                         "effective_state": "confirmed",
                         "occurred_time_unknown": instant(decision["occurred_at"]) is None,
-                        "source_qualification": checked,
-                        "input_eligible": checked["input_eligible"],
+                        **checked,
                     }
                 )
         if state_rows:

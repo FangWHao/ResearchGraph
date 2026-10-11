@@ -23,6 +23,13 @@ export interface SourceQualification {
   references?: Record<string, unknown>[]; checked_at?: string;
 }
 export interface SourceIssue { claim_id: number; status: SourceQualificationStatus }
+export type RuleQualificationStatus = 'not_required' | 'pending' | 'verified' | 'unverifiable' | 'invalid' | 'unavailable';
+export interface RuleQualification {
+  status: RuleQualificationStatus; input_eligible: boolean; review_action_id?: number | null;
+  policy?: Record<string, string>; checked_at?: string | null; proof_known_at?: string | null;
+  reasons?: string[];
+}
+export interface RuleIssue { claim_id: number; status: RuleQualificationStatus }
 export interface Claim {
   kind?: string;
   claim_id: number; claim_type: string; entity_id: string | null;
@@ -38,7 +45,7 @@ export interface Claim {
   pending_decision?: PendingDecision | null;
   replaces?: { claim_id: number; payload: Payload; scope: Record<string, string> | null };
   human_comparisons?: { claim_id: number; actor: string; scope: Record<string, string>; payload: Payload; differing_fields: string[] }[];
-  source_qualification?: SourceQualification; input_eligible?: boolean;
+  source_qualification?: SourceQualification; rule_qualification?: RuleQualification; input_eligible?: boolean;
 }
 export interface Project {
   project_id: string; name: string; remote_model_allowed: number; sessions: number; claims: number;

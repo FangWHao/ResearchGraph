@@ -11,6 +11,7 @@ from typing import Any
 from jsonschema import Draft202012Validator
 
 from rg.derive.claim_sources import policy as source_qualification_policy
+from rg.derive.rule_references import policy as rule_qualification_policy
 from rg.extract.budgets import Budgets
 from rg.extract.locator import CUE_PATTERNS, positions, units, windows
 from rg.extract.monitor import set_status
@@ -135,7 +136,11 @@ class Worker:
                     limit,
                     policy.identity,
                     source_qualification_policy(),
-                    *([working_scope_policy(), RULE_VERSION] if stage == "pass2" else []),
+                    *(
+                        [working_scope_policy(), RULE_VERSION, rule_qualification_policy()]
+                        if stage != "pass1"
+                        else []
+                    ),
                 ]
             ).encode()
         )
@@ -545,6 +550,7 @@ class Worker:
             {"parser_version": PARSER_VERSION, "slim_version": SLIM_VERSION},
             source_qualification_policy(),
             working_scope_policy(),
+            rule_qualification_policy(),
         ]
         if isinstance(self.counter, ProjectCounter) and self.counter.policy.rule_id:
             result.append(self.counter.policy.identity)

@@ -122,11 +122,14 @@ def test_verified_user_action_appends_rule_review(
     assert review["actor"] == "rule:" + RULE_VERSION
     assert proof["target_ids"] == [target] and proof["scope"] == item["scope"]
     assert proof["event_id"] == span["event_id"] and proof["basis"] == "direct_record"
-    # 候选、规则审核与来源诊断分别触发修订；没有改写候选。
-    assert store.revision() == before + 3
+    # 候选、规则审核、规则证明及来源诊断分别触发修订；没有改写候选。
+    assert store.revision() == before + 4
     from rg.derive.claim_sources import recorded
 
     assert recorded(store, claim)["status"] == "not_excluded"
+    from rg.derive.rule_references import recorded as recorded_rule
+
+    assert recorded_rule(store, claim)["status"] == "verified"
     reviewed_revision = store.revision()
     assert confirm_explicit(store, [claim], project, {target}) == 0
     assert store.revision() == reviewed_revision

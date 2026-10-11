@@ -9,7 +9,7 @@ TABLES = frozenset(
 artifact_discoveries artifact_discovery_attempts artifact_job_events artifact_jobs
 artifact_observations artifact_versions candidate_locations claim_evidence claims coverage
 claude_chain_records daily_usage decision_requests decision_resolutions dedupe_links edit_records
-edit_request_checks claim_source_checks
+edit_request_checks claim_source_checks rule_reference_checks
 entities
 event_search evidence_spans explicit_records extraction_plans extraction_queue
 extraction_queue_events extraction_runs file_hash_cache graph_clock hook_error_checks
@@ -228,10 +228,23 @@ class Selection:
             ).fetchone():
                 issues.append("待清除任务包含其他项目记录")
         # 无归属的旧任务或提取输出不能被静默漏清，也不能猜它们属于这个项目。
+        cursor_payload = "CASE WHEN json_valid(c.payload) THEN c.payload ELSE '{}' END"
+        safe_cursor = (
+            f"(json_type({cursor_payload})='object' AND "
+            f"(SELECT count(*) FROM json_each({cursor_payload}))=1 AND ("
+            "(kind='claim_source_cursor' AND "
+            f"json_type({cursor_payload},'$.last_claim')='integer' AND "
+            f"json_extract({cursor_payload},'$.last_claim')>=0) OR "
+            "(kind='rule_reference_cursor' AND "
+            f"json_type({cursor_payload},'$.last_review')='integer' AND "
+            f"json_extract({cursor_payload},'$.last_review')>=0)))"
+        )
         if self.db.execute(
             "SELECT 1 FROM jobs c WHERE NOT ("
             + self.selected("jobs")
-            + ") AND (NOT json_valid(payload) OR kind NOT IN "
+            + ") AND NOT coalesce("
+            + safe_cursor
+            + ",0) AND (NOT json_valid(payload) OR kind NOT IN "
             "('manual_review','context_gap','budget_pause','link_review',"
             "'spool_hint') OR NOT ("
             "EXISTS (SELECT 1 FROM projects p WHERE p.project_id="

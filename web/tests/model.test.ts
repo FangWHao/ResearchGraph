@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { adoption, entityVersions, evidenceState, foldGroup, foldProjection, graphKind, graphNodeId, isSemanticEdge, joinRecords, projectGraph, relatedChildren, scopeKey, sourceIssue, sourceIssues, timeline } from '../src/model';
+import { adoption, entityVersions, evidenceState, foldGroup, foldProjection, graphKind, graphNodeId, isSemanticEdge, joinRecords, projectGraph, relatedChildren, scopeKey, sourceIssue, sourceIssues, ruleIssue, ruleIssues, timeline } from '../src/model';
 import type { SemanticEdge } from '../src/model';
-import type { Claim } from '../src/types';
+import type { Claim, RuleQualificationStatus } from '../src/types';
 
 function claim(id: number, fields: Partial<Claim> = {}): Claim {
   return {
@@ -21,6 +21,87 @@ function unqualified(event: Claim, status: 'excluded' | 'pending' | 'unavailable
   return { ...event, input_eligible: false,
     source_qualification: { status, input_eligible: false, policy: { claim_sources: '1' } } };
 }
+function ruleQualified(event: Claim, status: RuleQualificationStatus): Claim {
+  const eligible = status === 'verified' || status === 'not_required';
+  return { ...event, confirmation_source: status === 'not_required' ? 'human' : 'rule', input_eligible: eligible,
+    source_qualification: { status: 'not_excluded', input_eligible: true },
+    rule_qualification: { status, input_eligible: eligible, review_action_id: 21 } };
+}
+describe('规则证明资格与原件来源分别诊断', () => {
+  it.each(['pending', 'unverifiable', 'invalid', 'unavailable'] as const)('%s的规则不能伪装成原件来源不可用', status => {
+    const event: Claim = { ...decision(301, 'withdrawn'), confirmation_source: 'rule', input_eligible: false,
+      source_qualification: { status: 'not_excluded', input_eligible: true },
+      rule_qualification: { status, input_eligible: false, review_action_id: 21 } };
+    expect(sourceIssue(event)).toBeNull();
+    expect(sourceIssues([event], 'approach', event.scope)).toEqual([]);
+    expect(event.effective_state).toBe('confirmed');
+    expect(timeline([event], 'approach')).toEqual([event]);
+  });
+  const earlier = { ...decision(302, 'accepted'), occurred_at: '2026-10-09T10:00:00.000001Z' };
+  const later = { ...decision(303, 'withdrawn'), occurred_at: '2026-10-09T10:00:00.000002Z' };
+  const evidence = (event: Claim, state: string): Claim => ({ ...event, claim_type: 'evidence_event',
+    payload: { claim_type: 'evidence_event', target: 'finding', state } });
+  it.each(['pending', 'unverifiable', 'unavailable'] as const)('%s的较新、同刻和未知时间旧规则确认阻止回退两个科学轴', status => {
+    for (const time of [later.occurred_at, earlier.occurred_at, null]) {
+      const uncertain = ruleQualified({ ...later, occurred_at: time }, status);
+      expect(adoption([earlier, uncertain], 'approach', earlier.scope)).toBe('unknown');
+      expect(evidenceState([evidence(earlier, 'supported'), evidence(uncertain, 'refuted')], 'finding', earlier.scope)).toBe('unassessed');
+      expect(ruleIssue(uncertain)).toEqual({ claim_id: 303, status });
+      expect(uncertain.effective_state).toBe('confirmed');
+    }
+  });
+  it.each(['pending', 'unverifiable', 'unavailable'] as const)('%s的更旧规则问题不覆盖更晚微秒的合格动作', status => {
+    const uncertain = ruleQualified(earlier, status);
+    const qualified = ruleQualified(later, 'verified');
+    expect(adoption([uncertain, qualified], 'approach', earlier.scope)).toBe('withdrawn');
+    expect(evidenceState([evidence(uncertain, 'supported'), evidence(qualified, 'refuted')], 'finding', earlier.scope)).toBe('refuted');
+  });
+  it('证明已不成立的确认动作不能撤回旧合格采用，原状态和时间线保留', () => {
+    const invalid = ruleQualified(later, 'invalid');
+    expect(adoption([earlier, invalid], 'approach', earlier.scope)).toBe('accepted');
+    expect(adoption([invalid], 'approach', earlier.scope)).toBe('unknown');
+    expect(timeline([invalid, earlier], 'approach').map(item => item.claim_id)).toEqual([302, 303]);
+    expect(invalid.effective_state).toBe('confirmed');
+  });
+  it('无效规则证明不能把旧支持变为否定，已知不成立优先于尚未核对', () => {
+    const invalid = ruleQualified(unqualified(later, 'pending'), 'invalid');
+    invalid.source_qualification = { status: 'pending', input_eligible: false };
+    expect(evidenceState([evidence(earlier, 'supported'), evidence(invalid, 'refuted')], 'finding', earlier.scope)).toBe('supported');
+  });
+  it('已排除原件优先于同条待核对规则，两个独立问题仍保留', () => {
+    const event = ruleQualified(later, 'pending');
+    event.source_qualification = { status: 'excluded', input_eligible: false };
+    expect(adoption([earlier, event], 'approach', earlier.scope)).toBe('accepted');
+    expect(sourceIssue(event)).toEqual({ claim_id: 303, status: 'excluded' });
+    expect(ruleIssue(event)).toEqual({ claim_id: 303, status: 'pending' });
+  });
+  it('人工当前审核使规则不再需要证明，但仍不豁免原件来源门控', () => {
+    const human = ruleQualified(later, 'not_required');
+    expect(ruleIssue(human)).toBeNull();
+    expect(adoption([earlier, human], 'approach', earlier.scope)).toBe('withdrawn');
+    const excluded = unqualified(human, 'excluded');
+    expect(adoption([earlier, excluded], 'approach', earlier.scope)).toBe('accepted');
+    expect(excluded.confirmation_source).toBe('human');
+  });
+  it('规则诊断与当前状态同样按对象及完整范围隔离，候选和旧更正不阻断', () => {
+    const pending = ruleQualified(later, 'pending');
+    const other = { ...pending, claim_id: 304, scope: { dataset: 'v2' } };
+    const different = { ...pending, claim_id: 305, entity_id: 'other', payload: { ...pending.payload, target: 'other' } };
+    const replaced = { ...pending, claim_id: 306, replacement_ids: [307] };
+    expect(ruleIssues([pending, other, different, replaced], 'approach', earlier.scope)).toEqual([{ claim_id: 303, status: 'pending' }]);
+    expect(ruleIssues([pending, other, different, replaced], 'approach', other.scope)).toEqual([{ claim_id: 304, status: 'pending' }]);
+    for (const event of [other, different, replaced, { ...pending, effective_state: 'candidate' as const }, { ...pending, effective_state: 'dismissed' as const }]) {
+      expect(adoption([earlier, event], 'approach', earlier.scope)).toBe('accepted');
+    }
+  });
+  it('已核对规则仍按原时间冲突计算，旧响应缺规则字段继续兼容', () => {
+    const a = ruleQualified(earlier, 'verified');
+    const b = ruleQualified({ ...later, occurred_at: earlier.occurred_at }, 'verified');
+    expect(ruleIssue(a)).toBeNull();
+    expect(adoption([a, b], 'approach', earlier.scope)).toBe('conflict');
+    expect(adoption([earlier, later], 'approach', earlier.scope)).toBe('withdrawn');
+  });
+});
 describe('来源资格与人工审核、当前状态独立', () => {
   const earlier = { ...decision(201, 'accepted'), occurred_at: '2026-10-09T10:00:00.000001Z' };
   const later = { ...decision(202, 'withdrawn'), occurred_at: '2026-10-09T10:00:00.000002Z' };

@@ -1,4 +1,4 @@
-import type { Claim, Kind, ReviewState, SourceIssue } from './types';
+import type { Claim, Kind, ReviewState, RuleIssue, SourceIssue } from './types';
 import { claimInstant, compareInstants } from './exactTime';
 
 export const kindNames: Record<Kind, string> = {
@@ -39,14 +39,26 @@ export function label(claim: Claim): string {
 }
 function activeClaim(claim: Claim): boolean { return claim.effective_state !== 'dismissed' && claim.replacement_ids.length === 0 && claim.replaced !== true; }
 export function sourceIssue(claim: Claim): SourceIssue | null {
-  if (claim.input_eligible !== false) return null;
+  const ineligible = claim.source_qualification ? claim.source_qualification.input_eligible === false
+    : !claim.rule_qualification && claim.input_eligible === false;
+  if (!ineligible) return null;
   const status = claim.source_qualification?.status;
   return { claim_id: claim.claim_id, status: status === 'excluded' || status === 'pending' ? status : 'unavailable' };
+}
+export function ruleIssue(claim: Claim): RuleIssue | null {
+  if (claim.rule_qualification?.input_eligible !== false) return null;
+  const status = claim.rule_qualification.status;
+  return { claim_id: claim.claim_id, status: status === 'pending' || status === 'unverifiable' || status === 'invalid' ? status : 'unavailable' };
 }
 export function sourceIssues(claims: Claim[], entityId: string, scope: Claim['scope']): SourceIssue[] {
   return claims.filter(item => scopeKey(item.scope) === scopeKey(scope) && item.replacement_ids.length === 0 && item.replaced !== true
     && (item.entity_id === entityId || item.payload.target === entityId || item.payload.source === entityId))
     .flatMap(item => { const issue = sourceIssue(item); return issue ? [issue] : []; });
+}
+export function ruleIssues(claims: Claim[], entityId: string, scope: Claim['scope']): RuleIssue[] {
+  return claims.filter(item => scopeKey(item.scope) === scopeKey(scope) && item.replacement_ids.length === 0 && item.replaced !== true
+    && (item.entity_id === entityId || item.payload.target === entityId || item.payload.source === entityId))
+    .flatMap(item => { const issue = ruleIssue(item); return issue ? [issue] : []; });
 }
 export function entityVersions(claims: Claim[]): Claim[] {
   const candidates = new Map<string, Claim[]>();
@@ -73,7 +85,8 @@ function eventState(events: Claim[], field: 'action' | 'state', unknown: string)
   if (!stamped.length) return unknown;
   const known = stamped.flatMap(event => event.time === null ? [] : [event.time]);
   const latestKnown = known.length ? known.reduce((max, time) => time > max ? time : max) : null;
-  const uncertain = confirmed.filter(item => item.input_eligible === false && sourceIssue(item)?.status !== 'excluded');
+  const uncertain = confirmed.filter(item => item.input_eligible === false && sourceIssue(item)?.status !== 'excluded'
+    && ruleIssue(item)?.status !== 'invalid');
   if (uncertain.some(item => { const time = claimInstant(item, 'occurred'); return time === null || latestKnown === null || time >= latestKnown; })) return unknown;
   if (stamped.some(event => event.time == null)) return 'time_unknown';
   const latest = stamped.reduce((max, event) => event.time! > max ? event.time! : max, stamped[0].time!);

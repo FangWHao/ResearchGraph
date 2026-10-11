@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-LATEST_VERSION = 26
+LATEST_VERSION = 27
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -467,6 +467,22 @@ MIGRATIONS = {
         "UPDATE graph_clock SET revision=revision+1 WHERE id=1 AND EXISTS "
         "(SELECT 1 FROM claims WHERE extraction_run_id IS NOT NULL OR basis='model_inference' "
         "OR substr(actor,1,6)='model:')",
+    ),
+    27: (
+        "CREATE TABLE rule_reference_checks(check_id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "review_action_id INTEGER NOT NULL REFERENCES review_actions,"
+        "claim_id INTEGER NOT NULL REFERENCES claims,project_id TEXT NOT NULL REFERENCES projects,"
+        "input_signature TEXT NOT NULL,payload TEXT NOT NULL,recorded_at TEXT NOT NULL)",
+        "CREATE INDEX rule_reference_lookup ON "
+        "rule_reference_checks(review_action_id,input_signature,check_id)",
+        "CREATE TRIGGER rule_reference_no_update BEFORE UPDATE ON rule_reference_checks BEGIN "
+        "SELECT RAISE(ABORT,'rule reference check is append-only'); END",
+        "CREATE TRIGGER rule_reference_no_delete BEFORE DELETE ON rule_reference_checks BEGIN "
+        "SELECT RAISE(ABORT,'rule reference check is append-only'); END",
+        "CREATE TRIGGER rule_reference_revision AFTER INSERT ON rule_reference_checks BEGIN "
+        "UPDATE graph_clock SET revision=revision+1 WHERE id=1; END",
+        "UPDATE graph_clock SET revision=revision+1 WHERE id=1 AND EXISTS "
+        "(SELECT 1 FROM review_actions WHERE substr(actor,1,5)='rule:' AND action='confirm')",
     ),
 }
 

@@ -7,8 +7,8 @@ import { EvidenceRecords, VersionRecords } from './EvidenceRecords';
 import { SessionParentPanel } from './SessionParentPanel';
 import { EventChainPanel } from './EventChainPanel';
 import { researchQuery, validateResearchEvidence } from './researchGraph';
-import { actionNames, evidenceNames, kindNames, label, reviewNames, scopeText, sourceIssue } from './model';
-import type { Claim, EvidenceData, EvidenceTarget, EventWindow, SourceIssue, Span } from './types';
+import { actionNames, evidenceNames, kindNames, label, reviewNames, scopeText, sourceIssue, ruleIssue } from './model';
+import type { Claim, EvidenceData, EvidenceTarget, EventWindow, RuleIssue, SourceIssue, Span } from './types';
 
 export { DateText } from './DateText';
 
@@ -35,17 +35,28 @@ export function Badge({ state }: { state: Claim['effective_state'] }) {
 export function Source({ claim }: { claim: Claim }) {
   const name = claim.confirmation_source === 'human' ? '人工确认' : claim.confirmation_source === 'rule' ? '原话规则确认' : '尚未确认';
   const issue = sourceIssue(claim);
+  const rule = ruleIssue(claim);
   return <span className="source-note">记录：{claim.actor.startsWith('model:') ? '模型候选' : claim.actor.startsWith('human:') ? '人工' : claim.actor} · {name}{claim.review ? ` · ${claim.review.actor}` : ''}
     {issue && <span className="source-note" data-source-qualification={issue.status} data-source-claim-id={claim.claim_id}>
       <strong>{sourceIssueNames[issue.status]}</strong>：此记录暂不作为模型输入或当前采用、证据判断的依据；原记录和审核历史保留。
     </span>}
+    {rule && <span className="source-note" data-rule-qualification={rule.status} data-rule-claim-id={claim.claim_id}>
+      <strong>{ruleIssueNames[rule.status]}</strong>：{ruleIssueDetails[rule.status]}；暂不作为当前采用或证据判断的依据，原确认和审核历史保留。
+    </span>}
   </span>;
 }
 const sourceIssueNames: Record<string, string> = { excluded: '来源已排除', pending: '来源尚未核对', unavailable: '来源不可核对' };
+const ruleIssueNames: Record<string, string> = { pending: '规则证明待核对', unverifiable: '规则证明不能核对', invalid: '规则证明核对不通过', unavailable: '规则证明不可用' };
+const ruleIssueDetails: Record<string, string> = { pending: '尚未完成独立原话规则证明核对', unverifiable: '没有足够的独立原话规则证明可核对', invalid: '已保存的独立原话规则证明未通过核对', unavailable: '无法读取或核对已保存的独立原话规则证明' };
 export function SourceIssues({ issues }: { issues: SourceIssue[] }) {
   if (!issues.length) return null;
   const statuses = [...new Set(issues.map(issue => issue.status))];
   return <span className="source-note" data-source-issues={JSON.stringify(issues)}>来源诊断 · {issues.length} 条：{statuses.map(status => `${sourceIssueNames[status]} ${issues.filter(issue => issue.status === status).length}`).join(' · ')}。原记录与审核保留。</span>;
+}
+export function RuleIssues({ issues }: { issues: RuleIssue[] }) {
+  if (!issues.length) return null;
+  const statuses = [...new Set(issues.map(issue => issue.status))];
+  return <span className="source-note" data-rule-issues={JSON.stringify(issues)}>规则证明诊断 · {issues.length} 条：{statuses.map(status => `${ruleIssueNames[status]} ${issues.filter(issue => issue.status === status).length}`).join(' · ')}。原确认与审核保留。</span>;
 }
 export function Empty({ title, children }: { title: string; children?: ReactNode }) {
   return <div className="empty-state"><Icon name="evidence" size={28} /><h3>{title}</h3>{children && <p>{children}</p>}</div>;

@@ -12,7 +12,7 @@ from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
 from rg.store.scopes import known_scope
 
-RULE_VERSION = "explicit-user-v2"
+RULE_VERSION = "explicit-user-v3"
 VERBS = {
     "accepted": r"(?:采用|选用|使用|选择|保留|adopt |accept |choose |use |retain )",
     "withdrawn": r"(?:撤回|停止使用|不再使用|弃用|withdraw |stop using |abandon )",
@@ -70,7 +70,11 @@ def _objects(
         seen.add(version)
         data = json.loads(row["payload"])
         if row_scope == scope:
-            result[row["entity_id"]] = {"kind": row["kind"], **data}
+            result[row["entity_id"]] = {
+                "kind": row["kind"],
+                **data,
+                "definition_id": row["claim_id"],
+            }
         elif not explicit_scope:
             other_labels.add(data.get("label", ""))
             other_ids.add(row["entity_id"])
@@ -260,6 +264,9 @@ def _proof(
         "rule_version": RULE_VERSION,
         "basis": "direct_record",
         "scope": scope,
+        "scope_filter": scope_filter,
+        "definition_ids": sorted(data["definition_id"] for data in objects.values()),
+        "allowed_ids": sorted(allowed),
         "target_ids": target_ids,
         "reason_source": reason_source,
         **evidence[0],
@@ -301,6 +308,9 @@ def confirm_explicit(
                     "VALUES (?,'confirm',?,?,?,?)",
                     (claim_id, dumps(proof), "rule:" + RULE_VERSION, store.revision(), now()),
                 )
+                from rg.derive.rule_references import assess as assess_rule
+
+                assess_rule(store, claim_id)
                 confirmed += 1
         return confirmed
 

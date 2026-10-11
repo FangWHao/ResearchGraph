@@ -90,12 +90,20 @@ def context(reader: Reader) -> dict[str, Any]:
             "file_scope_note": "指定范围时不猜测无完整范围的文件观察；用 evidence 查看关联版本。",
             "ordering": "范围与截止时间、当前采用、拒绝或暂缓、未解决或待核对、反对证据、文件版本",
             "source_coverage": {
-                "omitted": len(omitted),
+                "omitted": sum(not r["source_qualification"]["input_eligible"] for r in omitted),
                 "statuses": {
                     status: sum(r["source_qualification"]["status"] == status for r in omitted)
                     for status in ("pending", "excluded", "unavailable")
                 },
                 "notice": "来源未通过的模型记录未进入摘录；原记录与审核仍可在历史中查询。",
+            },
+            "rule_coverage": {
+                "omitted": sum(not r["rule_qualification"]["input_eligible"] for r in omitted),
+                "statuses": {
+                    status: sum(r["rule_qualification"]["status"] == status for r in omitted)
+                    for status in ("pending", "invalid", "unverifiable", "unavailable")
+                },
+                "notice": "独立规则证明未通过的记录未进入摘录；原确认和历史审核保持不变。",
             },
         }
     )

@@ -3,9 +3,9 @@ import { Background, Controls, Handle, Position, ReactFlow, ReactFlowProvider, u
 import type { Edge, Node, NodeProps } from '@xyflow/react';
 import type { ElkNode, ELK } from 'elkjs';
 import '@xyflow/react/dist/style.css';
-import { Badge, Empty, Icon, Loading, Source, SourceIssues } from './components';
+import { Badge, Empty, Icon, Loading, Source, SourceIssues, RuleIssues } from './components';
 import type { useResearchGraph } from './useResearchGraph';
-import { adoption, actionNames, edgeText, evidenceNames, evidenceStateNames, evidenceState, foldGroup, foldProjection, graphKind, graphNodeId, joinNames, joinRecords, kindNames, label, projectGraph, scopeKey, scopeText, sourceIssue, sourceIssues } from './model';
+import { adoption, actionNames, edgeText, evidenceNames, evidenceStateNames, evidenceState, foldGroup, foldProjection, graphKind, graphNodeId, joinNames, joinRecords, kindNames, label, projectGraph, scopeKey, scopeText, sourceIssue, sourceIssues, ruleIssue, ruleIssues } from './model';
 import type { FoldResult } from './model';
 import { useViewState } from './useViewState';
 import { resolvePersonalView } from './viewState';
@@ -34,6 +34,8 @@ function ResearchCard({ id, data }: NodeProps<ResearchNode>) {
   const records = data.group ? data.claims.filter(item => data.group!.claimIds.includes(item.claim_id)) : [];
   const issues = data.group ? records.flatMap(item => { const issue = sourceIssue(item); return issue ? [issue] : []; })
     : sourceIssues(data.claims, identity.entity_id!, identity.scope);
+  const rules = data.group ? records.flatMap(item => { const issue = ruleIssue(item); return issue ? [issue] : []; })
+    : ruleIssues(data.claims, identity.entity_id!, identity.scope);
   return <div className={`research-node ${data.group ? 'process-node' : ''}`}>
     {data.group ? data.group.boundaryEdges.filter(edge => data.group!.members.includes(edge.target)).map((edge, index, all) => <Handle key={edge.id} id={`in-${edge.id}`} type="target" position={Position.Left} style={{ top: `${(index + 1) * 100 / (all.length + 1)}%` }} />) : <Handle type="target" position={Position.Left} />}
     <div className="node-top"><span>{data.group ? '手工过程组 · 仅视图' : kindNames[graphKind(data.versions) as Kind] ?? '对象种类未知或矛盾'}</span>{!data.group && claim && <Badge state={claim.effective_state} />}</div>
@@ -46,6 +48,7 @@ function ResearchCard({ id, data }: NodeProps<ResearchNode>) {
       {joins.length > 1 && <p>多条汇合记录，逐条保留；不推定唯一语义。</p>}
     </>}
     <SourceIssues issues={issues} />
+    <RuleIssues issues={rules} />
     {data.group ? data.group.boundaryEdges.filter(edge => data.group!.members.includes(edge.source)).map((edge, index, all) => <Handle key={edge.id} id={`out-${edge.id}`} type="source" position={Position.Right} style={{ top: `${(index + 1) * 100 / (all.length + 1)}%` }} />) : <Handle type="source" position={Position.Right} />}
   </div>;
 }
@@ -108,7 +111,7 @@ function Canvas({ data, allowFold, onClaim, personal, restored, restoring, onRes
       if (!rawNodes.length && layoutCache.current?.key === graphKey) { pendingFit.current = false; setLayoutReady(true); }
     }
     if (layoutCache.current?.key === graphKey) applyPositions(layoutCache.current.positions);
-    else { setLayoutReady(false); layoutGraph({ id: 'root', layoutOptions: { 'elk.algorithm': 'layered', 'elk.direction': 'RIGHT', 'elk.spacing.nodeNode': '44', 'elk.layered.spacing.nodeNodeBetweenLayers': '110' }, children: rawNodes.map(node => ({ id: node.id, width: 292, height: (graphKind(node.data.versions) === 'join' ? 370 : node.data.versions.length > 1 ? 320 : 220) + (sourceIssues(data.claims, node.data.claim.entity_id!, node.data.claim.scope).length ? 80 : 0) })), edges: mapped.filter(edge => edge.semantic !== false).map(edge => ({ id: edge.id, sources: [edge.source], targets: [edge.target] })) })
+    else { setLayoutReady(false); layoutGraph({ id: 'root', layoutOptions: { 'elk.algorithm': 'layered', 'elk.direction': 'RIGHT', 'elk.spacing.nodeNode': '44', 'elk.layered.spacing.nodeNodeBetweenLayers': '110' }, children: rawNodes.map(node => ({ id: node.id, width: 292, height: (graphKind(node.data.versions) === 'join' ? 370 : node.data.versions.length > 1 ? 320 : 220) + (sourceIssues(data.claims, node.data.claim.entity_id!, node.data.claim.scope).length ? 80 : 0) + (ruleIssues(data.claims, node.data.claim.entity_id!, node.data.claim.scope).length ? 80 : 0) })), edges: mapped.filter(edge => edge.semantic !== false).map(edge => ({ id: edge.id, sources: [edge.source], targets: [edge.target] })) })
       .then(layout => {
         if (cancelled) return;
         const positions = new Map(layout.children!.map(item => [item.id, { x: item.x ?? 0, y: item.y ?? 0 }]));

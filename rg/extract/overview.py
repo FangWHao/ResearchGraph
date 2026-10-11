@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from rg.derive.claim_sources import recorded
+from rg.derive.eligibility import recorded
 from rg.extract.monitor import set_status
 from rg.extract.schemas import STRING, obj
 from rg.extract.segmenter import Segment

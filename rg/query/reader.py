@@ -5,8 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from rg.api.views import NotFound, _utf8_window
-from rg.derive.claim_sources import modeled
-from rg.derive.claim_sources import recorded as recorded_source
+from rg.derive.eligibility import recorded as recorded_eligibility
 from rg.ingest.exclusion import source_exclusion
 from rg.query.time import canonical_times, instant
 from rg.record.schema import validate_scope
@@ -46,17 +45,31 @@ def event_state(rows: list[dict[str, Any]], field: str, unknown: str) -> dict[st
     issues = [
         {"claim_id": r["claim_id"], "status": r["source_qualification"]["status"]}
         for r in rows
-        if not r.get("input_eligible", True) and not r["replaced"]
+        if r.get("source_qualification", {}).get("status") in {"pending", "unavailable", "excluded"}
+        and not r["replaced"]
     ]
     eligible = [r for r in qualified if r["effective_state"] == "confirmed" and not r["replaced"]]
     diagnostic = {"source_issues": issues} if issues else {}
+    rule_issues = [
+        {"claim_id": r["claim_id"], "status": r["rule_qualification"]["status"]}
+        for r in rows
+        if not r.get("rule_qualification", {}).get("input_eligible", True) and not r["replaced"]
+    ]
+    if rule_issues:
+        diagnostic["rule_issues"] = rule_issues
     if not eligible:
         return {"state": unknown, "claim_ids": [], **diagnostic}
     uncertain = [
         r
         for r in rows
         if not r.get("input_eligible", True)
-        and r["source_qualification"]["status"] in {"pending", "unavailable"}
+        and r.get("source_qualification", {}).get("status") != "excluded"
+        and r.get("rule_qualification", {}).get("status") != "invalid"
+        and (
+            r.get("source_qualification", {}).get("status") in {"pending", "unavailable"}
+            or r.get("rule_qualification", {}).get("status")
+            in {"pending", "unavailable", "unverifiable"}
+        )
         and r["effective_state"] == "confirmed"
         and not r["replaced"]
     ]
@@ -174,19 +187,17 @@ class Reader:
                 else row["claim_state"]
             )
             item["review"] = review
-            qualification = (
-                recorded_source(
+            item.update(
+                recorded_eligibility(
                     self.store,
                     item["claim_id"],
                     lambda r: self.visible(
                         r["occurred_at"], r["recorded_at"], ("E", r["event_id"])
                     ),
+                    review=review,
+                    selected=True,
                 )
-                if modeled(item)
-                else {"status": "not_required", "input_eligible": True}
             )
-            item["source_qualification"] = qualification
-            item["input_eligible"] = qualification["input_eligible"]
             item["occurred_time_unknown"] = instant(row["occurred_at"]) is None
             item.update(canonical_times(row["occurred_at"], row["recorded_at"]))
             result.append(item)
