@@ -28,7 +28,7 @@ jobs:
           enable-cache: true
       - name: 按锁文件安装依赖
         run: uv sync --locked
-      - name: 使用系统默认编码验收存储、快照与导出
+      - name: 使用系统默认编码验收存储、快照、导出与范围提取
         env:
           PYTHONUTF8: '0'
           PYTHONIOENCODING: utf-8
@@ -38,6 +38,7 @@ jobs:
           tests/golden/test_store_lease.py
           tests/golden/test_project_clear.py
           tests/golden/test_native_files.py
+          tests/golden/test_scoped_working_context.py
           -q
   backend:
     runs-on: ubuntu-24.04

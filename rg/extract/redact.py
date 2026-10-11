@@ -71,7 +71,11 @@ def model_input(content: str, stage: str, custom: tuple[str, ...] = ()) -> str:
 
     identities = {
         "link": {("pair_id",), ("cards", "*", "id")},
-        "pass2": {("segment_id",), ("working_set", "*", "id")},
+        "pass2": {
+            ("segment_id",),
+            ("working_set", "*", "id"),
+            ("working_scope_groups", "*", "ids", "*"),
+        },
         "overview": {
             ("records", "*", "payload", field)
             for field in ("entity_id", "source", "target", "selected")

@@ -9,6 +9,7 @@ from typing import Any
 from rg.derive.claim_sources import assess, recorded
 from rg.extract.paths import file_paths
 from rg.extract.privacy import ProjectCounter
+from rg.extract.working_scopes import context, scope_shape
 from rg.query.reader import event_state
 from rg.query.time import instant
 from rg.slim.tokens import TokenCounter
@@ -27,22 +28,19 @@ def working_set(
     scope: dict[str, str] | None = None,
     paths: set[str] | None = None,
     before_offset: int | None = None,
+    grouped: bool = False,
 ) -> list[dict[str, Any]]:
     def qualification(claim: int) -> dict[str, Any]:
         saved = recorded(store, claim)
         return assess(store, claim, refresh=saved["status"] == "unavailable")
 
-    if scope is not None and (
-        not scope
-        or any(
-            not isinstance(k, str) or not k or not isinstance(v, str) or not v
-            for k, v in scope.items()
-        )
-    ):
+    if scope is not None and not scope_shape(scope):
         raise ValueError("显式范围必须为非空字符串字段")
     rows = store.db.execute(
         "SELECT c.*, e.kind FROM entities e JOIN claims c "
         "USING(entity_id) WHERE e.project_id = ? AND c.claim_type = ? "
+        "AND NOT EXISTS (SELECT 1 FROM claims replacement "
+        "WHERE replacement.replaces_claim=c.claim_id) "
         "ORDER BY c.claim_id DESC",
         (project_id, "entity_version"),
     ).fetchall()
@@ -72,7 +70,8 @@ def working_set(
         if scope is not None and row_scope != scope:
             continue
         entity_id = row["entity_id"]
-        if entity_id in seen or store.claim_state(row["claim_id"]) == "dismissed":
+        version_key = (entity_id, dumps(row_scope))
+        if version_key in seen or store.claim_state(row["claim_id"]) == "dismissed":
             continue
         if boundary and store.claim_state(row["claim_id"]) == "candidate":
             same_or_later = store.db.execute(
@@ -83,7 +82,7 @@ def working_set(
             ).fetchone()
             if same_or_later:
                 continue
-        seen.add(entity_id)
+        seen.add(version_key)
         payload = json.loads(row["payload"])
         label = payload.get("label", "")
         prior = False
@@ -110,7 +109,7 @@ def working_set(
         )
         if rank == 4:
             continue
-        state = "proposed" if known_scope(row_scope) else "unknown_scope"
+        state = "proposed" if scope_shape(row_scope) and known_scope(row_scope) else "unknown_scope"
         # 人工或独立原话规则确认后才改变当前采用状态，候选不能悄悄成为事实。
         decisions = store.db.execute(
             "SELECT c.*,EXISTS(SELECT 1 FROM claims x WHERE x.replaces_claim=c.claim_id) "
@@ -122,7 +121,8 @@ def working_set(
         state_rows = []
         for decision in decisions:
             if (
-                known_scope(row_scope)
+                scope_shape(row_scope)
+                and known_scope(row_scope)
                 and known_scope(json.loads(decision["scope"] or "null"))
                 and json.loads(decision["scope"] or "{}") == json.loads(row["scope"] or "{}")
                 and store.claim_state(decision["claim_id"]) == "confirmed"
@@ -161,7 +161,8 @@ def working_set(
         )
     result: list[dict[str, Any]] = []
     for _, _, candidate in sorted(candidates, key=lambda x: (x[0], x[1])):
-        if counter.count_text(dumps(result + [candidate])) <= budget:
+        proposed = result + [candidate]
+        if counter.count_text(dumps(context(proposed) if grouped else proposed)) <= budget:
             result.append(candidate)
     return result
 

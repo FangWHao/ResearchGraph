@@ -25,7 +25,12 @@ EVIDENCE = obj(
     ["event_id", "byte_start", "byte_end", "quote"],
 )
 BASE: dict[str, Any] = {
-    "scope": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string"}},
+    "scope": {
+        "type": "object",
+        "minProperties": 1,
+        "propertyNames": {"type": "string", "pattern": "\\S"},
+        "additionalProperties": {"type": "string", "pattern": "\\S"},
+    },
     "evidence": {"type": "array", "minItems": 1, "items": EVIDENCE},
 }
 

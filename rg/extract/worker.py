@@ -32,6 +32,8 @@ from rg.extract.rules import RULE_VERSION
 from rg.extract.schemas import PASS1_SCHEMA, PASS2_SCHEMA
 from rg.extract.segmenter import Segment, split
 from rg.extract.validate import InvalidClaim, persist
+from rg.extract.working_scopes import groups
+from rg.extract.working_scopes import policy as working_scope_policy
 from rg.extract.working_set import working_set
 from rg.ingest.common import parse
 from rg.ingest.scanner import PARSER_VERSION
@@ -110,11 +112,13 @@ class Worker:
         _permission(self.store, project_id, self.provider)
         counter = self.project_counter(project_id)
         policy = counter.policy
-        prompt = Path(__file__).with_name("prompts").joinpath(stage + ".txt").read_text()
+        prompt = (
+            Path(__file__).with_name("prompts").joinpath(stage + ".txt").read_text(encoding="utf-8")
+        )
         content = model_input(content, stage, policy.patterns)
         request = self.provider.request(prompt, content, schema, output_budget)
         prompt_version = digest(prompt.encode())
-        schema_version = 2 if stage == "pass1" else 1
+        schema_version = 2 if stage in {"pass1", "pass2"} else 1
         key = digest(
             dumps(
                 [
@@ -131,6 +135,7 @@ class Worker:
                     limit,
                     policy.identity,
                     source_qualification_policy(),
+                    *([working_scope_policy()] if stage == "pass2" else []),
                 ]
             ).encode()
         )
@@ -523,7 +528,7 @@ class Worker:
     def configuration(self, scope: dict[str, str] | None = None) -> list[Any]:
         """静态执行配置；审核变化在显式提取时核对，不自行触发无新增内容的队列。"""
         prompts = [
-            Path(__file__).with_name("prompts").joinpath(stage + ".txt").read_text()
+            Path(__file__).with_name("prompts").joinpath(stage + ".txt").read_text(encoding="utf-8")
             for stage in ["pass1", "pass2"]
         ]
         result = [
@@ -539,6 +544,7 @@ class Worker:
             scope,
             {"parser_version": PARSER_VERSION, "slim_version": SLIM_VERSION},
             source_qualification_policy(),
+            working_scope_policy(),
         ]
         if isinstance(self.counter, ProjectCounter) and self.counter.policy.rule_id:
             result.append(self.counter.policy.identity)
@@ -637,6 +643,7 @@ class Worker:
                 scope=scope,
                 paths=self._paths(item),
                 before_offset=item.events[0].get("raw_start"),
+                grouped=True,
             )
             raw_input, ranges, owned_ranges = windows(self.store, item, input_units, located)
             content_windows = {
@@ -651,6 +658,7 @@ class Worker:
                     "raw_windows": raw_input,
                     "slim": json.loads(redact(content.encode(), custom).data.decode()),
                     "working_set": working,
+                    "working_scope_groups": groups(working),
                     "context_gaps": item.context_gaps,
                     "scope_filter": scope,
                 }
@@ -676,6 +684,7 @@ class Worker:
                         scope=scope,
                         paths=self._paths(item),
                         before_offset=item.events[0].get("raw_start"),
+                        grouped=True,
                     )
                     continue
                 cached = self.store.db.execute(
@@ -695,6 +704,7 @@ class Worker:
                         scope,
                         attempt_id=self.attempt_ids.get(run_id),
                         progress_config=self.config_key,
+                        working_cards=working,
                     )
                     set_status(self.store, run_id, "ok", attempt_id=self.attempt_ids.get(run_id))
                     stats["claims"] += len(claim_ids)

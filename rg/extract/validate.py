@@ -13,6 +13,7 @@ from rg.extract.progress import complete
 from rg.extract.redact import redact
 from rg.extract.rules import confirm_explicit
 from rg.extract.schemas import PASS2_SCHEMA
+from rg.extract.working_scopes import matches
 from rg.ingest.common import RG_BLOCK
 from rg.ingest.exclusion import current_exclusion
 from rg.store.database import Store, dumps, now
@@ -38,6 +39,7 @@ def validate(
     windows: dict[int, list[tuple[int, int]]] | None = None,
     owned_windows: dict[int, list[tuple[int, int]]] | None = None,
     expected_scope: dict[str, str] | None = None,
+    working_cards: list[dict[str, Any]] | None = None,
 ) -> None:
     errors = list(Draft202012Validator(PASS2_SCHEMA).iter_errors(output))
     if errors:
@@ -47,6 +49,12 @@ def validate(
         raise InvalidClaim("片段 ID 不匹配")
     kinds: dict[str, str] = {}
     scopes: dict[str, dict[str, str]] = {}
+    reference_scopes: dict[str, list[Any]] = {}
+    if working_cards is not None:
+        for card in working_cards:
+            reference_scopes.setdefault(card["id"], []).append(card["scope"])
+        if set(reference_scopes) != allowed_ids:
+            raise InvalidClaim("工作集范围映射与对象集合不一致")
     for entity_id in allowed_ids:
         row = store.db.execute(
             "SELECT kind, project_id FROM entities WHERE entity_id = ?", (entity_id,)
@@ -80,6 +88,12 @@ def validate(
                 raise InvalidClaim("非比较汇合不能声明选中对象")
         if any(ref not in kinds for ref in refs):
             raise InvalidClaim("引用对象不在工作集或本次临时 ID 中")
+        if working_cards is not None and any(
+            ref in reference_scopes
+            and not any(matches(item["scope"], scope) for scope in reference_scopes[ref])
+            for ref in refs
+        ):
+            raise InvalidClaim("引用对象不属于输出的完整工作集范围")
         if item["claim_type"] == "evidence_event" and kinds[item["target"]] != "finding":
             raise InvalidClaim("证据状态只能属于 finding")
         if item["claim_type"] == "relation":
@@ -154,6 +168,7 @@ def persist(
     expected_scope: dict[str, str] | None = None,
     attempt_id: int | None = None,
     progress_config: str | None = None,
+    working_cards: list[dict[str, Any]] | None = None,
 ) -> list[int]:
     try:
         validate(
@@ -166,6 +181,7 @@ def persist(
             windows,
             owned_windows,
             expected_scope,
+            working_cards,
         )
     except InvalidClaim as error:
         with store.transaction() as db:

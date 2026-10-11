@@ -19,3 +19,7 @@ context_only=true 的窗口属于此前片段，只用于理解指代；每条 c
 context_gaps 列出延续窗口未携带的早期上下文。不要猜测缺失内容；信息不足则返回 unresolved。
 scope_filter 非空时，本次提取限定于这个完整范围。每条 claim.scope 必须原样复制 scope_filter，不得增删字段或改名。
 原话明确属于其他范围的内容放入 unresolved，不得并入本次范围。scope_filter 为空时，未知的范围值写 unknown，不能猜测。
+working_scope_groups 按完整 scope 分组，不表示已推断本片段属于哪个范围。原话涉及多个范围时分别保留，不合并范围字段。
+引用工作集中的已有对象时，claim.scope 必须与列出该 ID 的一个组完整相等；同一 ID 在不同范围的版本分别使用，不从另一组借入对象或状态。
+没有合法完整范围的旧对象只是未知范围提示，不能据此赋予已知范围；其候选只能使用全部为 unknown 的范围值，或返回 unresolved。
+lookup_terms 补查仍遵守这些范围组和两轮上限。新临时对象沿原候选合同保留，不据相似标签认定与已有对象同一身份。
