@@ -5,13 +5,14 @@ import re
 import sqlite3
 from typing import Any
 
+from rg.derive.claim_sources import assess, recorded
 from rg.ingest.common import parse
 from rg.ingest.spans import event_span
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
 from rg.store.scopes import known_scope
 
-RULE_VERSION = "explicit-user-v1"
+RULE_VERSION = "explicit-user-v2"
 VERBS = {
     "accepted": r"(?:采用|选用|使用|选择|保留|adopt |accept |choose |use |retain )",
     "withdrawn": r"(?:撤回|停止使用|不再使用|弃用|withdraw |stop using |abandon )",
@@ -44,29 +45,45 @@ def _objects(
 ) -> dict[str, dict[str, Any]]:
     result: dict[str, dict[str, Any]] = {}
     other_labels: set[str] = set()
+    other_ids: set[str] = set()
+    seen: set[tuple[str, str]] = set()
     rows = store.db.execute(
         "SELECT e.entity_id,e.kind,c.claim_id,c.payload,c.scope FROM entities e JOIN claims c "
         "USING(entity_id) WHERE e.project_id=? AND c.claim_type='entity_version' "
+        "AND NOT EXISTS (SELECT 1 FROM claims replacement "
+        "WHERE replacement.replaces_claim=c.claim_id) "
         "ORDER BY c.claim_id DESC",
         (project,),
     )
     for row in rows:
-        if row["entity_id"] in result or store.claim_state(row["claim_id"]) == "dismissed":
+        if store.claim_state(row["claim_id"]) == "dismissed":
             continue
+        checked = recorded(store, row["claim_id"])
+        if not assess(store, row["claim_id"], refresh=checked["status"] == "unavailable")[
+            "input_eligible"
+        ]:
+            continue
+        row_scope = json.loads(row["scope"] or "{}")
+        version = (row["entity_id"], dumps(row_scope))
+        if version in seen:
+            continue
+        seen.add(version)
         data = json.loads(row["payload"])
-        if json.loads(row["scope"] or "{}") == scope:
+        if row_scope == scope:
             result[row["entity_id"]] = {"kind": row["kind"], **data}
         elif not explicit_scope:
             other_labels.add(data.get("label", ""))
-    for data in result.values():
+            other_ids.add(row["entity_id"])
+    for entity, data in result.items():
         data["ambiguous_label"] = data.get("label") in other_labels
+        data["ambiguous_scope"] = entity in other_ids
     return result
 
 
 def _resolve(token: str, objects: dict[str, dict[str, Any]], allowed: set[str]) -> str | None:
     token = _reference(token)
     if token in allowed and token in objects:
-        return token
+        return None if objects[token]["ambiguous_scope"] else token
     matches = [entity for entity, data in objects.items() if data.get("label") == token]
     return (
         matches[0]

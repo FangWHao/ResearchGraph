@@ -39,6 +39,7 @@ jobs:
           tests/golden/test_project_clear.py
           tests/golden/test_native_files.py
           tests/golden/test_scoped_working_context.py
+          tests/golden/test_rule_scope_versions.py
           -q
   backend:
     runs-on: ubuntu-24.04

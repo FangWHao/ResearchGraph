@@ -135,7 +135,7 @@ class Worker:
                     limit,
                     policy.identity,
                     source_qualification_policy(),
-                    *([working_scope_policy()] if stage == "pass2" else []),
+                    *([working_scope_policy(), RULE_VERSION] if stage == "pass2" else []),
                 ]
             ).encode()
         )
