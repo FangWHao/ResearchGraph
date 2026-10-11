@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { createWriteStream, mkdirSync } from 'node:fs';
+import { createWriteStream, mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import type { APIRequestContext, Page } from '@playwright/test';
@@ -190,4 +190,57 @@ test('390小屏未知状态和原证据可读，切到空项目不残留旧方�
   const span = unknownClaim.evidence[0]; const raw = await (await request.get(`${origin}/api/evidence/${span.event_id}?start=${span.byte_start}&end=${span.byte_end}&context=0`, { headers })).json();
   await expect(page.getByTestId('evidence-quote')).toHaveText(raw.event.quote); expect(createHash('sha256').update(raw.event.quote).digest('hex')).toBe(span.quote_sha256);
   await geometry(page); await page.screenshot({ path: '../.cache/frontend-state-time-evidence-mobile.png' });
+});
+
+test('390连续勾选和布局重渲染保留主动选择，取消再选后仍可折叠并原位展开', async ({ page, request }) => {
+  const { data } = await open(page, request);
+  await page.getByRole('button', { name: '研究问题', exact: true }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const members = [entity(data, '精确微秒发现'), entity(data, '精确状态链中间')];
+  const ids = members.map(graphNodeId);
+  const inputs = ids.map(id => page.locator(`.graph-node-picker input[data-node-id=${JSON.stringify(id)}]`));
+  let release!: () => void, completed!: () => void, received = false;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const handled = new Promise<void>(resolve => { completed = resolve; });
+  await page.route('**/api/semantic-graph?*', async route => {
+    const params = new URL(route.request().url()).searchParams;
+    if (params.get('collection') !== 'claims' || params.get('offset') !== '0') return route.continue();
+    try {
+      const response = await route.fetch(); expect(response.status()).toBe(200);
+      writeFileSync(`${root}/.cache/frontend-state-time-selection-reading.json`, JSON.stringify(await response.json(), null, 2) + '\n');
+      received = true; await held; await route.fulfill({ response });
+    } finally { completed(); }
+  });
+  try {
+    await page.getByRole('button', { name: '研究图', exact: true }).click();
+    await expect.poll(() => received).toBe(true);
+    await page.locator('.graph-node-picker summary').click();
+    for (const input of inputs) await expect(input).toBeDisabled();
+    const button = page.getByRole('button', { name: '折叠所选（0）', exact: true }); await expect(button).toBeDisabled();
+    await button.evaluate(n => n.scrollIntoView({ block: 'center', behavior: 'instant' })); await geometry(page);
+    await page.screenshot({ path: '../.cache/frontend-state-time-selection-loading-mobile.png' });
+    release(); for (const input of inputs) await expect(input).toBeEnabled();
+    await expect(page.locator('[data-view-ready="true"]')).toHaveCount(1);
+  } finally { release(); if (received) await handled; await page.unroute('**/api/semantic-graph?*'); }
+  const before = await snapshot(page);
+  // 同一事件轮中的连续操作不能被较早的画布选择通知覆盖。
+  await page.locator('.graph-node-picker input').evaluateAll((elements, ids) => {
+    for (const id of ids) (elements.find(element => (element as HTMLInputElement).dataset.nodeId === id) as HTMLInputElement).click();
+  }, ids);
+  for (const input of inputs) await expect(input).toBeChecked();
+  await expect(page.getByRole('button', { name: '折叠所选（2）', exact: true })).toBeVisible();
+  await page.getByLabel('过程组名称', { exact: true }).fill('手机主动选择');
+  for (const input of inputs) await expect(input).toBeChecked();
+  await inputs[0].uncheck(); await expect(inputs[1]).toBeChecked();
+  await expect(page.getByRole('button', { name: '折叠所选（1）', exact: true })).toBeVisible();
+  await inputs[0].check(); for (const input of inputs) await expect(input).toBeChecked();
+  await page.getByRole('button', { name: '折叠所选（2）', exact: true }).click();
+  await expect(page.locator('.process-node')).toHaveCount(1);
+  const retained = page.getByRole('region', { name: '保留的原始记录' });
+  for (const member of members) await expect(retained.locator(`article[data-claim-id="${member.claim_id}"]`)).toHaveCount(1);
+  await page.getByRole('button', { name: '展开过程组', exact: true }).click();
+  await expect.poll(() => snapshot(page)).toEqual(before);
+  expect(adoption(data.claims, members[0].entity_id!, members[0].scope)).toBe('accepted');
+  expect(evidenceState(data.claims, members[0].entity_id!, members[0].scope)).toBe('refuted');
+  await geometry(page);
 });

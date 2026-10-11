@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Background, Controls, Handle, Position, ReactFlow, ReactFlowProvider, useReactFlow, useNodesInitialized, applyNodeChanges } from '@xyflow/react';
 import type { Edge, Node, NodeProps } from '@xyflow/react';
 import type { ElkNode, ELK } from 'elkjs';
@@ -55,13 +55,17 @@ function ResearchCard({ id, data }: NodeProps<ResearchNode>) {
 }
 const nodeTypes = { research: ResearchCard };
 
-function Canvas({ data, allowFold, onClaim, personal, restored, restoring, onRestore, onEdit, user, onUser }: { data: ResearchGraphData; allowFold: boolean; onClaim: (id: number) => void; personal: ReturnType<typeof useViewState>; restored: { token: number; view: PersonalView } | null; restoring: boolean; onRestore: () => void; onEdit: () => void; user: string; onUser: (user: string) => void }) {
+function Canvas({ data, allowFold, loading, onClaim, personal, restored, restoring, onRestore, onEdit, user, onUser }: { data: ResearchGraphData; allowFold: boolean; loading: boolean; onClaim: (id: number) => void; personal: ReturnType<typeof useViewState>; restored: { token: number; view: PersonalView } | null; restoring: boolean; onRestore: () => void; onEdit: () => void; user: string; onUser: (user: string) => void }) {
   const editRef = useRef(onEdit); editRef.current = onEdit;
   const [nodes, setNodes] = useState<ResearchNode[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
+  // React Flow 的选择监听 effect 依赖 callback 身份；重渲染不能重放旧 store 选择。
+  const onSelectionChange = useCallback(({ nodes: selection }: { nodes: ResearchNode[] }) => {
+    setSelected(current => { const next = selection.map(node => node.id); return next.length === current.length && next.every(id => current.includes(id)) ? current : next; });
+  }, []);
   const [fold, setFold] = useState<FoldResult | null>(null);
   const [notice, setNotice] = useState('');
   const [showCandidates, setShowCandidates] = useState(true);
@@ -105,7 +109,7 @@ function Canvas({ data, allowFold, onClaim, personal, restored, restoring, onRes
     });
     function applyPositions(positions: Map<string, { x: number; y: number }>, initial = false) {
       if (cancelled) return;
-      setNodes(rawNodes.map(node => ({ ...node, position: positions.get(node.id) ?? (fold ? positions.get(fold.entry) : undefined) ?? { x: 0, y: 0 } })));
+      setNodes(rawNodes.map(node => ({ ...node, selected: selectedRef.current.includes(node.id), position: positions.get(node.id) ?? (fold ? positions.get(fold.entry) : undefined) ?? { x: 0, y: 0 } })));
       setEdges(flowEdges);
       if (initial) pendingFit.current = true;
       else if (!pendingViewport.current && !pendingFit.current) setLayoutReady(true);
@@ -137,11 +141,13 @@ function Canvas({ data, allowFold, onClaim, personal, restored, restoring, onRes
     } catch (error) { setNotice((error as Error).message); }
   }
   function collapse() {
+    if (loading || !layoutReady) return;
     onEdit();
     try { setFold(foldGroup(selected, semanticEdges, data.claims, allowFold && !data.partial && showCandidates && projected.unresolvedClaimIds.length === 0)); setFocused(null); setNotice('过程组只改变视图，原节点、关系、决定、共同输入与引用均保留。'); }
     catch (error) { setNotice((error as Error).message); }
   }
   function choose(id: string, checked: boolean) {
+    if (loading || !layoutReady || fold) return;
     setSelected(current => checked ? [...new Set([...current, id])] : current.filter(value => value !== id));
     setNodes(current => current.map(node => node.id === id ? { ...node, selected: checked } : node));
   }
@@ -156,16 +162,16 @@ function Canvas({ data, allowFold, onClaim, personal, restored, restoring, onRes
     {data.partial && <p className="notice">当前是部分记录投影，不能证明完整边界，不能折叠。</p>}
     {projected.unresolvedClaimIds.length > 0 && <section className="notice" aria-label="研究图异常记录"><p>{projected.unresolvedClaimIds.length} 条记录缺少同范围端点、有效方向或完整汇合语义；原记录保留，当前图不能折叠。</p>{projected.diagnostics.map(item => <p className="small" key={item.claimId}><button className="text-button" onClick={() => onClaim(item.claimId)}>#{item.claimId}</button> {item.reasons.join('；')}</p>)}</section>}
     <div className="graph-tools"><label><input type="checkbox" checked={showCandidates} onChange={event => { onEdit(); setFold(null); setVersions({}); setShowCandidates(event.target.checked); }} />显示待复核记录</label><span>虚线 = 待复核 · 点线 = 仅比较或相同主题</span><button className="button secondary" onClick={() => { onEdit(); void fitView({ padding: 0.18, maxZoom: 1, duration: 250 }); }}><Icon name="refresh" size={15} />适配画布</button></div>
-    <div className="graph-canvas" data-testid="research-canvas"><ReactFlow<ResearchNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} nodesDraggable nodesConnectable={false} onNodesChange={changes => setNodes(current => applyNodeChanges(changes, current))}
+    <div className="graph-canvas" data-testid="research-canvas"><ReactFlow<ResearchNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} nodesDraggable nodesConnectable={false} elementsSelectable={!loading && layoutReady} onNodesChange={changes => setNodes(current => applyNodeChanges(changes, current))}
       onNodeDragStart={onEdit} onNodeDragStop={(_, node) => { layoutCache.current?.positions.set(node.id === 'view-process-group' && fold ? fold.entry : node.id, { ...node.position }); }} onMoveStart={event => { if (event) onEdit(); }}
       onNodeClick={(event, node) => { if (event.shiftKey || (event.target as HTMLElement).closest('select')) return; if (node.data.group) setFocused(null); else { setFocused(node.id); const version = node.data.versions.length === 1 ? node.data.claim : node.data.versions.find(item => item.claim_id === node.data.selectedVersion); if (version) onClaim(version.claim_id); } }}
       onEdgeClick={(_, edge) => onClaim(Number(edge.data?.claimId))}
-      onSelectionChange={({ nodes: selection }) => setSelected(current => { const next = selection.map(node => node.id); return next.length === current.length && next.every(id => current.includes(id)) ? current : next; })} selectionOnDrag panOnDrag={[1, 2]} multiSelectionKeyCode="Shift"
+      onSelectionChange={onSelectionChange} selectionOnDrag panOnDrag={[1, 2]} multiSelectionKeyCode="Shift"
       minZoom={0.12} maxZoom={1.5}><Background color="#dedfd8" gap={24} size={1} /><Controls showInteractive={false} onZoomIn={onEdit} onZoomOut={onEdit} onFitView={onEdit} /></ReactFlow>
       {!entities.length && <div className="canvas-empty"><Empty title="此筛选下没有研究节点">实体候选完成提取后会出现在这里。</Empty></div>}
     </div>
-    <details className="graph-node-picker"><summary>选择过程节点（也可 Shift + 单击画布）</summary><div>{entities.map(item => <label key={graphNodeId(item)}><input type="checkbox" disabled={!!fold} data-node-id={graphNodeId(item)} aria-label={`选择节点 ${projected.versions.get(graphNodeId(item))!.length > 1 ? `多版本对象 ${item.entity_id}` : label(item)} ${scopeText(item.scope)}`} checked={selected.includes(graphNodeId(item))} onChange={event => choose(graphNodeId(item), event.target.checked)} /><span>{projected.versions.get(graphNodeId(item))!.length > 1 ? `多版本对象 · ${item.entity_id}` : label(item)}<small>{scopeText(item.scope)}</small></span></label>)}</div></details>
-    <div className="process-controls"><span>已选 {selected.length} 个节点</span><input aria-label="过程组名称" value={groupName} onChange={event => { onEdit(); setGroupName(event.target.value); }} maxLength={60} /><button className="button secondary" disabled={!!fold} onClick={collapse}>折叠所选（{selected.length}）</button><button className="text-button" disabled={!fold} onClick={() => { onEdit(); setFold(null); setNotice('已在同一修订恢复全部原节点、内部与边界关系、决定、共同输入、证据及节点位置。'); }}>展开过程组</button>{fold && <button className="text-button" onClick={() => { onEdit(); void fitView({ nodes: [{ id: 'view-process-group' }], padding: 0.35, maxZoom: 1, duration: 250 }); }}>聚焦过程组</button>}</div>
+    <details className="graph-node-picker"><summary>选择过程节点（也可 Shift + 单击画布）</summary><div>{entities.map(item => <label key={graphNodeId(item)}><input type="checkbox" disabled={!!fold || loading || !layoutReady} data-node-id={graphNodeId(item)} aria-label={`选择节点 ${projected.versions.get(graphNodeId(item))!.length > 1 ? `多版本对象 ${item.entity_id}` : label(item)} ${scopeText(item.scope)}`} checked={selected.includes(graphNodeId(item))} onChange={event => choose(graphNodeId(item), event.target.checked)} /><span>{projected.versions.get(graphNodeId(item))!.length > 1 ? `多版本对象 · ${item.entity_id}` : label(item)}<small>{scopeText(item.scope)}</small></span></label>)}</div></details>
+    <div className="process-controls"><span>已选 {selected.length} 个节点</span><input aria-label="过程组名称" value={groupName} onChange={event => { onEdit(); setGroupName(event.target.value); }} maxLength={60} /><button className="button secondary" disabled={!!fold || loading || !layoutReady} onClick={collapse}>折叠所选（{selected.length}）</button><button className="text-button" disabled={!fold} onClick={() => { onEdit(); setFold(null); setNotice('已在同一修订恢复全部原节点、内部与边界关系、决定、共同输入、证据及节点位置。'); }}>展开过程组</button>{fold && <button className="text-button" onClick={() => { onEdit(); void fitView({ nodes: [{ id: 'view-process-group' }], padding: 0.35, maxZoom: 1, duration: 250 }); }}>聚焦过程组</button>}</div>
     {notice && <p role="status" className="notice graph-notice">{notice}</p>}
     {shownRecords.length > 0 && <section className="graph-retained" aria-label="保留的原始记录"><h3>{fold ? '过程组保留记录' : '对象版本与历史'} · {shownRecords.length}</h3><p className="muted small">撤回、阴性证据、各范围版本和待复核记录逐条保留；审核与采用独立。单击记录可查看原文。</p>{fold && <details open><summary>原关系与边界端口 · {fold.internalEdges.length + fold.boundaryEdges.length}</summary>{[...fold.internalEdges, ...fold.boundaryEdges].map(edge => <div className="graph-original-edge" key={edge.id} data-edge-id={edge.id} data-original-edge={JSON.stringify(edge)}><button className="text-button" onClick={() => onClaim(edge.claimId)}>#{edge.claimId} {edgeText(edge)}</button><span>{edge.sourceEntity ?? edge.source} → {edge.targetEntity ?? edge.target}{edge.targetPort && ` · 端口 ${edge.targetPort}`}</span><small>原关系 {edge.id} · 证据 {edge.evidenceIds?.join('、') || '缺失'}</small></div>)}</details>}{shownRecords.map(item => <article key={item.claim_id} data-claim-id={item.claim_id}><div><button className="text-button" onClick={() => onClaim(item.claim_id)}>#{item.claim_id} {item.replacement_ids.length > 0 && '已被替代 · 历史记录 · '}{recordText(item)}</button><Badge state={item.effective_state} /></div><p>{scopeText(item.scope)} · 依据 {basisText(item.basis)} · {item.evidence.length} 条原证据</p>{item.input_eligible === false && <Source claim={item} />}{item.replacement_ids.length > 0 && <p>替代记录 {item.replacement_ids.map(id => `#${id}`).join('、')}</p>}</article>)}</section>}
     <p className="muted small">单击节点或关系按相同阅读条件查看只读历史及原始引用。未选比较对象不表示使用，相同主题仅供检索。文件运行与实际输入输出完整性另行核对；此版本未提供影响传播。</p>
@@ -208,6 +214,6 @@ export function GraphView({ workspace, onClaim, user, onUser, authorized, epoch,
     {workspace.info && <p className="notice">{workspace.info}</p>}
     {restoreError && <p role="alert" className="error-message" data-restore-error>{restoreError}</p>}
     {data && <p className="small" data-research-summary data-reading={JSON.stringify({ project_id: data.project_id, revision: data.revision, occurred_until: data.occurred_until, known_until: data.known_until })}>已读取 {data.claims.length} / {data.total} 条 · {data.partial ? '登记记录未读齐' : '双时间内全部 L2 登记记录'} · 修订 {data.revision}<br />发生截止 {data.occurred_until}<br />已知截止 {data.known_until}</p>}
-    {data ? <ReactFlowProvider key={data.project_id}><Canvas data={data} allowFold={!busy && !error && !stale} onClaim={onClaim} personal={personal} restored={restored} restoring={restoring} onRestore={() => { void restore(); }} onEdit={edit} user={user} onUser={value => { edit(); onUser(value); }} /></ReactFlowProvider> : busy ? <Loading /> : <Empty title="完整研究图暂不可用">请主动读取，读取失败不当作空项目。</Empty>}
+    {data ? <ReactFlowProvider key={data.project_id}><Canvas data={data} allowFold={!busy && !error && !stale} loading={busy} onClaim={onClaim} personal={personal} restored={restored} restoring={restoring} onRestore={() => { void restore(); }} onEdit={edit} user={user} onUser={value => { edit(); onUser(value); }} /></ReactFlowProvider> : busy ? <Loading /> : <Empty title="完整研究图暂不可用">请主动读取，读取失败不当作空项目。</Empty>}
   </section>;
 }

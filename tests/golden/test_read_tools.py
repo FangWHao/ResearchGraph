@@ -313,10 +313,22 @@ def test_full_history_beyond_graph_limit_and_page_cannot_pick_state(store):
         for _ in range(2001):
             decision(store, entity, state="candidate")
         last = decision(store, entity, "withdrawn", state="confirmed", occurred=T3)
-    reader = Reader(store, project, {"limit": 1})
-    assert reader.history(entity)["total"] == 2003
-    node = reader.node(entity)
-    assert node["states"][0]["adoption"] == {"state": "withdrawn", "claim_ids": [last]}
+    queries = 0
+
+    def count_query(statement):
+        nonlocal queries
+        queries += 1
+
+    store.db.set_trace_callback(count_query)
+    try:
+        reader = Reader(store, project, {"limit": 1})
+        assert reader.history(entity)["total"] == 2003
+        node = reader.node(entity)
+        assert node["states"][0]["adoption"] == {"state": "withdrawn", "claim_ids": [last]}
+        # 同一实体的历史归属只查一次，人工记录无需逐条重建模型来源签名。
+        assert queries < 2000
+    finally:
+        store.db.set_trace_callback(None)
 
 
 def test_claims_recorded_time_unknown_is_explicitly_excluded(store):

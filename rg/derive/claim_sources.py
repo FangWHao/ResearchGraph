@@ -167,10 +167,18 @@ def recorded(
     visible: Callable[[dict[str, Any]], bool] | None = None,
     *,
     known_at: str | None = None,
+    claim_row: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    signature, claim, _ = inputs(store, claim_id, known_at)
+    claim = claim_row
+    if claim is None:
+        claim = store.db.execute(
+            "SELECT extraction_run_id,basis,actor FROM claims WHERE claim_id=?", (claim_id,)
+        ).fetchone()
+    if claim is None:
+        raise ValueError("来源资格记录不存在")
     if not modeled(claim):
         return {"status": "not_required", "input_eligible": True, "policy": policy()}
+    signature, _, _ = inputs(store, claim_id, known_at)
     row = store.db.execute(
         f"SELECT payload,recorded_at FROM {read_table(store.db, 'claim_source_checks')} "
         "WHERE claim_id=? AND input_signature=? ORDER BY check_id DESC LIMIT 1",

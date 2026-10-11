@@ -6,7 +6,7 @@ from rg.query.reader import Reader
 from rg.store.database import ConflictError, now
 from rg.store.fragment_dependencies import preview
 from rg.store.fragments import assign
-from rg.store.ownership import entity_owner, event_owner
+from rg.store.ownership import entity_owner, entity_owners, event_owner
 from rg.store.science_migration import migrate
 from tests.golden.test_fragment_assignments import intent
 from tests.golden.test_fragment_dependencies import claim, entity, extraction
@@ -123,6 +123,9 @@ def test_repeated_moves_keep_current_and_historical_ownership(store, tmp_path):
     assert entity_owner(store.db, target) == c
     assert entity_owner(store.db, target, second_time) == b
     assert entity_owner(store.db, target, first_time) == a
+    assert entity_owners(store.db)[target] == c
+    assert entity_owners(store.db, second_time)[target] == b
+    assert entity_owners(store.db, first_time)[target] == a
     assert event_owner(store.db, 4) == c
     assert event_owner(store.db, 4, second_time) == b
     assert event_owner(store.db, 4, first_time) == a

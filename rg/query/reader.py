@@ -11,7 +11,7 @@ from rg.query.time import canonical_times, instant
 from rg.record.schema import validate_scope
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
-from rg.store.ownership import entity_owner, event_owner, historical_source, record_owner
+from rg.store.ownership import entity_owners, event_owner, historical_source, record_owner
 from rg.store.scopes import known_scope
 
 
@@ -136,6 +136,12 @@ class Reader:
         self._cached: list[dict[str, Any]] | None = None
         self._event_index: dict[tuple[str, str], list[dict[str, Any]]] = {}
         self._state_cache: dict[tuple[str, str], dict[str, Any]] = {}
+        self._owners: dict[str, str | None] | None = None
+
+    def entity_owner(self, identity: str) -> str | None:
+        if self._owners is None:
+            self._owners = entity_owners(self.store.db, self.known_until)
+        return self._owners.get(identity)
 
     def visible(
         self, occurred: str | None, recorded: str | None, identity: tuple[str, Any]
@@ -178,7 +184,7 @@ class Reader:
             "a JOIN claims c USING(claim_id) "
             "ORDER BY a.action_id",
         ):
-            if entity_owner(self.store.db, row["owner_entity"], self.known_until) != self.project:
+            if self.entity_owner(row["owner_entity"]) != self.project:
                 continue
             recorded = instant(row["recorded_at"])
             if recorded is not None and recorded <= self.known_cutoff:
@@ -190,7 +196,7 @@ class Reader:
             "SELECT c.*,e.kind FROM claims c JOIN effective_entities e USING(entity_id) "
             "ORDER BY c.claim_id",
         ):
-            if entity_owner(self.store.db, row["entity_id"], self.known_until) != self.project:
+            if self.entity_owner(row["entity_id"]) != self.project:
                 continue
             if not self.visible(row["occurred_at"], row["recorded_at"], ("C", row["claim_id"])):
                 continue
@@ -214,6 +220,7 @@ class Reader:
                     review=review,
                     selected=True,
                     known_at=self.known_until,
+                    claim_row=item,
                 )
             )
             item["occurred_time_unknown"] = instant(row["occurred_at"]) is None
@@ -257,7 +264,7 @@ class Reader:
         }
 
     def entity(self, entity_id: str) -> None:
-        if entity_owner(self.store.db, entity_id, self.known_until) != self.project:
+        if self.entity_owner(entity_id) != self.project:
             raise NotFound("当前项目中没有这个对象")
 
     def related(self, entity_id: str) -> list[dict[str, Any]]:

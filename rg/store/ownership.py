@@ -65,6 +65,22 @@ def entity_owner(db: sqlite3.Connection, entity: str, at: str | None = None) -> 
     return owner_at(db, "entities", row[0], at) if row else None
 
 
+def entity_owners(db: sqlite3.Connection, at: str | None = None) -> dict[str, str | None]:
+    """在当前读取快照内批量查历史归属，避免每条断言重复查询同一实体。"""
+    if db.execute("PRAGMA user_version").fetchone()[0] < 33:
+        rows = db.execute("SELECT entity_id,project_id FROM entities")
+    else:
+        rows = db.execute(
+            "SELECT e.entity_id,coalesce(o.project_id,e.project_id) FROM entities e "
+            "LEFT JOIN science_ownership o ON o.ownership_id=("
+            "SELECT n.ownership_id FROM science_ownership n WHERE n.table_name='entities' "
+            "AND n.record_rowid=e.rowid AND (? IS NULL OR n.recorded_at<=?) "
+            "ORDER BY n.ownership_id DESC LIMIT 1)",
+            (at, at),
+        )
+    return {row[0]: row[1] for row in rows}
+
+
 def event_owner(db: sqlite3.Connection, event: int, at: str | None = None) -> str | None:
     current = db.execute(
         "SELECT s.project_id FROM effective_raw_events r JOIN "
