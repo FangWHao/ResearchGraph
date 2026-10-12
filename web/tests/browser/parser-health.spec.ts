@@ -1,3 +1,4 @@
+import { openWorkspaceView } from './navigation';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
@@ -67,7 +68,7 @@ async function open(page: Page) {
   await page.goto(`${origin}/#token=synthetic-parser-health-token`);
   await expect(page.getByLabel('当前项目', { exact: true })).toContainText(primary);
   await page.getByLabel('当前项目', { exact: true }).selectOption({ label: primary });
-  await page.getByRole('button', { name: '采集健康', exact: true }).click();
+  await openWorkspaceView(page, '采集健康');
   const panel = page.getByRole('region', { name: '解析器类型与工具版本账本', exact: true });
   return panel;
 }

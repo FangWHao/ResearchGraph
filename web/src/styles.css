@@ -42,3 +42,18 @@
   .page-heading > div:first-child { min-width: 0; overflow-wrap: anywhere; }
   .page-heading .revision-tag { flex-shrink: 0; }
 }
+
+/* 桌面日常入口保持精简；小屏延续已有可达导航，不新增移动流程。 */
+.workspace-primary,.workspace-tools{display:grid;gap:4px}
+.sidebar nav .more-tools-toggle{gap:8px;font-size:13px}
+.more-tools-toggle>span:first-of-type{min-width:0}
+.more-tools-chevron{margin-left:auto;font-size:15px;flex-shrink:0}
+.nav-more-count{font-size:10px;white-space:nowrap;background:#f7f1de;color:#7a6a3d;border-radius:4px;padding:2px 4px}
+.current-tool{display:block;font-size:11px;margin-top:3px;font-weight:400}
+@media(min-width:761px){.sidebar{overflow-y:auto}.sidebar nav,.sidebar .project-picker,.sidebar-bottom{flex-shrink:0}.workspace-tools.is-collapsed{display:none}.workspace-tools{border-left:1px solid #dce3d3;margin-left:8px;padding-left:3px}.sidebar nav .workspace-tools button{font-size:13px;padding:10px 9px}}
+@media(max-width:760px){.workspace-primary,.workspace-tools{display:contents}.sidebar nav .more-tools-toggle{display:none}}
+
+.sidebar nav .more-tools-toggle.has-partial-count{display:grid;grid-template-columns:18px minmax(0,1fr) 15px}
+.has-partial-count>svg{grid-column:1;grid-row:1}.has-partial-count>span:first-of-type{grid-column:2;grid-row:1}
+.has-partial-count .more-tools-chevron{grid-column:3;grid-row:1;margin-left:0}.has-partial-count .nav-more-count{grid-column:2/4;grid-row:2;justify-self:start}
+@media(max-width:760px){.sidebar nav .more-tools-toggle.has-partial-count{display:none}}

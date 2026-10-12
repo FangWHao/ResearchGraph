@@ -1,3 +1,4 @@
+import { openWorkspaceView } from './navigation';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +18,7 @@ async function unpack(download: Download, name: string): Promise<Archive> {
 async function open(page: Page, name = primary) {
   await page.goto('/#token=synthetic-browser-token');
   await page.getByLabel('当前项目', { exact: true }).selectOption({ label: name });
-  await page.getByRole('button', { name: '历史导出', exact: true }).click();
+  await openWorkspaceView(page, '历史导出');
   await expect(page.getByRole('region', { name: '历史导出阅读条件', exact: true })).toContainText(name);
   await expect(page.getByRole('button', { name: '下载历史 ZIP', exact: true })).toBeEnabled();
   return page.getByLabel('当前项目', { exact: true }).inputValue();

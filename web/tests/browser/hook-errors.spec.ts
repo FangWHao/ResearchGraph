@@ -1,3 +1,4 @@
+import { openWorkspaceView } from './navigation';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
@@ -51,7 +52,7 @@ async function read(request: APIRequestContext, project: string, offset = 0, sna
 async function open(page: Page) {
   await page.goto(`${origin}/#token=synthetic-hook-errors-token`);
   await page.getByLabel('当前项目', { exact: true }).selectOption({ label: primary });
-  await page.getByRole('button', { name: '采集健康', exact: true }).click();
+  await openWorkspaceView(page, '采集健康');
   return page.getByRole('region', { name: '钩子失败报告', exact: true });
 }
 async function show(page: Page, locator: Locator) {

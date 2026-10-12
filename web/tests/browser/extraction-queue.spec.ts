@@ -1,3 +1,4 @@
+import { openWorkspaceView } from './navigation';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { HealthData, Project } from '../../src/types';
@@ -7,7 +8,7 @@ const primary = '合成研究 · 界面信号验证';
 async function open(page: Page) {
   await page.goto('/#token=synthetic-browser-token');
   await page.getByLabel('当前项目', { exact: true }).selectOption({ label: primary });
-  await page.getByRole('button', { name: '采集健康', exact: true }).click();
+  await openWorkspaceView(page, '采集健康');
   const panel = page.getByRole('region', { name: '持续提取队列 当前项目', exact: true });
   await expect(panel.locator('[data-queue-metric="total"] dd')).toHaveText('53');
   return panel;
@@ -86,7 +87,7 @@ test('旧健康响应缺队列或任务字段保持未知，实际零和全库�
     else { const global = await route.fetch({ url: new URL('/api/health?limit=50&offset=0', route.request().url()).href }); health.extraction_queue = (await global.json()).extraction_queue; }
     await route.fulfill({ response, json: health });
   });
-  await page.goto('/#token=synthetic-browser-token'); await page.getByRole('button', { name: '采集健康', exact: true }).click();
+  await page.goto('/#token=synthetic-browser-token'); await openWorkspaceView(page, '采集健康');
   let panel = page.getByRole('region', { name: '持续提取队列 范围未知', exact: true });
   await expect(panel.locator('.health-queue-metrics dd')).toHaveCount(8);
   expect(await panel.locator('.health-queue-metrics dd').allTextContents()).toEqual(Array(8).fill('未知'));

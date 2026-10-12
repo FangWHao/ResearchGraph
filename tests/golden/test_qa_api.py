@@ -278,9 +278,16 @@ def test_bad_model_and_daily_budget_keep_evidence_and_research_facts(qa_api, sto
     assert semantic(store) == before and protocol.calls == 1
 
 
+@pytest.mark.parametrize(
+    "policy_id", ["a13800138000f" + "b" * 51, "a" * 16 + "123456789012345678" + "b" * 30]
+)
 def test_preview_masks_actual_question_and_source_then_generation_uses_identical_input(
-    qa_api, store, tmp_path
+    qa_api, store, tmp_path, monkeypatch, policy_id
 ):
+    from rg.store.privacy import Policy
+
+    # 固定两类会命中内置遮盖的合成摘要，不能依靠随机 UUID 恰好避开。
+    monkeypatch.setattr(Policy, "identity", property(lambda self: policy_id))
     _, client, project, _, _, protocol = qa_api
     path = tmp_path / "privacy-qa.jsonl"
     lines(
@@ -288,6 +295,7 @@ def test_preview_masks_actual_question_and_source_then_generation_uses_identical
     )
     scan_file(store, path, "claude", project)
     core, preview = grant(client, project, store, "隐私样例 qa-fixture@example.invalid")
+    assert preview["input"]["privacy_policy_id"] == policy_id
     assert preview["input"]["question_redacted"]
     assert any(source["text_redacted"] for source in preview["input"]["sources"])
     assert "qa-fixture@example.invalid" not in dumps(preview["input"])

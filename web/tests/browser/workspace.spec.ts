@@ -1,3 +1,4 @@
+import { openWorkspaceView } from './navigation';
 import { expect, test } from '@playwright/test';
 
 test('本机鉴权与链接令牌清除', async ({ page, request }) => {
@@ -18,10 +19,10 @@ test('真实来源、时间线、健康、图引用与响应式界面', async ({
   await expect(page.getByRole('heading', { name: '研究问题', exact: true })).toBeVisible();
   await expect(page.locator('.question-heading h2')).toContainText('哪些局部界面信号');
   await page.screenshot({ path: '../.cache/frontend-question-desktop.png', fullPage: true });
-  await page.getByRole('button', { name: '决定时间线', exact: true }).click();
+  await openWorkspaceView(page, '决定时间线');
   await expect(page.locator('.timeline-list li')).toHaveCount(13);
   await expect(page.locator('.timeline-list')).toContainText('撤回');
-  await page.getByRole('button', { name: '采集健康', exact: true }).click();
+  await openWorkspaceView(page, '采集健康');
   await expect(page.getByRole('heading', { name: '来源与游标' })).toBeVisible();
   await expect(page.getByText('钩子失败').last()).toBeVisible();
   await expect(page.locator('.quality-grid')).toContainText('未知');
@@ -47,7 +48,7 @@ test('真实来源、时间线、健康、图引用与响应式界面', async ({
 test('同片段跨页一键确认与项目切换', async ({ page, request }) => {
   await page.goto('/#token=synthetic-browser-token');
   await page.getByLabel('当前项目', { exact: true }).selectOption({ label: '验收批量项目' });
-  await page.getByRole('button', { name: /复核队列/ }).click();
+  await openWorkspaceView(page, /复核队列/);
   await expect(page.locator('.queue-item')).toHaveCount(50);
   await expect(page.locator('.count-pill')).toHaveText('211 条');
   await page.getByRole('button', { name: '确认整个片段的待复核记录' }).click();

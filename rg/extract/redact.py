@@ -70,6 +70,7 @@ def model_input(content: str, stage: str, custom: tuple[str, ...] = ()) -> str:
     from rg.store.database import dumps
 
     identities = {
+        "qa": {("privacy_policy_id",)},
         "link": {("pair_id",), ("cards", "*", "id")},
         "pass2": {
             ("segment_id",),

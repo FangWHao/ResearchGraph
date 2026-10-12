@@ -1,3 +1,4 @@
+import { openWorkspaceView } from './navigation';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -116,7 +117,7 @@ async function history(page: Page, item: Identity, node: Locator, status: string
 
 test('已确认注入模型记录保留审核和原文，当前采用未知，当前与历史提示独立', async ({ page, request }) => {
   const { item, status, claim } = await proof(request, 'excluded'); await enter(page, item);
-  await page.getByRole('button', { name: '决定时间线', exact: true }).click();
+  await openWorkspaceView(page, '决定时间线');
   await expect(page.locator(`[data-source-claim-id="${item.model_claim_id}"]`)).toHaveAttribute('data-source-qualification', 'excluded');
   const node = await graph(page, item, '未知'); const drawer = await history(page, item, node, status);
   await page.screenshot({ path: '../.cache/frontend-claim-source-excluded-desktop.png' });

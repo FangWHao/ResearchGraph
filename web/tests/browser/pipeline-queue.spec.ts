@@ -1,3 +1,4 @@
+import { openWorkspaceView } from './navigation';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { HealthData, Project } from '../../src/types';
@@ -7,7 +8,7 @@ const primary = '合成研究 · 界面信号验证';
 async function open(page: Page) {
   await page.goto('/#token=synthetic-browser-token');
   await page.getByLabel('当前项目', { exact: true }).selectOption({ label: primary });
-  await page.getByRole('button', { name: '采集健康', exact: true }).click();
+  await openWorkspaceView(page, '采集健康');
   const panel = page.getByRole('region', { name: '自动关联与概览 当前项目', exact: true });
   await expect(panel.locator('[data-pipeline-metric="total"] dd')).toHaveText('54');
   return panel;
@@ -126,7 +127,7 @@ test('缺失队列与未知字段保持未知，错误目标与结果文本不�
     await route.fulfill({ response, json: health });
   });
   await page.goto('/#token=synthetic-browser-token');
-  await page.getByRole('button', { name: '采集健康', exact: true }).click();
+  await openWorkspaceView(page, '采集健康');
   let panel = page.getByRole('region', { name: '自动关联与概览 范围未知', exact: true });
   await expect(panel.locator('.health-queue-metrics dd')).toHaveCount(8);
   expect(await panel.locator('.health-queue-metrics dd').allTextContents()).toEqual(Array(8).fill('未知'));
@@ -181,7 +182,7 @@ test('迟到的旧项目健康响应即使无法中止也不能覆盖当前项�
   });
   await page.goto('/#token=synthetic-browser-token');
   await page.getByLabel('当前项目', { exact: true }).selectOption({ label: primary });
-  await page.getByRole('button', { name: '采集健康', exact: true }).click();
+  await openWorkspaceView(page, '采集健康');
   await started;
   await page.getByLabel('当前项目', { exact: true }).selectOption({ label: '验收批量项目' });
   const panel = page.getByRole('region', { name: '自动关联与概览 当前项目', exact: true });

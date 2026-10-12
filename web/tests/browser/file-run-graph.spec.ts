@@ -1,3 +1,4 @@
+import { openWorkspaceView } from './navigation';
 import { createHash } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import type { APIRequestContext, Page } from '@playwright/test';
@@ -16,7 +17,7 @@ test.beforeEach(async ({ page }, info) => {
 async function open(page: Page, name = primary) {
   await page.goto('/#token=synthetic-browser-token');
   await page.getByLabel('当前项目', { exact: true }).selectOption({ label: name });
-  await page.getByRole('button', { name: '文件运行图', exact: true }).click();
+  await openWorkspaceView(page, '文件运行图');
   const summary = page.getByRole('region', { name: '文件运行图完整性', exact: true });
   await expect(summary).toContainText('已读完登记图');
   await expect(page.getByRole('button', { name: '重新读取文件运行图', exact: true })).toBeVisible();

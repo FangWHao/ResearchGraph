@@ -1,3 +1,4 @@
+import { openWorkspaceView } from './navigation';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { createWriteStream, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -35,7 +36,7 @@ async function get(request: APIRequestContext, project = index.project_id, offse
 }
 async function control(request: APIRequestContext, command: string) { const r = await request.post(`${origin}/synthetic-worktrees/${command}`, { headers, data: {} }); expect(r.status()).toBe(200); const data = await r.json(); capture(command, data); return data; }
 async function audit(request: APIRequestContext) { const r = await request.get(`${origin}/synthetic-worktrees/audit`, { headers }); expect(r.status()).toBe(200); const data = await r.json(); capture('audit', data); return data; }
-async function enter(page: Page, project = index.project_id) { await page.goto(`${origin}/#token=synthetic-worktrees-token`); await page.getByLabel('当前项目', { exact: true }).selectOption(project); await page.getByRole('button', { name: '采集健康', exact: true }).click(); await expect(panel(page).locator('[data-worktree-policy]')).toBeVisible(); }
+async function enter(page: Page, project = index.project_id) { await page.goto(`${origin}/#token=synthetic-worktrees-token`); await page.getByLabel('当前项目', { exact: true }).selectOption(project); await openWorkspaceView(page, '采集健康'); await expect(panel(page).locator('[data-worktree-policy]')).toBeVisible(); }
 function panel(page: Page) { return page.getByRole('region', { name: '工作树自动跟踪', exact: true }); }
 async function refresh(page: Page): Promise<WorktreePage> { const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/worktrees'); await panel(page).getByRole('button', { name: '重新读取工作树', exact: true }).click(); const r = await response; expect(r.status()).toBe(200); await expect(panel(page).getByRole('button', { name: /^(开启|停止)自动跟踪$/ })).toBeEnabled(); return r.json(); }
 async function toggle(page: Page) { const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/worktrees/follow'); await panel(page).getByRole('button', { name: /^(开启|停止)自动跟踪$/ }).click(); const r = await response; expect(r.status()).toBe(200); const data = await r.json(); capture('follow-request', r.request().postDataJSON()); capture('follow-receipt', data); await expect(panel(page).locator(`[data-worktree-policy="${data.follow_enabled}"]`)).toBeVisible(); await expect(panel(page).getByRole('button', { name: /^(开启|停止)自动跟踪$/ })).toBeEnabled(); return data; }

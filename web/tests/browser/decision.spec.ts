@@ -1,3 +1,4 @@
+import { openWorkspaceView } from './navigation';
 import { expect, test } from '@playwright/test';
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
 import type { Claim, DecisionRequest, DecisionResult, DecisionTargetsPage, GraphData, Project, ResolveDecisionRequest, ResolveDecisionResult } from '../../src/types';
@@ -86,7 +87,7 @@ test('同名候选禁普通确认、修改和整组确认，显式选择后追�
   await expect(detail.getByRole('button', { name: '确认', exact: true })).toBeDisabled();
   await expect(detail.getByRole('button', { name: '修改', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: '关闭详情', exact: true }).click();
-  await page.getByRole('button', { name: /复核队列/ }).click();
+  await openWorkspaceView(page, /复核队列/);
   const item = page.locator('.queue-item').filter({ hasText: `#${saved.claim_id}` });
   await expect(page.locator('.queue-item').first()).toBeVisible();
   for (let offset = 50; !await item.count() && offset <= 250; offset += 50) {

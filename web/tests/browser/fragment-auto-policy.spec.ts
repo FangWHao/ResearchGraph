@@ -1,3 +1,4 @@
+import { openWorkspaceView } from './navigation';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { createWriteStream, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -43,7 +44,7 @@ async function enter(page: Page, project = index.project_id) {
   await page.goto(`${origin}/#token=synthetic-fragment-auto-policy-token`);
   await page.getByLabel('当前项目', { exact: true }).selectOption(project);
   await page.getByLabel('复核者姓名').fill('公开甲');
-  await page.getByRole('button', { name: '采集健康', exact: true }).click();
+  await openWorkspaceView(page, '采集健康');
   await expect(panel(page).locator('[data-auto-assignment-enabled]')).toBeVisible();
   await expect(panel(page).getByRole('button', { name: /^(开启|停止)未来自动归属$/ })).toBeEnabled();
 }

@@ -1,3 +1,4 @@
+import { openWorkspaceView } from './navigation';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { createWriteStream, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -43,7 +44,7 @@ async function get(request: APIRequestContext, s = source(), fixed?: FragmentPag
 async function audit(request: APIRequestContext) { const r = await request.get(`${origin}/synthetic-fragments/audit`, { headers }); expect(r.status()).toBe(200); const data = await r.json(); capture('audit', data); return data; }
 async function enter(page: Page, s = source(), project = index.first_project) {
   await page.goto(`${origin}/#token=synthetic-project-fragments-token`);
-  await page.getByLabel('当前项目', { exact: true }).selectOption(project); await page.getByRole('button', { name: '采集健康', exact: true }).click();
+  await page.getByLabel('当前项目', { exact: true }).selectOption(project); await openWorkspaceView(page, '采集健康');
   const row = page.locator('[aria-labelledby="sources-heading"] tbody tr').filter({ hasText: s.path });
   await expect(row).toHaveCount(1); await row.getByRole('button', { name: '查看片段与归属', exact: true }).click();
   await expect(panel(page).locator('[data-fragment-record]').first()).toBeVisible();
@@ -225,7 +226,7 @@ async function enterContinuation(page: Page) {
   await page.goto(`${origin}/#token=synthetic-project-fragments-token`);
   await page.getByLabel('当前项目', { exact: true }).selectOption(index.first_project);
   const healthResponse = page.waitForResponse(r => new URL(r.url()).pathname === '/api/health');
-  await page.getByRole('button', { name: '采集健康', exact: true }).click();
+  await openWorkspaceView(page, '采集健康');
   const health = await (await healthResponse).json(); capture('continuation-health', health);
   const position = health.sources.findIndex((r: { file_instance_id: number }) => r.file_instance_id === s.file_instance_id);
   expect(position).toBeGreaterThanOrEqual(0);

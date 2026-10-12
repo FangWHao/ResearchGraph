@@ -1,3 +1,4 @@
+import { openWorkspaceView } from './navigation';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -49,7 +50,7 @@ async function audit(request: APIRequestContext) { return json(request, '/synthe
 async function detail(request: APIRequestContext, id: number, tag: string): Promise<Claim> { return (await json(request, `/api/claims/${id}`, tag)).claim; }
 async function enter(page: Page, project = index.project_id) {
   await page.goto(`${origin}/#token=${token}`); await page.getByLabel('当前项目', { exact: true }).selectOption(project);
-  await page.getByRole('button', { name: '研究笔记', exact: true }).click();
+  await openWorkspaceView(page, '研究笔记');
   await expect(page.locator('.notes-view .pagination')).toBeVisible();
 }
 async function form(page: Page) {

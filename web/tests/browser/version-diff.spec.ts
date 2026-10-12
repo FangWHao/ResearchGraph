@@ -1,3 +1,4 @@
+import { openWorkspaceView } from './navigation';
 import { expect, test } from '@playwright/test';
 import type { APIRequestContext, Page } from '@playwright/test';
 import { spawn } from 'node:child_process';
@@ -23,7 +24,7 @@ async function project(request: APIRequestContext, name = '验收文件差异项
 }
 async function open(page: Page, request: APIRequestContext) {
   const id = await project(request); await page.goto(`${origin}/#token=synthetic-browser-token`);
-  await page.getByLabel('当前项目', { exact: true }).selectOption(id); await page.getByRole('button', { name: '文件版本', exact: true }).click();
+  await page.getByLabel('当前项目', { exact: true }).selectOption(id); await openWorkspaceView(page, '文件版本');
   await expect(page.locator('.file-version-list > li')).toHaveCount(25);
   const pageData = await (await request.get(`${origin}/api/versions?project=${id}&limit=100&offset=0`, { headers })).json();
   const versions = pageData.versions as FileVersionRecord[];

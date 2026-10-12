@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from rg.extract import linker
 from rg.extract.linker import Pair, link, pairs
 from rg.extract.redact import model_input
@@ -12,6 +14,23 @@ from tests.golden.test_links_overview import DerivedProvider, two_objects
 
 HASH = "a13800138000f" + "b" * 51
 UUID = "aaaaaaaa-bbbb-cccc-dddd-a13800138000"
+
+
+@pytest.mark.parametrize("identity", [HASH, "a" * 16 + "123456789012345678" + "b" * 30])
+def test_qa_policy_hash_is_preserved_only_at_generated_root_path(identity):
+    payload = {
+        "privacy_policy_id": identity,
+        "question": identity,
+        "sources": [{"text": dumps({"privacy_policy_id": identity})}],
+        "scope": {"privacy_policy_id": identity},
+    }
+    safe = json.loads(model_input(dumps(payload), "qa"))
+    assert safe["privacy_policy_id"] == identity
+    assert identity not in dumps(
+        {key: value for key, value in safe.items() if key != "privacy_policy_id"}
+    )
+    assert safe["question"] != identity
+    assert safe["scope"]["privacy_policy_id"] != identity
 
 
 def test_link_identity_is_not_masked_but_same_number_in_text_and_scope_is():

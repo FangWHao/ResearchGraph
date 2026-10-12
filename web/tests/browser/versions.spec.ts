@@ -1,3 +1,4 @@
+import { openWorkspaceView } from './navigation';
 import { expect, test } from '@playwright/test';
 import type { APIRequestContext, Page } from '@playwright/test';
 import type { HealthData, Project, VersionsPage } from '../../src/types';
@@ -8,7 +9,7 @@ const currentId = 'synthetic-browser-artifact:current';
 async function open(page: Page) {
   await page.goto('/#token=synthetic-browser-token');
   await page.getByLabel('当前项目', { exact: true }).selectOption({ label: primary });
-  await page.getByRole('button', { name: '文件版本', exact: true }).click();
+  await openWorkspaceView(page, '文件版本');
   const panel = page.getByRole('region', { name: '文件版本记录 当前项目', exact: true });
   await expect(panel.locator('.file-version-list > li')).toHaveCount(25);
   return panel;
@@ -119,7 +120,7 @@ test('项目健康数量、任务与快照发现分开统计，旧字段缺失�
   const health: HealthData = await (await request.get(`/api/health?project=${project.project_id}`, { headers })).json();
   expect(health.artifacts).toEqual({ versions: 33, archived: 2, current_hashed: 1, cache_reused: 3, jobs: { queued: 1, running: 1, paused: 1, failed: 1, done: 6 }, discovery: { pending: 1, unknown: 1, partial: 1, done: 1 } });
   await open(page);
-  await page.getByRole('button', { name: '采集健康', exact: true }).click();
+  await openWorkspaceView(page, '采集健康');
   const panel = page.getByRole('region', { name: '文件版本与后台摘要 当前项目', exact: true });
   for (const [group, values] of Object.entries({ versions: { versions: 33, archived: 2, current_hashed: 1, cache_reused: 3 }, jobs: health.artifacts!.jobs!, discovery: health.artifacts!.discovery! })) {
     for (const [key, value] of Object.entries(values)) await expect(panel.locator(`[data-artifact-metric="${group}.${key}"] dd`)).toHaveText(value.toString());
@@ -137,7 +138,7 @@ test('项目健康数量、任务与快照发现分开统计，旧字段缺失�
   await expect(page.getByRole('heading', { name: '文件版本', exact: true })).toBeVisible();
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.getByLabel('当前项目', { exact: true }).selectOption({ label: '合成空项目' });
-  await page.getByRole('button', { name: '采集健康', exact: true }).click();
+  await openWorkspaceView(page, '采集健康');
   await expect(panel.locator('[data-artifact-metric="versions.versions"] dd')).toHaveText('0');
   await expect(panel.locator('[data-artifact-metric="jobs.running"] dd')).toHaveText('0');
   await expect(panel.locator('[data-artifact-metric="discovery.pending"] dd')).toHaveText('1');
@@ -170,7 +171,7 @@ test('版本失败可重试，未知字段与错误关联保留缺口，不显�
     await route.fulfill({ response, json: data });
   });
   await page.goto('/#token=synthetic-browser-token');
-  await page.getByRole('button', { name: '文件版本', exact: true }).click();
+  await openWorkspaceView(page, '文件版本');
   await expect(page.getByRole('heading', { name: '文件版本暂不可用', exact: true })).toBeVisible();
   mode = 'missing'; await page.getByRole('button', { name: '重新读取文件版本', exact: true }).click();
   const panel = page.getByRole('region', { name: '文件版本记录 当前项目', exact: true });
@@ -198,7 +199,7 @@ test('实际401交统一鉴权，重新鉴权后只读恢复', async ({ page }) 
   let denied = true;
   await page.route('**/api/versions?**', route => denied ? route.fulfill({ status: 401, json: { error: '合成版本令牌已失效' } }) : route.continue());
   await page.goto('/#token=synthetic-browser-token');
-  await page.getByRole('button', { name: '文件版本', exact: true }).click();
+  await openWorkspaceView(page, '文件版本');
   await expect(page.getByRole('heading', { name: '打开你的研究决定史', exact: true })).toBeVisible();
   denied = false;
   await page.getByLabel('访问令牌', { exact: true }).fill('synthetic-browser-token');
@@ -231,7 +232,7 @@ for (const stale of ['project', 'authorization'] as const) {
     });
     await page.goto('/#token=synthetic-browser-token');
     await page.getByLabel('当前项目', { exact: true }).selectOption({ label: primary });
-    await page.getByRole('button', { name: '文件版本', exact: true }).click(); await started;
+    await openWorkspaceView(page, '文件版本'); await started;
     if (stale === 'project') await page.getByLabel('当前项目', { exact: true }).selectOption({ label: '验收批量项目' });
     else await page.evaluate(() => { window.location.hash = 'token=synthetic-browser-token'; });
     const panel = page.getByRole('region', { name: '文件版本记录 当前项目', exact: true });

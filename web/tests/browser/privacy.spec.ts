@@ -1,3 +1,4 @@
+import { openWorkspaceView } from './navigation';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
@@ -86,7 +87,7 @@ test('真实外发许可不因保存关闭，旧解释保留并标规则变化�
   const packet = parseQaContext((await (await answer).json()).context_text) as unknown as QaPacket;
   expect(packet.status).toBe('answered'); expect(JSON.stringify(packet.statements)).not.toContain('HOSP-246810');
   await expect(page.getByText('下方结果使用此前的项目遮盖规则', { exact: false })).toHaveCount(0);
-  await page.getByRole('button', { name: '历史导出', exact: true }).click();
+  await openWorkspaceView(page, '历史导出');
   await expect(panel.getByLabel('项目遮盖正则规则', { exact: true })).toHaveValue(rules);
   await page.getByRole('checkbox', { name: '加入遮盖后的证据片段', exact: true }).check();
   const download = page.waitForEvent('download'); const exported = page.waitForResponse(r => new URL(r.url()).pathname === '/api/exports');

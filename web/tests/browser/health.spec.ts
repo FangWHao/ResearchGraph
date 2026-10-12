@@ -1,3 +1,4 @@
+import { openWorkspaceView } from './navigation';
 import { expect, test } from '@playwright/test';
 import type { HealthData, Project } from '../../src/types';
 
@@ -23,7 +24,7 @@ test('真实HTTP健康统计保留全库口径、项目范围与重叠快照标�
 
   await page.goto('/#token=synthetic-browser-token');
   await page.getByLabel('当前项目', { exact: true }).selectOption({ label: primary });
-  await page.getByRole('button', { name: '采集健康', exact: true }).click();
+  await openWorkspaceView(page, '采集健康');
   const ingest = page.getByRole('region', { name: /采集登记与回执/ });
   const snapshots = page.getByRole('region', { name: /工作区快照/ });
   for (const [key, value] of Object.entries(health.ingest!)) {
@@ -82,7 +83,7 @@ test('旧接口没有采集与快照对象时显示缺失，其他真实统计�
     await route.fulfill({ response, json: health });
   });
   await page.goto('/#token=synthetic-browser-token');
-  await page.getByRole('button', { name: '采集健康', exact: true }).click();
+  await openWorkspaceView(page, '采集健康');
   const missing = page.locator('.health-metrics dd');
   await expect(missing).toHaveCount(10);
   expect(await missing.allTextContents()).toEqual(Array(10).fill('统计缺失'));
@@ -97,7 +98,7 @@ test('健康HTTP失败停止加载，局部重试恢复后清除过时错误', a
     else await route.continue();
   });
   await page.goto('/#token=synthetic-browser-token');
-  await page.getByRole('button', { name: '采集健康', exact: true }).click();
+  await openWorkspaceView(page, '采集健康');
   await expect(page.getByRole('heading', { name: '健康统计暂不可用' })).toBeVisible();
   await expect(page.getByRole('alert')).toContainText('合成服务暂时不可用');
   await expect(page.getByText('本次未取得统计，无法判断采集是否正常。', { exact: false })).toBeVisible();
@@ -113,7 +114,7 @@ test('健康HTTP失败停止加载，局部重试恢复后清除过时错误', a
 test('健康读取的401交给统一鉴权入口', async ({ page }) => {
   await page.route('**/api/health?**', route => route.fulfill({ status: 401, json: { error: '合成令牌已失效' } }));
   await page.goto('/#token=synthetic-browser-token');
-  await page.getByRole('button', { name: '采集健康', exact: true }).click();
+  await openWorkspaceView(page, '采集健康');
   await expect(page.getByRole('heading', { name: '打开你的研究决定史' })).toBeVisible();
   await expect(page.getByRole('heading', { name: /工作区快照/ })).toHaveCount(0);
 });

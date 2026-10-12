@@ -1,3 +1,4 @@
+import { openWorkspaceView } from './navigation';
 import { expect, test } from '@playwright/test';
 import type { APIRequestContext, Page } from '@playwright/test';
 import type { GraphData, Project, VersionsPage } from '../../src/types';
@@ -144,7 +145,7 @@ test('390宽切项目后迟到真实版本响应不覆盖当前项目，原鉴�
   });
   await page.goto('/#token=synthetic-browser-token');
   await expect(page.locator('.question-heading')).toBeVisible();
-  await page.getByRole('button', { name: '文件版本', exact: true }).click();
+  await openWorkspaceView(page, '文件版本');
   await started;
   await selectProject(page, second);
   const panel = page.getByRole('region', { name: '文件版本记录 当前项目', exact: true });
