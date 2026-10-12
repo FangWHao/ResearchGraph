@@ -154,6 +154,16 @@ def parser() -> argparse.ArgumentParser:
     worktrees.add_argument("--limit", type=int, default=100)
     worktrees.add_argument("--offset", type=int, default=0)
     worktrees.add_argument("--expected-revision", type=int)
+    assignment = project_sub.add_parser("assignment-policy", help="只读查看未来记录自动归属策略")
+    assignment.add_argument("--project", required=True)
+    assignment.add_argument("--limit", type=int, default=100)
+    assignment.add_argument("--offset", type=int, default=0)
+    assignment.add_argument("--expected-revision", type=int)
+    assignment.add_argument("--expected-scope-key")
+    configure_assignment = project_sub.add_parser(
+        "configure-assignment", help="按已核对修订与目录摘要开启或停止未来记录自动归属"
+    )
+    configure_assignment.add_argument("--request-file", type=Path, required=True)
     fragments = project_sub.add_parser("fragments", help="只读检查物理片段、目录线索与正式归属")
     fragments.add_argument("--session", type=int, required=True)
     fragments.add_argument("--source", type=int, required=True)
@@ -633,6 +643,27 @@ def run(args: argparse.Namespace, store: Store) -> object:
             from rg.store.worktrees import listing
 
             return listing(store, args.project, args.limit, args.offset, args.expected_revision)
+        if args.project_command == "assignment-policy":
+            from rg.store.assignment_policy import listing
+
+            return listing(
+                store,
+                args.project,
+                args.limit,
+                args.offset,
+                args.expected_revision,
+                args.expected_scope_key,
+            )
+        if args.project_command == "configure-assignment":
+            from rg.clients.record import unique_pairs
+            from rg.store.assignment_policy import configure
+
+            body = json.loads(
+                args.request_file.read_text(encoding="utf-8"), object_pairs_hook=unique_pairs
+            )
+            if not isinstance(body, dict):
+                raise ValueError("自动归属请求必须为JSON对象")
+            return configure(store, body)
         if args.project_command == "fragments":
             from rg.query.project_fragments import query
 
@@ -1123,7 +1154,8 @@ def main() -> None:
             or (args.command == "ask" and args.retrieve_only)
             or (
                 args.command == "project"
-                and args.project_command in {"roots", "worktrees", "fragments", "fragment-plan"}
+                and args.project_command
+                in {"roots", "worktrees", "fragments", "fragment-plan", "assignment-policy"}
             )
             or (
                 args.command == "project"

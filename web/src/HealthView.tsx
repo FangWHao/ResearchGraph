@@ -7,6 +7,7 @@ import { ArtifactHealthPanel } from './ArtifactHealthPanel';
 import { ParserHealthPanel } from './ParserHealthPanel';
 import { HookErrorPanel } from './HookErrorPanel';
 import { WorktreePanel } from './WorktreePanel';
+import { FragmentAutoPolicyPanel } from './FragmentAutoPolicyPanel';
 import { ProjectFragmentsPanel } from './ProjectFragmentsPanel';
 import type { FragmentSource } from './ProjectFragmentsPanel';
 import { healthCount, healthMetrics, percentage } from './health';
@@ -30,13 +31,17 @@ type HealthViewProps = {
 
 export function HealthView(props: HealthViewProps) {
   const [selected, setSelected] = useState<{ project: string; source: FragmentSource } | null>(null);
+  const [policyRefresh, setPolicyRefresh] = useState(0);
+  const epoch = props.epoch + policyRefresh;
   useEffect(() => setSelected(null), [props.project]);
-  return <><WorktreePanel project={props.project} epoch={props.epoch} onError={props.onError} />
-    <HookErrorPanel project={props.project} epoch={props.epoch} onError={props.onError} />
-    <ParserHealthPanel project={props.project} epoch={props.epoch}
-    onEvidence={props.onEvidence} onError={props.onError} /><HealthContent {...props}
+  return <><WorktreePanel project={props.project} epoch={epoch} onError={props.onError} />
+    <FragmentAutoPolicyPanel project={props.project} epoch={props.epoch} actor={props.actor ?? 'human:本机用户'} onError={props.onError}
+      onSaved={() => { setSelected(null); setPolicyRefresh(value => value + 1); }} />
+    <HookErrorPanel project={props.project} epoch={epoch} onError={props.onError} />
+    <ParserHealthPanel project={props.project} epoch={epoch}
+    onEvidence={props.onEvidence} onError={props.onError} /><HealthContent {...props} epoch={epoch}
       onFragments={source => setSelected({ project: props.project, source })} />
-    {selected?.project === props.project && <ProjectFragmentsPanel project={props.project} epoch={props.epoch}
+    {selected?.project === props.project && <ProjectFragmentsPanel project={props.project} epoch={epoch}
       actor={props.actor ?? 'human:本机用户'} projects={props.projects ?? []} source={selected.source}
       onEvidence={props.onEvidence} onError={props.onError} onAssigned={props.onAssigned ?? (() => {})}
       onClose={() => setSelected(null)} />}</>;

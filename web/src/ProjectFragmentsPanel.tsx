@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, query } from './api';
 import { DateText, Icon } from './components';
 import type { Project } from './types';
-import { appendFragmentDependencies, assertFragmentContinuation, canAssignFragments, canMigrateFragments, contextNames, dependencyIssueNames, directorySources, fragmentDependencyGroups, fragmentSelection, hintNames, hintReasons, parseFragmentDependencies, parseFragmentMigrationReceipt, parseFragmentPage, parseFragmentReceipt, selectedFragmentRange } from './projectFragments';
+import { appendFragmentDependencies, assertFragmentContinuation, assignmentNames, assignmentReasons, canAssignFragments, canMigrateFragments, contextNames, dependencyIssueNames, directorySources, fragmentDependencyGroups, fragmentSelection, hintNames, hintReasons, parseFragmentDependencies, parseFragmentMigrationReceipt, parseFragmentPage, parseFragmentReceipt, selectedFragmentRange } from './projectFragments';
 import type { FragmentAssignmentIntent, FragmentDependencies, FragmentMigrationIntent, FragmentMigrationReceipt, FragmentPage } from './projectFragments';
 import './projectFragments.css';
 
@@ -132,7 +132,7 @@ export function ProjectFragmentsPanel({ project, epoch, actor, projects, source,
   return <aside className="detail-drawer fragment-panel" role="dialog" aria-modal="false" aria-label="物理片段与项目归属">
     <header><div><span className="eyebrow">{source.tool} · 物理来源 #{source.file_instance_id}</span><h2>物理片段与项目归属</h2></div><button className="icon-button" aria-label="关闭片段面板" onClick={onClose}><Icon name="close" /></button></header>
     <div className="drawer-content"><p className="path">{source.path}</p>
-      <p className="notice">查看选定物理来源的完整记录。目录只是线索，不自动决定项目；归属不表示已提取、人工确认或当前采用。原文和既有审核记录保留。</p>
+      <p className="notice">查看选定物理来源的完整记录。路径候选只是线索；只有已明确开启的目录规则可用于未来未人工归属记录。归属不表示已提取、人工确认或当前采用。原文和既有审核记录保留。</p>
       <button className="button secondary" onClick={refresh}>重新读取片段第一页</button>
       {migrationReceipt?.context === receiptContext && <p data-fragment-migration-receipt className="notice">迁移回执：已将 {migrationReceipt.receipt.selected_records} 条选定记录、{migrationReceipt.receipt.required_records_included} 条必需记录及预检科研依赖归属至 {projectName(migrationReceipt.receipt.project_id)}；修订 {migrationReceipt.receipt.revision}{migrationReceipt.receipt.replayed && '（原回执重放）'}。原科学记录改写 0，模型调用 0；不表示新科研确认或提取完成。</p>}
       {failure && <p className="error-message" role="alert">{failure} {data && '保留上次成功页，操作已停用。'} 409 后需主动重新读取，再核对并提交。</p>}
@@ -154,7 +154,8 @@ export function ProjectFragmentsPanel({ project, epoch, actor, projects, source,
           <p className="small muted">{directorySources[r.context.source] ?? r.context.source} · {r.context.origin_event_id ? `${r.context.origin_event_id === r.first_event_id ? '本记录声明' : '同来源沿用'} #${r.context.origin_event_id}` : '线索来源未知'} · 最近观测 <DateText value={r.observed_at} /></p>
           <p>{hintNames[r.project_hint.state] ?? `路径候选状态未知（${r.project_hint.state}）`}{r.project_hint.projects.length ? `：${r.project_hint.projects.map(projectName).join('、')}` : ''}{r.project_hint.candidates_partial && '（候选仅预览，仍有遗漏）'}</p>
           <p className="small muted">{hintReasons[r.project_hint.reason] ?? r.project_hint.reason}</p>
-          <p data-fragment-assignment>{r.assignment ? `当前归属：${projectName(r.assignment.project_id)} · ${{ manual: '人工指定片段', inherited_manual: '保留原登记归属', session_manual: '整会话登记', unassigned: '收件箱默认' }[r.assignment.basis] ?? r.assignment.basis} · 逻辑会话 ${r.assignment.logical_session_pk ?? '未提供'} · 分区 ${r.assignment.partition_id ?? '未提供'}` : '归属信息未提供，不能据此推断已分配或未分配。'}</p>
+          <p data-fragment-assignment>{r.assignment ? `当前归属：${projectName(r.assignment.project_id)} · ${assignmentNames[r.assignment.basis] ?? `归属依据尚未识别（${r.assignment.basis}）`} · 逻辑会话 ${r.assignment.logical_session_pk ?? '未提供'} · 分区 ${r.assignment.partition_id ?? '未提供'}` : '归属信息未提供，不能据此推断已分配或未分配。'}</p>
+          {r.assignment?.reason && <p data-fragment-assignment-reason className="small muted">{assignmentReasons[r.assignment.reason] ?? `归属原因尚未识别（${r.assignment.reason}）`}</p>}
         </li>)}</ol>
         <div className="pagination"><button className="button secondary" disabled={busy || writing || !!failure || page.index === 0} onClick={() => navigate(page.index - 1)}>上一页片段</button><span>第 {page.index + 1} 页</span><button className="button secondary" disabled={busy || writing || !!failure || data.next_after_event == null} onClick={() => navigate(page.index + 1)}>下一页片段</button></div>
         <section className="fragment-confirm" aria-label="明确指定归属"><h3>明确指定归属</h3>

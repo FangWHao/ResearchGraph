@@ -50,6 +50,7 @@ jobs:
           tests/golden/test_clear_continuation.py
           tests/golden/test_science_migration.py
           tests/golden/test_alias_clear.py
+          tests/golden/test_automatic_assignment.py
           tests/test_migrations.py
           -q
   backend:

@@ -319,6 +319,16 @@ def _scan_file(
                     from rg.ingest.privacy_gaps import continuation
 
                     logical = continuation(db, file_id, offset, session)
+                from rg.ingest.automatic_assignment import append as append_assignment
+                from rg.ingest.automatic_assignment import route
+
+                routed = (
+                    route(db, session, logical, file_id, offset, tool, record, status, events)
+                    if project_id is None
+                    else None
+                )
+                if routed is not None:
+                    logical = routed.session
                 logical_sessions.add(logical)
                 event_ids: list[int] = []
                 seq = db.execute(
@@ -371,6 +381,8 @@ def _scan_file(
                     if event_id is None:
                         raise RuntimeError("未获得事件 ID")
                     event_ids.append(event_id)
+                    if index == 0 and routed is not None:
+                        append_assignment(db, event_id, routed)
                     effective_excluded = excluded
                     if modern and alias:
                         effective_excluded = db.execute(

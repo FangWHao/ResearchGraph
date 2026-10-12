@@ -146,6 +146,12 @@ def test_migration34_transaction_preserves_rows_views_indexes_and_protection(
 ):
     with monkeypatch.context() as legacy:
         legacy.setattr(migrations, "LATEST_VERSION", 33)
+        from rg.store.clear_selection import TABLES
+
+        legacy.setattr(
+            "rg.store.clear_selection.TABLES",
+            TABLES - {"project_assignment_actions", "automatic_assignments"},
+        )
         legacy.setattr(
             "rg.store.fragment_dependency_contract.SCIENCE_SCHEMA_SHA256",
             "04234f1624949c022fdb4d6e6e9f8d3d159416e081869afef845bf4d9462914d",
@@ -172,7 +178,7 @@ def test_migration34_transaction_preserves_rows_views_indexes_and_protection(
         assert store.db.execute("PRAGMA user_version").fetchone()[0] == 33
         assert store.db.execute("PRAGMA foreign_keys").fetchone()[0] == foreign_keys
         migrations.migrate(store.db)
-        assert store.db.execute("PRAGMA user_version").fetchone()[0] == 34
+        assert store.db.execute("PRAGMA user_version").fetchone()[0] == migrations.LATEST_VERSION
         assert store.db.execute("PRAGMA foreign_keys").fetchone()[0] == foreign_keys
         assert store.db.execute("PRAGMA foreign_key_check").fetchall() == []
         assert store.raw(event) == raw

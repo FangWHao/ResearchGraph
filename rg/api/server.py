@@ -147,6 +147,25 @@ class Handler(BaseHTTPRequestHandler):
             limit, offset = views.page(values)
             expected = int(values["expected_revision"]) if "expected_revision" in values else None
             return listing(store, values.get("project", ""), limit, offset, expected)
+        if path == "/api/project-assignment":
+            from rg.store.assignment_policy import listing
+
+            if set(values) - {
+                "project",
+                "limit",
+                "offset",
+                "expected_revision",
+                "expected_scope_key",
+            }:
+                raise ValueError("自动归属查询字段无效")
+            return listing(
+                store,
+                values.get("project", ""),
+                int(values.get("limit", "100")),
+                int(values.get("offset", "0")),
+                int(values["expected_revision"]) if "expected_revision" in values else None,
+                values.get("expected_scope_key"),
+            )
         if path == "/api/view-state":
             from rg.api.view_state import read
 
@@ -311,6 +330,7 @@ class Handler(BaseHTTPRequestHandler):
                 "/api/privacy",
                 "/api/view-state",
                 "/api/worktrees/follow",
+                "/api/project-assignment/configure",
                 "/api/project-fragments/assign",
                 "/api/project-fragments/migrate",
                 "/api/project-fragments/dependencies",
@@ -370,6 +390,10 @@ class Handler(BaseHTTPRequestHandler):
                     from rg.store.science_migration import migrate
 
                     result = migrate(store, body)
+                elif path == "/api/project-assignment/configure":
+                    from rg.store.assignment_policy import configure
+
+                    result = configure(store, body)
                 elif path == "/api/worktrees/follow":
                     from rg.store.worktrees import configure
 

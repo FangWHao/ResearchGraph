@@ -27,6 +27,7 @@ science_migrations science_ownership source_project_history project_tombstones
 spool_receipts token_cache view_states workspace_snapshots
 worktree_follow_actions worktree_discovery_observations
 worktree_discovery_progress worktree_discovery_cursors
+project_assignment_actions automatic_assignments
 """.split()
 )
 POINTERS = {

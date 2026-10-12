@@ -340,13 +340,25 @@ def _assignment(
         if version >= 31
         else None
     )
+    automatic = (
+        store.db.execute(
+            "SELECT reason FROM automatic_assignments WHERE first_event_id=?", (event,)
+        ).fetchone()
+        if version >= 35
+        else None
+    )
     return (
         dict(row)
         if row
         else {
             "project_id": project,
             "logical_session_pk": session,
-            "basis": "session_manual" if project else "unassigned",
+            "basis": ("path_rule" if project else "rule_unassigned")
+            if automatic
+            else "session_manual"
+            if project
+            else "unassigned",
             "partition_id": None,
+            **({"reason": automatic["reason"]} if automatic else {}),
         }
     )

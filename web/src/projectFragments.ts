@@ -1,5 +1,6 @@
 export interface FragmentAssignment {
   project_id: string | null; logical_session_pk: number | null; basis: string; partition_id: string | null;
+  reason?: string;
 }
 export interface PhysicalFragment {
   first_event_id: number; byte_start: number; byte_end: number; object_sha256: string;
@@ -70,7 +71,7 @@ export function parseFragmentPage(raw: unknown, expected: { session: number; sou
     if (!object(r) || !integer(r.first_event_id, 1) || r.first_event_id > raw.snapshot || ids.has(r.first_event_id) || !integer(r.byte_start) || !integer(r.byte_end, 1) || r.byte_start < end || r.byte_end <= r.byte_start || !hash(r.object_sha256) || !integer(r.first_seq) || !integer(r.last_seq) || r.last_seq < r.first_seq || !integer(r.event_count, 1) || typeof r.has_user_turn !== 'boolean' || typeof r.observation_state !== 'string' || !textOrNull(r.observed_at)) return malformed();
     const c = r.context, h = r.project_hint, a = r.assignment;
     if (!object(c) || typeof c.state !== 'string' || typeof c.source !== 'string' || !textOrNull(c.cwd) || !(c.cwd_sha256 === null || hash(c.cwd_sha256)) || typeof c.reason !== 'string' || !(c.origin_event_id === null || integer(c.origin_event_id, 1)) || !object(h) || typeof h.state !== 'string' || typeof h.basis !== 'string' || !strings(h.projects) || !strings(h.matching_root_ids) || typeof h.reason !== 'string' || typeof h.candidates_partial !== 'boolean') return malformed();
-    if (a !== undefined && a !== null && (!object(a) || !textOrNull(a.project_id) || !(a.logical_session_pk === null || integer(a.logical_session_pk, 1)) || !textOrNull(a.partition_id) || typeof a.basis !== 'string')) return malformed();
+    if (a !== undefined && a !== null && (!object(a) || !textOrNull(a.project_id) || !(a.logical_session_pk === null || integer(a.logical_session_pk, 1)) || !textOrNull(a.partition_id) || typeof a.basis !== 'string' || (a.reason !== undefined && typeof a.reason !== 'string'))) return malformed();
     ids.add(r.first_event_id); end = r.byte_end;
   }
   if (raw.next_after_event !== null && (raw.records.length === 0 || raw.next_after_event !== raw.records.at(-1).first_event_id)) return malformed();
@@ -148,6 +149,8 @@ export function fragmentDependencyGroups(values: Record<string, number>) {
 }
 export const dependencyIssueNames: Record<string, string> = { schema_contract_changed: '数据库依赖结构尚无法核对', missing_reference: '存在缺失的依赖引用', missing_physical_first_record: '依赖记录缺少完整物理首事件', unverifiable_json_reference: '依赖引用内容损坏或超限', invalid_reference_container: '依赖引用结构不符合要求', invalid_reference_type: '依赖引用身份类型不符合要求', sql_step_budget: '本次依赖核对达到计算上限', node_budget: '本次依赖记录超过核对上限', edge_budget: '本次依赖连接超过核对上限', metadata_byte_budget: '本次依赖元数据超过核对上限' };
 export const contextNames: Record<string, string> = { declared: '原生目录声明', absent: '本记录没有目录声明', unobserved: '目录元数据尚未观测', invalid: '目录声明无效', unavailable: '目录元数据不可核对' };
+export const assignmentNames: Record<string, string> = { manual: '人工指定片段', inherited_manual: '保留原登记归属', session_manual: '整会话登记', unassigned: '收件箱默认', path_rule: '已开启的登记目录规则', rule_unassigned: '自动规则未能确定，保留收件箱' };
+export const assignmentReasons: Record<string, string> = { registered_path_rule: '新导入记录符合本项目已开启的登记目录规则', unknown_record: '记录类型未知，不推断项目', invalid_cwd: '原生目录声明无效', no_context_declaration: '没有可用的原生目录上下文', privacy_gap: '清除缺口中断目录上下文继承', ambiguous_path: '目录对应多个项目，保留收件箱', no_registered_path: '目录未匹配可用登记规则', policy_disabled: '匹配项目的自动归属未开启', call_owner: '保留同一工具调用的已明确归属', ambiguous_call_owner: '工具调用归属不唯一，保留收件箱', root_registry_limit: '全库登记规则超过核对上限，不自动匹配' };
 export const hintNames: Record<string, string> = { candidate_path: '路径候选，尚非归属', ambiguous_path: '路径对应多个项目，归属不明', unassigned: '没有可用路径候选' };
 export const directorySources: Record<string, string> = { codex_session: 'Codex 原生会话头', codex_turn: 'Codex 原生轮次上下文', claude_record: 'Claude 原生记录字段', none: '没有可用声明来源' };
 export const hintReasons: Record<string, string> = { root_registry_limit: '根目录登记超出本次核对上限，不能判断路径候选', no_registered_path: '未匹配已登记根目录', registered_path_hint: '仅依据已登记路径产生候选', unobserved: '目录观测尚未记录，线索未知', invalid: '目录声明无效，不继续推断', unavailable: '目录元数据不可核对', absent: '没有可用的目录声明' };
