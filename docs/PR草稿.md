@@ -27,6 +27,8 @@ cd web && pnpm test:browser              217 passed(5.9m)，退出0
 
 ## 保留的边界
 
+本机WSL与Windows的原生会话已分别完成私有捕获和实际独立恢复，843／31文件完整SHA256核对一致；恢复禁止访问原生源，访问尝试0。WSL保留期3650天已核对。此次只更新本机运维验收文档，运行代码与c21cd54相同；活跃源复制后追加的4128字节明确不属于此次捕获，不能称为实时同步。真实文件、逐文件清单和恢复目录不提交。
+
 本地合成工程验收不代替真实科研质量。Atlas 现有48条候选参考尚无正式人工验收回执；实际参考与问题核对、完整客户端采集、真实 I/O、钩子性能、质量与成本、规模和两周使用仍待验收。跨设备、HPC 和运行包装依 §3 留在 M5 以后。完整 M0–M4 未宣布完成；真实资料、凭据、数据库、缓存与截图不提交，草稿保持未合并。
 
 证据见[未来记录自动归属验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/未来记录自动归属验收_20261012.md)、[科研依赖迁移验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/科研依赖明确迁移验收_20261012.md)、[失效原生别名清除验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/失效原生别名清除验收_20261012.md)和[需求落实及剩余项](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。
