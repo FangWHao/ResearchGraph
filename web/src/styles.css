@@ -73,7 +73,7 @@ h2 { font-size: 16px; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.danger { color: var(--danger); }
 .btn.small { padding: 3px 10px; font-size: 13px; }
-.link { background: none; border: none; padding: 0; color: var(--accent); }
+.link { background: none; border: none; padding: 0; color: var(--accent); justify-self: start; text-align: left; }
 
 .input, .select, .textarea {
   width: 100%;

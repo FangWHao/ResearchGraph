@@ -17,3 +17,13 @@
   - 浏览器截图（浅色、深色、390px 窄屏、事件详情、新建项目）：页面无报错；修正了时间线撑宽页面导致详情面板被挤出屏幕、事件框高度不够两个问题。
 - 未做：Windows CI 只写进工作流，没有在本机原生 Windows 上跑；没有用真实会话整理（需要用户确认发送）；8788 端口上的 systemd 服务仍是旧版。
 - 下一步：用户试用真实项目，根据效果调整提示词和瘦身力度；确认后合并到 main 并更新本机服务。
+
+## 2026-10-14 · 提交并替换本机服务
+
+- 任务：用户同意提交，并把 8788 上的服务换成新版，换完后自己试用。
+- 提交：`458e1e8 按手绘草图重写为研究时间线`（分支 rewrite-timeline，未推送）。本机没有 git 身份，按用户以往在 GitHub 上的身份单次署名，没有改全局配置。
+- 更正：上一轮说“旧数据库里没有项目”是照着旧进度记录说的，实际 `~/.researchgraph/rg.db`（约 209 MB）里有 1 个项目、297 个会话、126,149 条原始事件（只读查询计数）。新版只用 `timeline.db`，`rg.db` 原样保留；新界面看不到旧项目，需要重新建。
+- 部署：`systemctl --user stop researchgraph.service` → `uv pip install --python ~/.local/share/researchgraph/venv/bin/python --reinstall-package researchgraph .cache/rewrite-20261014/researchgraph-0.2.0-py3-none-any.whl`（0.1.0 → 0.2.0，旧模块全部移除）→ `systemctl --user start`。systemd 配置没改，命令行参数与新版兼容。最终 wheel 的 SHA256 是 015af7d33d0223dd3e3cc5280753356101af05098444c065c8af1f87521ed86b。
+- 验收：ActiveState=active / SubState=running / ExecMainStatus=0；`ss` 显示只监听 127.0.0.1:8788；`/` 200 text/html，`/api/state` 200（sources 空，发现 claude 38、codex 326、codex 31 个文件，has_key false，项目 0）；Host 为 evil.example 时返回 403。浏览器打开首次引导页没有报错，修正了“高级设置”链接居中的样式。
+- 回滚：`uv pip install --python ~/.local/share/researchgraph/venv/bin/python --reinstall-package researchgraph .cache/main-merge-20261013/wheel/researchgraph-0.1.0-py3-none-any.whl` 后重启服务，旧版仍读 `rg.db`。
+- 下一步：用户在引导页填写 API Key，选一个真实项目试整理，反馈效果。
