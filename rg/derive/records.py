@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
-import posixpath
-import re
 from typing import Any
 
+from rg.ingest.project_context import saved_cwd
 from rg.store.database import Store
+from rg.store.lexical_paths import absolute, native_absolute, resolve, within
 from rg.store.ownership import read_table
 
 Event = dict[str, Any]
@@ -38,7 +38,10 @@ def block(value: Event) -> dict[str, Any]:
 def arguments(value: Event) -> dict[str, Any]:
     item = block(value)
     if value["tool"] == "codex" and item.get("type") == "exec_command_begin":
-        return {"command": item.get("command"), "workdir": item.get("cwd")}
+        return {
+            "command": item.get("command"),
+            **({"workdir": item["cwd"]} if "cwd" in item else {}),
+        }
     raw = item.get("input", {}) if value["tool"] == "claude" else item.get("arguments", {})
     if isinstance(raw, str):
         try:
@@ -49,54 +52,39 @@ def arguments(value: Event) -> dict[str, Any]:
 
 
 def cwd(store: Store, value: Event) -> str | None:
-    explicit = arguments(value).get("workdir") or arguments(value).get("cwd")
-    if explicit is not None:
-        return explicit if isinstance(explicit, str) and explicit.startswith("/") else None
-    if value["tool"] == "claude":
-        path = value["record"].get("cwd") or value["session_cwd"]
-        return path if isinstance(path, str) else None
-    for row in store.db.execute(
-        "SELECT event_id FROM effective_raw_events WHERE session_pk=? AND seq<=? AND kind='meta' "
-        "ORDER BY seq DESC",
-        (value["session_pk"], value["seq"]),
-    ):
-        metadata = event(store, row[0])["record"]
-        if metadata.get("type") in {"session_meta", "turn_context"}:
-            path = metadata.get("payload", {}).get("cwd")
-            if isinstance(path, str):
-                return path
-    return None
+    args = arguments(value)
+    for field in ("workdir", "cwd"):
+        if field in args:
+            return native_absolute(args[field])
+    if value["tool"] == "claude" and "cwd" in value["record"]:
+        return native_absolute(value["record"]["cwd"])
+    return saved_cwd(store, value["event_id"])
 
 
 def bound_path(
     store: Store, project: str, path: Any, working_dir: str | None
 ) -> tuple[str | None, str | None]:
-    if (
-        not isinstance(path, str)
-        or not path
-        or "\x00" in path
-        or "\\" in path
-        or re.match(r"\w+:", path)
-    ):
+    resolved = resolve(path, working_dir)
+    key = absolute(resolved)
+    if resolved is None or key is None:
         return None, None
-    if not path.startswith("/") and (not working_dir or not working_dir.startswith("/")):
-        return None, None
-    absolute = posixpath.normpath(
-        path if path.startswith("/") else posixpath.join(working_dir or "", path)
-    )
     roots = [
         row
         for row in store.db.execute(
-            f"SELECT root_id,path FROM {read_table(store.db, 'source_roots')} WHERE "
-            "project_id=? AND host_id='local'",
-            (project,),
+            f"SELECT root_id,project_id,path FROM {read_table(store.db, 'source_roots')} "
+            "WHERE host_id='local'",
         )
-        if absolute == row["path"] or absolute.startswith(row["path"].rstrip("/") + "/")
+        if (root := absolute(row["path"])) is not None and within(key, root)
     ]
     if not roots:
         return None, None
     selected = max(roots, key=lambda row: len(row["path"]))
-    return selected["root_id"], absolute
+    if selected["project_id"] != project or any(
+        row["project_id"] != project and absolute(row["path"]) == absolute(selected["path"])
+        for row in roots
+    ):
+        return None, None
+    return selected["root_id"], resolved
 
 
 def calls(store: Store, value: Event) -> list[Event]:

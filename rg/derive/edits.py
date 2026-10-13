@@ -10,6 +10,7 @@ from zstandard import ZstdError
 from rg.derive.multiedit import MAX_CONTENT_BYTES, expected_multiedit, project_edit
 from rg.derive.records import Event, arguments, block, bound_path, cwd, native_patch
 from rg.store.database import Store, dumps, now
+from rg.store.lexical_paths import resolve
 from rg.store.objects import digest
 from rg.store.ownership import read_table
 
@@ -220,11 +221,18 @@ def claude_edit(store: Store, call: Event, value: Event) -> None:
     before = original if isinstance(original, str) else None
     after = None
     gap = None
+    working_dir = cwd(store, call)
+    requested_path = resolve(args.get("file_path"), working_dir)
+    reported_path = resolve(item.get("filePath"), working_dir)
     patch = dumps(item.get("structuredPatch"))
     if block(value).get("is_error") is True:
         gap = "tool_error_after_unknown"
     elif before is None:
         gap = "reported_preimage_missing"
+    elif (
+        requested_path is not None and reported_path is not None and requested_path != reported_path
+    ):
+        gap = "reported_path_disagrees_with_request"
     else:
         try:
             after = structured_patch(before, item.get("structuredPatch"))
@@ -288,14 +296,20 @@ def codex_edit(store: Store, call: Event, value: Event) -> None:
             output = decoded
     if isinstance(output, dict):
         output = output.get("body", output.get("output"))
-    success = isinstance(output, str) and output.startswith(
-        "Success. Updated the following files:\n"
+    from rg.derive.native_patch import indexed, summary_matches
+
+    working_dir = cwd(store, call)
+    expected = indexed(
+        {
+            part.path: {
+                "type": part.operation,
+                **({"move_path": part.destination} if part.destination else {}),
+            }
+            for part in files
+        },
+        working_dir,
     )
-    symbols = {"add": "A", "update": "M", "delete": "D"}
-    expected = {f"{symbols[part.operation]} {part.destination or part.path}" for part in files}
-    if success:
-        assert isinstance(output, str)
-        success = set(output.splitlines()[1:]) == expected
+    success = summary_matches(output, expected, working_dir)
     for part in files:
         gap = "preimage_unknown" if success else "patch_success_not_proven"
         save(

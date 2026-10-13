@@ -3,41 +3,23 @@
 from __future__ import annotations
 
 import json
-import ntpath
 import posixpath
 import re
-from typing import Any
 
 from rg.extract.paths import file_paths
+from rg.ingest.project_context import saved_cwd
 from rg.store.database import Store
+from rg.store.lexical_paths import absolute, within
 
 PathKey = tuple[str, str, str]
 
 
 def policy() -> dict[str, str]:
-    return {"path_identity": "registered-common-dir-v1", "path_context": "native-record-v1"}
-
-
-def absolute(value: Any) -> str | None:
-    if (
-        not isinstance(value, str)
-        or not value
-        or len(value) > 16384
-        or any(ord(char) < 32 for char in value)
-    ):
-        return None
-    if re.match(r"^[A-Za-z]:[/\\]", value) or value.startswith(("\\\\", "//")):
-        if value.startswith(("\\\\?\\", "\\\\.\\")):
-            return None
-        normalized = ntpath.normpath(value).replace("\\", "/")
-        return normalized[0].upper() + normalized[1:] if normalized[1:2] == ":" else normalized
-    if value.startswith("/") and not value.startswith("//"):
-        return posixpath.normpath(value)
-    return None
-
-
-def within(path: str, root: str) -> bool:
-    return path == root or path.startswith(root.rstrip("/") + "/")
+    return {
+        "path_identity": "registered-common-dir-v1",
+        "path_context": "native-record-v1",
+        "path_syntax": "native-lexical-v1",
+    }
 
 
 class PathContext:
@@ -56,19 +38,7 @@ class PathContext:
     def cwd(self, event: int) -> str | None:
         if event in self._cwds:
             return self._cwds[event]
-        # 只在同一逻辑片段和物理来源内继承；缺失、非法或不可用声明阻断继承。
-        row = self.store.db.execute(
-            "SELECT o.state,o.cwd FROM effective_raw_events current "
-            "JOIN effective_raw_events r ON r.file_instance_id=current.file_instance_id "
-            "AND r.session_pk=current.session_pk AND r.byte_start<=current.byte_start "
-            "AND r.record_index=0 LEFT JOIN project_context_observations o "
-            "ON o.observation_id=(SELECT max(c.observation_id) "
-            "FROM project_context_observations c WHERE c.event_id=r.event_id) "
-            "WHERE current.event_id=? AND (o.observation_id IS NULL OR o.state!='absent') "
-            "ORDER BY r.byte_start DESC LIMIT 1",
-            (event,),
-        ).fetchone()
-        result = absolute(row["cwd"]) if row and row["state"] == "declared" else None
+        result = absolute(saved_cwd(self.store, event))
         self._cwds[event] = result
         return result
 

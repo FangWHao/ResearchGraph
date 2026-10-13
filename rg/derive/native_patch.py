@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 from rg.derive.records import Event, block, cwd, native_patch, patch_begins
 from rg.ingest.common import RG_BLOCK
 from rg.store.database import Store, dumps
+from rg.store.lexical_paths import resolve
 
 if TYPE_CHECKING:
     from rg.derive.edits import PatchFile
@@ -36,9 +37,8 @@ def changes(raw: Any) -> dict[str, dict[str, Any]]:
 
 
 def normalized(path: str, working_dir: str | None) -> str:
-    return posixpath.normpath(
-        path if path.startswith("/") or not working_dir else posixpath.join(working_dir, path)
-    )
+    resolved = resolve(path, working_dir)
+    return resolved if resolved is not None else "unresolved:" + posixpath.normpath(path)
 
 
 def indexed(items: dict[str, dict[str, Any]], working_dir: str | None) -> dict[str, dict[str, Any]]:

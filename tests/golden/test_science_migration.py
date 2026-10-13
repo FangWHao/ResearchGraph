@@ -140,11 +140,15 @@ def test_plain_assign_does_not_bypass_science(store, tmp_path):
     assert store.db.execute("SELECT count(*) FROM science_migrations").fetchone()[0] == 0
 
 
-def test_native_manual_receipt_is_moved_without_new_confirmation(store, tmp_path):
+def test_native_manual_receipt_is_moved_without_new_confirmation(store, tmp_path, monkeypatch):
     from uuid import uuid4
 
     from rg.record.question import question
 
+    # 本例验证迁移，不依赖机器墙钟单调；三阶段使用明确递增的合成时间。
+    monkeypatch.setattr("rg.record.question.now", lambda: "2099-01-01T00:00:00+00:00")
+    monkeypatch.setattr("rg.store.science_migration.now", lambda: "2099-01-01T00:00:01+00:00")
+    monkeypatch.setattr("rg.query.reader.now", lambda: "2099-01-01T00:00:02+00:00")
     a, b, *_ = scene(store, tmp_path)
     saved = question(
         store,

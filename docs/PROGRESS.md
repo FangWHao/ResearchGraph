@@ -1203,3 +1203,13 @@
 - 初轮新专项2 failed／11 passed in4.44s，合成用例违反追加保护；改为创建时给定内容和追加缺失观测模拟，触发器保留。中间五组63 passed in17.94s、入口单独1 passed in0.93s；最终 `uv run pytest tests/golden/test_path_context.py tests/golden/test_working_selection.py tests/golden/test_links_overview.py tests/golden/test_scoped_working_context.py tests/test_worker.py tests/test_api.py::test_review_open_passes_review_entry_to_server -q` 实际64 passed in18.21s，退出0。全量ruff实际All checks passed，pyright0／0／0，均退出0；没有本地全量后端／浏览器重复回归。
 - 桌面wheel构建与原生Windows隔离环境安装实际退出0；仓库外Python3.12.3／CP936／utf8_mode0新路径及入口16 passed in8.32s、退出0，没有跳过。172后端资源／10静态资源与当前文件逐字相同，包3320246字节、SHA1c6e9d1a10a2e091687d4e14836a1ff8241d48843fc7d258f511f86e1e915963；生成包和临时测试不进Git，远程模型0。
 - 下一步：提交并维护已有未合并草稿，核对新HEAD完整CI；继续实际客户端／科研使用验收。历史根身份双时间账本、跨设备别名、符号链接目标及真实I/O尚有边界；正式参考、质量／成本、p95、规模和两周使用保留，完整M0–M4未完成。
+
+## 2026-10-13 · L1原生Windows路径与逐记录目录
+
+- 开始前读末40行、§2／8.3及路径与候选决定，按用户自主开发、中文文档和减少重复测试要求推进。此前1435b5396af24d91782b6d32702ff24f19a0c49a的PR38386504606／push38386498219实际均completed／success；不能代替本轮新HEAD结果。
+- 文件：新增rg/store/lexical_paths.py、tests/golden/test_l1_paths.py和中文原生路径验收；修改derive的records／native_patch／edits、ingest/project_context、extract/path_context、人工回执迁移合成测试及Windows CI。更新README、需求状态、设计决定和草稿；前端未改。
+- 功能：L1支持盘符／UNC／相对与POSIX路径，按明确工具字段和对应记录目录定位，未知／非法阻断且不借会话末尾cwd；最长完整根匹配，跨项目冲突拒绝，物理工作树与版本分开。Claude请求／报告不同文件只保留冲突及前像；Codex旧／原生回执允许相对／绝对等价，重复或不同文件不算成功。执行字段与正文分开，candidate及工具UTF-8依据保留；共享语法进入提取配置与缓存身份，不探测研究目录或执行会话命令。
+- 最终命令 `.tools/bin/uv run pytest tests/golden/test_l1_paths.py tests/golden/test_l1.py tests/golden/test_native_patch.py tests/golden/test_multiedit.py tests/golden/test_path_context.py tests/golden/test_science_migration.py -q` 实际190 passed in40.47s、退出0。此前六组1 failed／188 passed in41.95s证实机器墙钟倒退约26秒，只有人工回执迁移合成用例设递增时钟；生产墙钟、双截止、原迁移及零新确认断言保留。修正后189 passed in40.00s，再补本机当前文件与报告不同的案例；最终通过不抹掉此前失败。
+- 全量 `.tools/bin/uv run ruff check rg tests scripts` 实际All checks passed；`.tools/bin/uv run pyright` 实际0 errors／0 warnings／0 informations，均退出0。本地未重复完整后端、前端构建或浏览器，完整回归交现有CI。
+- `RG_PACKAGE_WEB=1 .tools/bin/uv build --wheel --out-dir .cache/l1-native-paths-20261013/wheel` 和原生Windowsuv安装实际退出0。最终 `.cache/native-windows/env-312/Scripts/python.exe -I D:/researchgraph/.cache/l1-native-paths-20261013/native_check.py` 在仓库外临时目录实际47 passed in10.02s、退出0，Python3.12.3／CP936／utf8_mode0，无跳过。已安装策略源码与当前逐字一致；第一次资源核对脚本写错成员前缀退出1，按实际rg/_web布局修正后退出0。173后端／10静态资源与当前逐字相同，3321025字节，SHA3a0a22de5ef37aedbff1a7c5de8204b901232ba3114d52e0997d8efa9154f850；测试、夹具及缓存不入包，生成物不进Git，远程模型0。
+- 下一步：提交并维护已有未合并草稿，核对新HEAD完整CI；追加旧L1路径审计证明及查询投影，不回写旧历史。实际客户端全事件／研究I/O、正式参考、质量／成本、p95、规模及两周使用继续保留，完整M0–M4未完成。

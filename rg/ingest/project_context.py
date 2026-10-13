@@ -11,12 +11,31 @@ import zstandard
 
 from rg.ingest.catalog import CLAUDE_RECORDS, CODEX_RECORDS
 from rg.store.database import Store, now
+from rg.store.lexical_paths import native_absolute
 from rg.store.objects import digest
 
 BACKFILL_BATCH = 32
 RECORD_BYTES = 262144
 BATCH_BYTES = 1048576
 MAX_PATH_BYTES = 16384
+
+
+def saved_cwd(store: Store, event: int) -> str | None:
+    """只在同一逻辑片段及物理来源内继承原生目录，未知观测阻断。"""
+    if store.db.execute("PRAGMA user_version").fetchone()[0] < 30:
+        return None
+    row = store.db.execute(
+        "SELECT o.state,o.cwd FROM effective_raw_events current "
+        "JOIN effective_raw_events r ON r.file_instance_id=current.file_instance_id "
+        "AND r.session_pk=current.session_pk AND r.byte_start<=current.byte_start "
+        "AND r.record_index=0 LEFT JOIN project_context_observations o "
+        "ON o.observation_id=(SELECT max(c.observation_id) "
+        "FROM project_context_observations c WHERE c.event_id=r.event_id) "
+        "WHERE current.event_id=? AND (o.observation_id IS NULL OR o.state!='absent') "
+        "ORDER BY r.byte_start DESC LIMIT 1",
+        (event,),
+    ).fetchone()
+    return native_absolute(row["cwd"]) if row and row["state"] == "declared" else None
 
 
 def path_value(value: Any) -> PurePath | None:
