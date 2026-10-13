@@ -1,0 +1,24 @@
+.hook-errors { min-width: 0; margin: 18px 0; }
+.hook-errors > header, .hook-error-reports li > header, .hook-error-page {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.hook-errors h3 { margin-bottom: 5px; }
+.hook-error-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.hook-errors dt { font-size: 12px; color: var(--muted); line-height: 1.6; }
+.hook-errors dd { margin: 3px 0 0; font-size: 14px; overflow-wrap: anywhere; }
+.hook-error-metrics dd { font-size: 24px; }
+.hook-error-observation { border-left: 2px solid var(--line); padding: 3px 0 3px 12px; }
+.hook-error-observation h4 { margin: 8px 0; font-size: 14px; }
+.hook-error-observation dl, .hook-error-reports dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.hook-error-page { color: var(--muted); font-size: 12px; margin: 18px 0 12px; }
+.hook-error-reports { padding: 0; list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.hook-error-reports li { min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 14px; overflow-wrap: anywhere; }
+.hook-error-reports header { font-size: 13px; }
+.hook-errors code { display: block; overflow-wrap: anywhere; white-space: normal; }
+.hook-error-reports details { font-size: 12px; color: var(--muted); }
+.hook-error-reports summary { cursor: pointer; }
+.hook-errors .pagination { flex-wrap: wrap; gap: 10px; }
+@media (max-width: 760px) {
+  .hook-error-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hook-error-reports { grid-template-columns: minmax(0, 1fr); }
+}

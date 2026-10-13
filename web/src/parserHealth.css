@@ -1,0 +1,30 @@
+.parser-health { min-width: 0; margin: 18px 0; }
+.parser-health > header, .parser-health-types li > header, .parser-health-page {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.parser-health h3 { margin-bottom: 5px; }
+.parser-health-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.parser-health-metrics > div, .parser-health-types li dl > div { min-width: 0; }
+.parser-health dt { font-size: 12px; color: var(--muted); line-height: 1.6; }
+.parser-health dd { margin: 3px 0 0; overflow-wrap: anywhere; font-size: 14px; }
+.parser-health-metrics dd { font-size: 24px; }
+.parser-health-types { padding: 0; list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.parser-health-types li { min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 14px; overflow-wrap: anywhere; }
+.parser-health-types li > header { font-size: 14px; }
+.parser-health-types li dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.parser-type-name { margin: 10px 0; font-size: 13px; }
+.parser-type-name span, .parser-type-name code { display: block; }
+.parser-type-name span { color: var(--muted); font-size: 11px; margin-bottom: 5px; }
+.parser-type-recognized, .parser-type-unknown { font-size: 12px; border-radius: 5px; padding: 4px 7px; }
+.parser-type-recognized { background: #edf0ea; color: #66705e; }
+.parser-type-unknown { background: #f8f0da; color: #8c7634; }
+.parser-health-evidence { display: flex; gap: 15px; flex-wrap: wrap; }
+.parser-health-alerts { border-left: 2px solid #cbb770; padding-left: 10px; overflow-wrap: anywhere; }
+.parser-health-alerts p { font-size: 13px; margin-bottom: 8px; }
+.parser-health-alerts strong, .parser-health-alerts code { display: block; font-weight: 400; }
+.parser-health-alerts code, .parser-health-page { font-size: 12px; color: var(--muted); }
+.parser-health .pagination { flex-wrap: wrap; gap: 10px; }
+@media (max-width: 760px) {
+  .parser-health-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .parser-health-types { grid-template-columns: minmax(0, 1fr); }
+}

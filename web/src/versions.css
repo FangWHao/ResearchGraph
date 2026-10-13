@@ -1,0 +1,37 @@
+.versions-view { display: grid; gap: 18px; }
+.versions-view .panel { min-width: 0; }
+.versions-intro > p, .version-explanation { color: var(--muted); font-size: 13px; line-height: 1.8; }
+.version-filter { margin-top: 20px; display: grid; gap: 10px; }
+.version-filter label { font-size: 13px; font-weight: 600; }
+.version-filter label span { display: block; margin-top: 7px; font-size: 12px; font-weight: 400; color: var(--muted); }
+.version-filter input { width: 100%; min-width: 0; }
+.version-filter-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.version-active-filter { overflow-wrap: anywhere; }
+.version-active-filter span { color: var(--ink); }
+.version-page-count { font-size: 13px; color: var(--muted); }
+.file-version-list { display: grid; gap: 18px; list-style: none; padding: 0; margin: 20px 0; }
+.file-version-card { min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 20px; }
+.version-card-heading { display: flex; gap: 10px; justify-content: space-between; flex-wrap: wrap; font-size: 14px; }
+.version-card-heading > span { font-size: 12px; color: var(--muted); }
+.file-version-card.unknown { border-style: dashed; }
+.version-path { font-size: 14px; line-height: 1.7; font-weight: 500; white-space: pre-wrap; overflow-wrap: anywhere; }
+.version-metadata { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px 22px; margin: 18px 0; font-size: 12px; }
+.version-metadata > div { min-width: 0; }
+.version-metadata dt { color: var(--muted); font-size: 11px; }
+.version-metadata dd { margin: 6px 0 0; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.version-digest { font-family: "SFMono-Regular", Consolas, monospace; }
+.version-observations { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 15px; font-size: 13px; }
+.version-observations > ol { list-style: none; padding: 0; margin: 16px 0 0; }
+.version-observations > ol > li { border: 1px solid var(--line); border-radius: 7px; padding: 15px; margin-top: 12px; min-width: 0; }
+.version-diagnostics { margin-top: 14px; font-size: 12px; color: var(--muted); }
+.version-diagnostics summary, .version-observations summary { cursor: pointer; line-height: 1.8; }
+.version-diagnostics summary:focus-visible, .version-observations summary:focus-visible { outline: 2px solid #53665a; outline-offset: 3px; }
+.versions-view .pagination { flex-wrap: wrap; }
+.versions-retry { text-align: center; }
+@media (max-width: 760px) {
+  .file-version-card { padding: 13px; }
+  .version-metadata { grid-template-columns: 1fr; gap: 12px; }
+  .version-card-heading { font-size: 13px; }
+  .version-observations > ol > li { padding: 12px; }
+  .versions-view .panel h3 > .eyebrow { display: block; margin-top: 6px; }
+}
