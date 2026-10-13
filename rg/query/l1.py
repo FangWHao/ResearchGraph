@@ -181,6 +181,7 @@ class FileRunGraph:
                 continue
             record["project_id"] = self.reader.project
             record = projected(self.reader.store, record, known_at=self.reader.known_until)
+            record["root_registration"] = self.reader.root_identity(record["root_id"])
             if self.reader.scope_filter and not (
                 record["before_version"] in requested or record["after_version"] in requested
             ):

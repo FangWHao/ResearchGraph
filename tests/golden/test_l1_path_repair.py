@@ -302,7 +302,7 @@ def test_v35_upgrade_preserves_records_and_appends_only_when_background_runs(tmp
             project, _, edit, _ = legacy(old, tmp_path, monkeypatch)
             saved = originals(old)
     with closing(Store(root)) as current:
-        assert current.db.execute("PRAGMA user_version").fetchone()[0] == 36
+        assert current.db.execute("PRAGMA user_version").fetchone()[0] == migrations.LATEST_VERSION
         assert originals(current) == saved
         assert not current.db.execute("SELECT 1 FROM l1_path_checks").fetchone()
         assert not current.db.execute("SELECT 1 FROM l1_repair_versions").fetchone()

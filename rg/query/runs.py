@@ -42,6 +42,7 @@ def native(reader: Reader, identity: str) -> dict[str, Any] | None:
         return None
     run = projected(reader.store, dict(row), known_at=reader.known_until)
     run["project_id"] = reader.project
+    run["root_registration"] = reader.root_identity(run["root_id"])
     request = reader.store.db.execute(
         "SELECT r.* FROM effective_raw_events r JOIN sessions s USING(session_pk) WHERE event_id=?",
         (run["request_event_id"],),

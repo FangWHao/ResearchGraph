@@ -181,6 +181,8 @@ def parser() -> argparse.ArgumentParser:
     roots.add_argument("--limit", type=int, default=100)
     roots.add_argument("--offset", type=int, default=0)
     roots.add_argument("--expected-revision", type=int)
+    roots.add_argument("--occurred-until", help="根身份发生截止，需带时区")
+    roots.add_argument("--known-until", help="根身份已知截止，需带时区")
     worktrees = project_sub.add_parser("worktrees", help="只读查看工作树跟踪策略和发现诊断")
     worktrees.add_argument("--project", required=True)
     worktrees.add_argument("--limit", type=int, default=100)
@@ -716,7 +718,15 @@ def run(args: argparse.Namespace, store: Store) -> object:
         if args.project_command == "roots":
             from rg.store.roots import listing
 
-            return listing(store, args.project, args.limit, args.offset, args.expected_revision)
+            return listing(
+                store,
+                args.project,
+                args.limit,
+                args.offset,
+                args.expected_revision,
+                occurred_until=args.occurred_until,
+                known_until=args.known_until,
+            )
         if args.project_command == "worktrees":
             from rg.store.worktrees import listing
 

@@ -23,7 +23,7 @@ pipeline_queue_events project_context_observations project_privacy projects raw_
 remote_previews review_actions run_io
 run_manifests run_observations runs segment_coverage session_parent_observations session_results
 sessions slim_events
-source_files source_roots source_record_skips source_continuations
+source_files source_roots source_root_observations source_record_skips source_continuations
 science_migrations science_ownership source_project_history project_tombstones
 spool_receipts token_cache view_states workspace_snapshots
 worktree_follow_actions worktree_discovery_observations
@@ -245,6 +245,12 @@ class Selection:
                 f"({self.selected(child)}))",
                 (parent,),
             )
+        # 借用的科学事实仍需完整根身份历史；随保留根一起保留，不留半份证明。
+        self.db.execute(
+            "DELETE FROM temp.clear_rows WHERE t='source_root_observations' AND n IN ("
+            "SELECT o.rowid FROM source_root_observations o JOIN source_roots r USING(root_id) "
+            "WHERE NOT (" + self.selected("source_roots", "r") + "))"
+        )
         # 保留根或会话可能刚移除；再检查项目的物理来源外键。
         for child, column, parent, key in self.foreign:
             if parent == "projects":

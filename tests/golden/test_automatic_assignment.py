@@ -529,7 +529,7 @@ def test_migration35_rollback_then_preserve_original_records(tmp_path, monkeypat
         assert store.db.execute("PRAGMA user_version").fetchone()[0] == 34
         assert store.db.execute("PRAGMA foreign_keys").fetchone()[0] == foreign_keys
         migrations.migrate(store.db)
-        assert store.db.execute("PRAGMA user_version").fetchone()[0] == 35
+        assert store.db.execute("PRAGMA user_version").fetchone()[0] == migrations.LATEST_VERSION
         assert [tuple(r) for r in store.db.execute("SELECT * FROM raw_events")] == raw
         assert json.loads(store.raw(1))["message"]["content"] == "保留旧原文"
         assert store.db.execute("PRAGMA foreign_key_check").fetchall() == []

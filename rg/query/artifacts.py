@@ -22,7 +22,7 @@ def snapshot(reader: Reader, identity: int | None, root: str | None) -> dict[str
         or not reader.visible(row["taken_at"], row["recorded_at"], ("W", identity))
     ):
         return None
-    return dict(row)
+    return dict(row) | {"root_registration": reader.root_identity(root)}
 
 
 def observations(reader: Reader, version: dict[str, Any]) -> list[dict[str, Any]]:
@@ -80,6 +80,13 @@ def version_record(
     reader: Reader, version: dict[str, Any]
 ) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
     version = version | {"project_id": reader.project}
+    version["root_registration"] = reader.root_identity(version["root_id"])
+    registration_warnings: list[str] = []
+    proof = version["root_registration"]
+    if version["root_id"] and proof["state"] == "unknown":
+        registration_warnings.append("根目录当时的登记身份未知；不能借用后来登记的Git信息")
+    elif proof.get("basis") == "legacy_baseline":
+        registration_warnings.append("旧根目录登记时间未知；身份只证明升级时已保存的声明")
     identity = version["version_id"]
     if version["source"] not in {"shadow_snapshot", "current_file"}:
         event = reader.store.db.execute(
@@ -122,13 +129,17 @@ def version_record(
                         else "matches",
                     }
                 )
-        card = version | metadata | {"citation_id": f"V:{identity}"}
+        card: dict[str, Any] = version | metadata | {"citation_id": f"V:{identity}"}
         if reviews:
             card["edit_path_reviews"] = reviews
             card["provenance_warnings"] = (
                 ["后来路径复核改变了编辑的版本关联；此处保留原候选历史"]
                 if any(r["state"] == "revised" for r in reviews)
                 else []
+            )
+        if registration_warnings:
+            card["provenance_warnings"] = (
+                card.get("provenance_warnings", []) + registration_warnings
             )
         return card, []
     observed = observations(reader, version)
@@ -148,6 +159,7 @@ def version_record(
         "observations_total": len(observed),
         "provenance_warnings": sorted(
             {warning for r in observed for warning in r["provenance_warnings"]}
+            | set(registration_warnings)
         ),
         "observation_time_basis": (
             "saved_snapshot" if version["source"] == "shadow_snapshot" else "complete_read_window"

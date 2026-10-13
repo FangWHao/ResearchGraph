@@ -9,8 +9,9 @@ from rg.store.gap_schema import MIGRATION as GAP_MIGRATION
 from rg.store.l1_path_schema import MIGRATION as L1_PATH_MIGRATION
 from rg.store.ownership_schema import MIGRATION as OWNERSHIP_MIGRATION
 from rg.store.ownership_schema import views as ownership_views
+from rg.store.root_history_schema import MIGRATION as ROOT_HISTORY_MIGRATION
 
-LATEST_VERSION = 36
+LATEST_VERSION = 37
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -573,6 +574,7 @@ MIGRATIONS[33] = OWNERSHIP_MIGRATION
 MIGRATIONS[34] = ALIAS_MIGRATION
 MIGRATIONS[35] = ASSIGNMENT_MIGRATION
 MIGRATIONS[36] = L1_PATH_MIGRATION
+MIGRATIONS[37] = ROOT_HISTORY_MIGRATION
 
 
 def migrate(db: sqlite3.Connection) -> None:

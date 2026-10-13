@@ -365,7 +365,7 @@ L1运行与编辑派生支持Windows盘符、UNC和相对路径，同时保留PO
 
 ## 影子快照与项目钩子接入
 
-已有项目追加根目录时，使用 `project root-add --project PROJECT_ID --path /workspace/another-worktree`；可明确指定 `--kind worktree|data|alias|repo`。`project roots --project PROJECT_ID` 只读列出登记路径、类型和登记时的 Git 身份，支持分页与修订核对。新登记保留 Git 共同目录及远端 URL 摘要，不保存原始 URL；相同摘要不合并项目，追加根目录不改变已有会话归属。显式 data 不探测 Git 或加入钩子快照清单，旧登记的未记录元数据不自动补造。详见[根目录登记验收](docs/acceptance/项目根目录与Git身份登记验收_20261010.md)。
+已有项目追加根目录时，使用 `project root-add --project PROJECT_ID --path /workspace/another-worktree`；可明确指定 `--kind worktree|data|alias|repo`。`project roots --project PROJECT_ID` 只读列出登记路径、类型和登记时的 Git 身份，支持分页与修订核对。新登记保留 Git 共同目录及远端 URL 摘要，不保存原始 URL；相同摘要不合并项目，追加根目录不改变已有会话归属。显式 data 不探测 Git 或加入钩子快照清单，旧登记的未记录元数据不自动补造。详见[根目录登记验收](docs/acceptance/项目根目录与Git身份登记验收_20261010.md)。 根身份现在另存双时间账本，`project roots` 可用 `--occurred-until` 和 `--known-until` 查看当时已保存的登记；版本、运行、编辑与快照提供对应证明。旧登记只在升级时保存时间未知的基线，不回填历史登记时间，见[账本验收](docs/acceptance/根目录身份双时间账本验收_20261013.md)。
 
 提取工作集现在可以跨已登记工作树召回同一仓库路径：例如主工作树里的 `/workspace/repo/analysis/x.py`，能匹配另一工作树原生目录下的 `analysis/x.py`。程序只用已存的逐记录目录声明和唯一属于本项目的 Git 共同目录；显式工具 `workdir`／`cwd` 优先，目录缺失或非法时不猜。子目录根保留实际仓库前缀，数据根、独立仓库和跨项目共同目录不借用这一匹配。物理路径及版本记录分别保留；跨会话的“同一文件版本”还必须满足仓库内路径、摘要算法和摘要相等。此功能用于提取召回，不自动确认、合并科研对象或扩大原文精确文字检索；使用当前登记身份，不补造历史当时已知的路径身份。见[跨工作树路径验收](docs/acceptance/跨工作树路径检索验收_20261013.md)。
 

@@ -43,6 +43,7 @@ jobs:
           tests/golden/test_rule_reference_qualification.py
           tests/golden/test_notes.py
           tests/golden/test_worktree_discovery.py
+          tests/golden/test_root_history.py
           tests/golden/test_project_fragments.py
           tests/golden/test_fragment_assignments.py
           tests/golden/test_fragment_dependencies.py

@@ -153,7 +153,6 @@ def register(store: Store, project: str, path: Path, kind: str = "auto") -> dict
         if found is not None:
             return {"root": found, "created": False, "revision": store.revision()}
         insert(db, project, value)
-        db.execute("UPDATE graph_clock SET revision=revision+1 WHERE id=1")
         return {
             "root": {
                 "project_id": project,
@@ -171,7 +170,12 @@ def listing(
     limit: int = 100,
     offset: int = 0,
     expected_revision: int | None = None,
+    *,
+    occurred_until: str | None = None,
+    known_until: str | None = None,
 ) -> dict[str, Any]:
+    from rg.store.root_history import authorized, observation
+
     if not 1 <= limit <= 200 or offset < 0:
         raise ValueError("根目录分页参数非法")
     with store.snapshot():
@@ -182,18 +186,49 @@ def listing(
         revision = store.revision()
         if expected_revision is not None and expected_revision != revision:
             raise ConflictError("记录已变化，请重新读取根目录清单")
-        total = store.db.execute(
-            "SELECT count(*) FROM effective_source_roots WHERE project_id=?", (project,)
-        ).fetchone()[0]
-        rows = store.db.execute(
-            "SELECT * FROM effective_source_roots WHERE project_id=? "
-            "ORDER BY root_id LIMIT ? OFFSET ?",
-            (project, limit, offset),
-        ).fetchall()
+        historical = occurred_until is not None or known_until is not None
+        metadata: dict[str, Any] = {}
+        if historical:
+            from rg.query.reader import cutoff
+            from rg.store.database import now
+
+            sampled = now()
+            occurred_until, known_until = (
+                cutoff(occurred_until, sampled),
+                cutoff(known_until, sampled),
+            )
+            metadata = {"occurred_until": occurred_until, "known_until": known_until}
+            candidates = store.db.execute("SELECT root_id FROM source_roots ORDER BY root_id")
+            items = []
+            for row in candidates:
+                proof = observation(
+                    store.db, row["root_id"], occurred_until=occurred_until, known_until=known_until
+                )
+                if authorized(store.db, project, proof, known_until):
+                    value = proof["declaration"] | {
+                        "root_id": row["root_id"],
+                        "project_id": project,
+                    }
+                    items.append(value | {"registration": proof})
+            total = len(items)
+            items = items[offset : offset + limit]
+        else:
+            total = store.db.execute(
+                "SELECT count(*) FROM effective_source_roots WHERE project_id=?", (project,)
+            ).fetchone()[0]
+            rows = store.db.execute(
+                "SELECT * FROM effective_source_roots WHERE project_id=? "
+                "ORDER BY root_id LIMIT ? OFFSET ?",
+                (project, limit, offset),
+            )
+            items = [
+                _view(row) | {"registration": observation(store.db, row["root_id"])} for row in rows
+            ]
         return {
+            **metadata,
             "project_id": project,
             "revision": revision,
-            "roots": [_view(row) for row in rows],
+            "roots": items,
             "total": total,
-            "next_offset": offset + len(rows) if offset + len(rows) < total else None,
+            "next_offset": offset + len(items) if offset + len(items) < total else None,
         }

@@ -1224,3 +1224,15 @@
 - 全量ruff实际All checks passed，pyright0 errors／0 warnings／0 informations，均退出0。wheel构建及原生Windows安装实际0；原生 `python.exe -I .../native_check.py` 四组最终97 passed in15.29s、退出0，Python3.12.3／CP936／utf8_mode0，无跳过。首轮29 failed／68 passed in15.39s因旧MultiEdit夹具的无盘符POSIX路径不等于Windows登记根；仅将公开夹具改成本机原生绝对语法，产品规则及案例／断言／超时保留，CI增加该组。
 - 175后端／10静态资源与当前文件逐字相同，包3327104字节，SHAf348e78b7017a7e7452ab90141f7f967c53ba784f0144e3e2b36d4a8f329a531；测试／夹具／缓存不入包，生成物不入Git，远程模型0。只证明公开合成资料和安装工程验收，未读取个人原件来伪造科学参考。
 - 下一步：提交并维护已有未合并草稿，核对新HEAD完整CI；继续实际客户端全事件、完整研究I/O及历史根身份合同。正式参考、质量／成本、p95、规模与两周使用继续保留，完整M0–M4未完成。
+
+
+## 2026-10-13 · 根目录身份双时间账本与旧迁移CI设定修复
+
+- 开始前读末40行、§2／5／6.6／8.3／12与根身份决定；按用户自主推进、简单桌面界面、减少重复全量测试要求开发。上一47712f1两组CI实际均failure：PR38395347658后端4 failed／1821 passed in408.94s，Windows4 failed／568 passed／1 skipped in331.17s；push38395341417后端同四项失败／1821 passed in240.50s，Windows同四项失败／568 passed／1 skipped in371.30s。日志保留在忽略缓存，不能用前次定向通过冒充CI成功。
+- 文件：新增rg/store/root_history.py／root_history_schema.py与黄金test_root_history.py，迁移37；修改roots／worktrees／API创建的修订、Reader／artifacts／runs／L1及清除选择／来源回收、CLI双截止。修正旧alias_clear／automatic_assignment／L1路径升级／快照历史测试设定，Windows CI加入新登记黄金。更新README、需求状态、决定、草稿和中文账本验收；前端未改。
+- 功能：同事务追加登记／元数据变化，旧库不探测，仅建立发生时间未知的保存基线；根清单、版本／运行／编辑／快照按双截止提供登记证明，未知身份不借后来Git信息。原声明及科研状态不改，当前清单仍SQL分页；备份、共享根保留及最后引用整项目清除接通，不留自引用账本。
+- 新登记与旧登记初轮3 failed／35 passed in15.28s，公开合成2030登记遗漏另一当前截止；修正为明确双截止。六组相关2 failed／116 passed in49.12s，旧升级终点写死36及快照时钟补丁绑定了重复导入的另一模块；当前版本断言与显式历史常量修复，生产时钟／过滤和原字节断言保留。
+- 最终 `.tools/bin/uv run pytest tests/golden/test_root_history.py tests/golden/test_science_migration.py::test_native_snapshot_io_remains_readable_after_move_and_origin_clear tests/golden/test_l1_path_repair.py::test_v35_upgrade_preserves_records_and_appends_only_when_background_runs -q` 实际13 passed in5.74s，退出0；云端四项旧设定与新登记 `uv run pytest ...alias_clear::test_migration34_transaction_preserves_rows_views_indexes_and_protection ...automatic_assignment::test_migration35_rollback_then_preserve_original_records ...test_root_history.py -q` 实际14 passed in4.80s、退出0。旧版固定集合和终点设定修正，回滚／外键／原件／追加保护断言不放宽。
+- 全量ruff实际All checks passed，pyright0 errors／0 warnings／0 informations、退出0；类型初轮1 error已用明确字典类型修正。桌面wheel构建及原生Windows缓存环境重安装实际退出0；仓库外 `python.exe -I .../native_check.py` 五组实际28 passed in10.08s、退出0，Python3.12.3／cp936／utf8_mode0，无跳过。只复验相关失败与新功能，没有本地完整后端／前端／浏览器重复回归。
+- 177后端／10静态资源与当前逐字相同，包3330644字节、SHAa31c4c21f98d1af7dbbf10dd943b042259ceed6fc51562c2c8ec04223e0694e6；测试／夹具／缓存不入包，生成物不进Git，模型0。
+- 下一步：提交并维护已有未合并草稿，核对新HEAD完整CI；继续真实客户端、研究I/O和真实科研使用验收。登记账本不补造旧发生时间／跨设备身份；正式参考、质量／成本、p95、规模与两周使用继续保留，完整M0–M4尚未验收。

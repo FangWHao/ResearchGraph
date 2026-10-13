@@ -331,9 +331,6 @@ def test_native_snapshot_io_remains_readable_after_move_and_origin_clear(
     from tests.golden.test_snapshots_hooks import project, queued
 
     # 快照字节用真实时刻；这段历史查询明确位于后续归属迁移之前。
-    monkeypatch.setattr(
-        "tests.golden.test_science_migration.now", lambda: "2099-01-01T00:00:00+00:00"
-    )
     monkeypatch.setattr("rg.store.fragments.now", lambda: "2099-01-01T00:00:01+00:00")
     monkeypatch.setattr("rg.store.science_migration.now", lambda: "2099-01-01T00:00:01+00:00")
     monkeypatch.setattr("rg.query.reader.now", lambda: "2099-01-01T00:00:02+00:00")
@@ -352,7 +349,7 @@ def test_native_snapshot_io_remains_readable_after_move_and_origin_clear(
     queued(store)
     assert first["shadow_commit"] and second["shadow_commit"]
     Worker(store).run()
-    at = now()
+    at = "2099-01-01T00:00:00+00:00"
     snap = store.db.execute(
         "SELECT snapshot_id FROM workspace_snapshots WHERE snapshot_key=?",
         (second["snapshot_key"],),

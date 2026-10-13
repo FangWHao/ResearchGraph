@@ -23,7 +23,11 @@ def cleanup(db: sqlite3.Connection) -> None:
         ):
             references = []
             for child, column, parent, parent_key in foreign:
-                if parent != table or child == "project_tombstones":
+                if (
+                    parent != table
+                    or child == "project_tombstones"
+                    or (table == "source_roots" and child == "source_root_observations")
+                ):
                     continue
                 references.append(
                     f"NOT EXISTS (SELECT 1 FROM {identifier(child)} c WHERE "
@@ -36,6 +40,8 @@ def cleanup(db: sqlite3.Connection) -> None:
             ).fetchall():
                 if table == "projects":
                     db.execute("DELETE FROM project_tombstones WHERE project_id=?", (identity,))
+                if table == "source_roots":
+                    db.execute("DELETE FROM source_root_observations WHERE root_id=?", (identity,))
                 db.execute(f"DELETE FROM {table} WHERE {key}=?", (identity,))
         if before == db.total_changes:
             break

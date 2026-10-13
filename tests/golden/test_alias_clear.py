@@ -147,10 +147,22 @@ def test_migration34_transaction_preserves_rows_views_indexes_and_protection(
     with monkeypatch.context() as legacy:
         legacy.setattr(migrations, "LATEST_VERSION", 33)
         from rg.store.clear_selection import TABLES
+        from rg.store.fragment_dependency_contract import SCIENCE
 
         legacy.setattr(
             "rg.store.clear_selection.TABLES",
-            TABLES - {"project_assignment_actions", "automatic_assignments"},
+            TABLES
+            - {
+                "project_assignment_actions",
+                "automatic_assignments",
+                "l1_path_checks",
+                "l1_repair_versions",
+                "source_root_observations",
+            },
+        )
+        legacy.setattr(
+            "rg.store.fragment_dependency_contract.SCIENCE",
+            SCIENCE - {"l1_path_checks", "l1_repair_versions"},
         )
         legacy.setattr(
             "rg.store.fragment_dependency_contract.SCIENCE_SCHEMA_SHA256",

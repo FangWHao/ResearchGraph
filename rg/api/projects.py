@@ -62,7 +62,6 @@ def create(store: Store, body: dict[str, Any]) -> dict[str, Any]:
                 identity = str(uuid.uuid4())
                 db.execute("INSERT INTO projects VALUES (?, ?, 0, ?)", (identity, name, now()))
                 insert(db, identity, value)
-                db.execute("UPDATE graph_clock SET revision=revision+1 WHERE id=1")
     except sqlite3.IntegrityError as error:
         raise ValueError("工作区登记发生冲突，请重新读取项目列表") from error
     # 衍生登记清单可重新生成；来源登记失败不撤销已经明确创建的项目。

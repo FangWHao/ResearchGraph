@@ -297,7 +297,6 @@ def _discover_root(store: Store, row: dict[str, Any]) -> Counter[str]:
                 details[state] += 1
                 continue
             roots.insert(db, row["project_id"], value)
-            db.execute("UPDATE graph_clock SET revision=revision+1 WHERE id=1")
             counts["worktrees_created"] += 1
         complete = len(remaining) <= PAGE_SIZE
         next_key = "" if complete else page[-1][0]

@@ -137,6 +137,20 @@ class Reader:
         self._event_index: dict[tuple[str, str], list[dict[str, Any]]] = {}
         self._state_cache: dict[tuple[str, str], dict[str, Any]] = {}
         self._owners: dict[str, str | None] | None = None
+        self._root_identities: dict[str | None, dict[str, Any]] = {}
+
+    def root_identity(self, root: str | None) -> dict[str, Any]:
+        from rg.store.root_history import observation
+
+        if root not in self._root_identities:
+            self._root_identities[root] = observation(
+                self.store.db,
+                root,
+                occurred_until=self.occurred_until,
+                known_until=self.known_until,
+            )
+        # 登记保留原声明；科研归属由外层历史记录决定，不能改写登记证明。
+        return self._root_identities[root]
 
     def entity_owner(self, identity: str) -> str | None:
         if self._owners is None:
