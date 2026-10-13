@@ -76,25 +76,52 @@ describe('研究线视图', () => {
     expect(kinds).toEqual(['branch:1->3', 'merge:3->4', 'next:1->2', 'next:2->4']);
   });
 
-  it('不同的天分段，后一天的事件在前一天所有事件之后', () => {
-    expect(layout.days).toHaveLength(2);
-    expect(node(4).x).toBeGreaterThan(Math.max(node(1).x, node(2).x, node(3).x));
+  it('紧凑模式没有共用的日期轴', () => {
+    expect(layout.days).toEqual([]);
   });
 });
 
 describe('排版', () => {
-  it('同一天不同研究线的事件可以共用一列', () => {
+  it('平行的研究线各自从左边排起，不按开始时间错开', () => {
+    // 线1 第 1 天做了三步，线2 第 10 天才开始，而且是从线1 的最后一步分出来的
     const layout = computeLayout(
       {
         threads: [thread(1), thread(2)],
-        branches: [branch(10, 1, 0), branch(20, 2, 0)],
-        events: [event(1, at(3, 9), 10), event(2, at(3, 15), 20)],
+        branches: [branch(10, 1, 0), branch(20, 2, 0, { from_event: 3 })],
+        events: [
+          event(1, at(1, 9), 10),
+          event(2, at(1, 10), 10),
+          event(3, at(1, 11), 10),
+          event(4, at(10, 9), 20),
+          event(5, at(10, 10), 20),
+        ],
         sessions: [session(1)],
       },
       compact(),
     );
-    expect(layout.nodes[0].x).toBe(layout.nodes[1].x);
+    const x = (id: number) => layout.nodes.find((n) => n.event.id === id)!.x;
+    expect(x(4)).toBe(x(1));
+    expect(x(5)).toBe(x(2));
     expect(layout.lanes.map((l) => l.title)).toEqual(['线1', '线2']);
+    // 跨研究线的分出关系保留，但标记为跨泳道，不影响排列
+    const crossing = layout.edges.find((e) => e.kind === 'branch')!;
+    expect([crossing.from, crossing.to, crossing.cross]).toEqual([3, 4, true]);
+    expect(layout.edges.filter((e) => e.kind === 'next').every((e) => !e.cross)).toBe(true);
+  });
+
+  it('同一研究线里的分支仍然排在分出点之后', () => {
+    const layout = computeLayout(
+      {
+        threads: [thread(1)],
+        branches: [branch(10, 1, 0), branch(11, 1, 1, { from_event: 2 })],
+        events: [event(1, at(1, 9), 10), event(2, at(1, 10), 10), event(3, at(5, 9), 11)],
+        sessions: [session(1)],
+      },
+      compact(),
+    );
+    const x = (id: number) => layout.nodes.find((n) => n.event.id === id)!.x;
+    expect(x(3)).toBeGreaterThan(x(2));
+    expect(layout.edges.find((e) => e.kind === 'branch')!.cross).toBe(false);
   });
 
   it('没有归入研究线的事件单独成一条泳道，不会丢', () => {
@@ -138,6 +165,8 @@ describe('会话视图', () => {
     );
     expect(layout.lanes.map((l) => l.title)).toEqual(['会话1', '会话2']);
     expect(layout.edges.map((e) => `${e.kind}:${e.from}->${e.to}`).sort()).toEqual(['fork:1->3', 'next:1->2']);
+    // 每个会话也从左边排起
+    expect(layout.nodes.find((n) => n.event.id === 3)!.x).toBe(layout.nodes.find((n) => n.event.id === 1)!.x);
   });
 });
 

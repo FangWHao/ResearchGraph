@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { fmtClock, fmtDayKey, fmtTime } from './format';
+import { fmtDayKey, fmtTime } from './format';
 import { Icon, KindGlyph } from './Icons';
 import {
   CARD_H,
@@ -28,8 +28,8 @@ interface Props {
   pxPerHour: number;
   selection: Selection;
   onSelect: (selection: Selection) => void;
-  // 变化时滚到最新（右端）
-  jump: string;
+  // n 变化时滚动：latest 为真滚到最新的事件，否则回到左上角
+  jump: { n: number; latest: boolean };
 }
 
 export function Timeline({ data, view, align, pxPerHour, selection, onSelect, jump }: Props) {
@@ -48,16 +48,33 @@ export function Timeline({ data, view, align, pxPerHour, selection, onSelect, ju
     return { el, width: el.clientWidth - (labels.current?.offsetWidth ?? 0), height: el.clientHeight - AXIS_H };
   };
 
-  // 打开项目、切换视图或点“最新”时，把最新的事件滚到眼前
+  // 打开项目、切换视图时回到起点（真实时间模式滚到最新）；点“最新”时把最新的事件滚到眼前
   useLayoutEffect(() => {
     if (!scroller.current) return;
-    const latest = layout.nodes.at(-1);
     const { el, width, height } = viewport();
-    if (!latest) return;
+    const latest = layout.nodes.at(-1);
+    if (!jump.latest || !latest) {
+      el.scrollLeft = 0;
+      el.scrollTop = 0;
+      return;
+    }
     const right = align === 'compact' ? latest.x + CARD_W : latest.x + 160;
     el.scrollLeft = right + 64 - width;
     el.scrollTop = latest.y - height / 2;
-  }, [jump]);
+  }, [jump.n]);
+
+  // 紧凑模式下有跨泳道连线的事件，卡片上加个标记
+  const crossLinked = useMemo(() => {
+    const ids = new Set<number>();
+    if (align !== 'compact') return ids;
+    for (const edge of layout.edges) {
+      if (edge.cross) {
+        ids.add(edge.from);
+        ids.add(edge.to);
+      }
+    }
+    return ids;
+  }, [layout.edges, align]);
 
   // 缩放时保持视野中心对着同一时刻
   useLayoutEffect(() => {
@@ -93,6 +110,9 @@ export function Timeline({ data, view, align, pxPerHour, selection, onSelect, ju
           {view === 'threads' ? `${layout.lanes.length} 条研究线` : `${layout.lanes.length} 个会话`}
         </div>
         <div className="tl-axis" style={{ width: layout.width }}>
+          {align === 'compact' ? (
+            <span className="tl-axis-hint">每条{view === 'threads' ? '研究线' : '会话'}各自从左边排起，只看先后，不对齐日期</span>
+          ) : null}
           {layout.days.map((day) => (
             <div key={`${day.key}:${day.x}`} className="tl-day" style={{ left: day.x, width: day.width }}>
               <span>{fmtDayKey(day.key)}</span>
@@ -149,6 +169,7 @@ export function Timeline({ data, view, align, pxPerHour, selection, onSelect, ju
             </defs>
             {layout.edges.map((edge) => {
               const on = selectedEvent !== null && (edge.from === selectedEvent || edge.to === selectedEvent);
+              if (align === 'compact' && edge.cross && !on) return null;
               const arrow = edge.kind !== 'next';
               return (
                 <path
@@ -165,6 +186,7 @@ export function Timeline({ data, view, align, pxPerHour, selection, onSelect, ju
               <Card
                 key={node.event.id}
                 node={node}
+                cross={crossLinked.has(node.event.id)}
                 on={node.event.id === selectedEvent}
                 onSelect={onSelect}
                 onHover={setHovered}
@@ -190,6 +212,7 @@ export function Timeline({ data, view, align, pxPerHour, selection, onSelect, ju
 interface NodeProps {
   node: PlacedNode;
   on: boolean;
+  cross?: boolean;
   onSelect: (selection: Selection) => void;
   onHover: (id: number | null) => void;
 }
@@ -209,7 +232,7 @@ function handlers({ node, onSelect, onHover }: NodeProps) {
 }
 
 function Card(props: NodeProps) {
-  const { node, on } = props;
+  const { node, on, cross } = props;
   const { event } = node;
   return (
     <button
@@ -222,7 +245,12 @@ function Card(props: NodeProps) {
       <span className="tl-card-meta">
         <KindGlyph kind={event.kind} />
         <span>{KIND_LABEL[event.kind]}</span>
-        <span className="tl-card-time">{fmtClock(event.ts)}</span>
+        <span className="tl-card-time">{fmtTime(event.ts)}</span>
+        {cross ? (
+          <span className="tl-card-flag" title="和别的泳道有分出或汇入关系，选中后显示连线">
+            <Icon name="branch" size={11} />
+          </span>
+        ) : null}
         {event.edited ? (
           <span className="tl-card-edited" title="手动改过">
             <Icon name="edit" size={11} />

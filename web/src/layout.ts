@@ -1,5 +1,5 @@
 // 时间线布局：纯函数，不依赖 DOM。
-// 紧凑：按天分段，同一天里按先后和连线依赖排列，不按真实间隔拉伸。
+// 紧凑：每条泳道各自从最左边排起，只看泳道内部的先后，泳道之间不对齐时间。
 // 真实时间：横轴是真实时间刻度，事件画成线上的点，同一行里放得下时显示标题。
 import type { Branch, Session, Thread, TimelineEvent } from './types';
 import { TOOL_LABEL } from './types';
@@ -16,7 +16,6 @@ export const DOT_ROW_H = 40;
 export const DOT_HIT = 24;
 export const DOT_R = 6;
 export const LANE_PAD = 10;
-export const DAY_GAP = 32;
 export const LEFT_PAD = 24;
 // 真实时间模式的缩放档位：每小时多少像素
 export const ZOOM_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128];
@@ -57,6 +56,8 @@ export interface Edge {
   from: number;
   to: number;
   kind: EdgeKind;
+  // 两端在不同泳道；紧凑模式下平时不画，选中端点时才画
+  cross: boolean;
   path: string;
 }
 
@@ -106,12 +107,6 @@ const pad = (n: number) => String(n).padStart(2, '0');
 
 function localDay(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
-export function dayKey(ts: string | null): string {
-  if (!ts) return '';
-  const date = new Date(ts);
-  return Number.isNaN(date.getTime()) ? '' : localDay(date);
 }
 
 function startOfDay(ms: number): Date {
@@ -241,6 +236,17 @@ export function cardPath(a: PlacedNode, b: PlacedNode): string {
   return `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
 }
 
+// 紧凑模式下跨泳道的连线：两条泳道各自排列，起点可能在终点右边，所以竖着连卡片的上下边。
+export function crossPath(a: PlacedNode, b: PlacedNode): string {
+  const ax = a.x + CARD_W / 2;
+  const bx = b.x + CARD_W / 2;
+  const down = b.y > a.y;
+  const y1 = down ? a.y + CARD_H : a.y;
+  const y2 = down ? b.y : b.y + CARD_H;
+  const mid = (y1 + y2) / 2;
+  return `M${ax},${y1} C${ax},${mid} ${bx},${mid} ${bx},${y2}`;
+}
+
 export function dotPath(a: PlacedNode, b: PlacedNode): string {
   const r = DOT_R + 2;
   if (a.y === b.y) return `M${a.x + r},${a.y} L${Math.max(a.x + r, b.x - r)},${b.y}`;
@@ -275,59 +281,48 @@ function placeLanes(grouping: Grouping, rowH: number) {
   return { lanes, rowY, height: y };
 }
 
-function compactNodes(events: TimelineEvent[], grouping: Grouping, rowY: Map<string, number>) {
+// 紧凑：每条泳道各自从最左边排起，只看泳道内部的先后，泳道之间不对齐时间。
+// 跨泳道的连线不参与排列（否则晚开始的研究线会被推到右边）。
+function compactNodes(
+  events: TimelineEvent[],
+  grouping: Grouping,
+  rowY: Map<string, number>,
+  laneOf: (eventId: number) => string,
+) {
   const preds = new Map<number, number[]>();
   for (const edge of grouping.edges) {
+    if (laneOf(edge.from) !== laneOf(edge.to)) continue;
     const list = preds.get(edge.to) ?? [];
     list.push(edge.from);
     preds.set(edge.to, list);
   }
   const colOf = new Map<number, number>();
   const lastInRow = new Map<string, number>();
-  const ranges: { key: string; start: number; end: number }[] = [];
-  let offset = 0;
-  let current: { key: string; start: number; end: number } | null = null;
   for (const event of events) {
-    const key = dayKey(event.ts);
-    if (!current || current.key !== key) {
-      if (current) offset = current.end;
-      current = { key, start: offset, end: offset };
-      ranges.push(current);
-    }
     const rowId = grouping.rowOf.get(event.id)!;
-    let col = offset;
+    let col = 0;
     const last = lastInRow.get(rowId);
-    if (last !== undefined) col = Math.max(col, last + 1);
+    if (last !== undefined) col = last + 1;
     for (const p of preds.get(event.id) ?? []) {
       const pc = colOf.get(p);
       if (pc !== undefined) col = Math.max(col, pc + 1);
     }
     colOf.set(event.id, col);
     lastInRow.set(rowId, col);
-    current.end = Math.max(current.end, col + 1);
   }
-  const xOfCol = (col: number) => {
-    const index = ranges.findIndex((d) => col >= d.start && col < d.end);
-    return LEFT_PAD + col * COL_W + Math.max(0, index) * DAY_GAP;
-  };
   const nodes: PlacedNode[] = events.map((event) => {
     const rowId = grouping.rowOf.get(event.id)!;
     return {
       event,
       rowId,
-      x: xOfCol(colOf.get(event.id)!),
+      x: LEFT_PAD + colOf.get(event.id)! * COL_W,
       y: (rowY.get(rowId) ?? 0) + (CARD_ROW_H - CARD_H) / 2,
       labelWidth: 0,
     };
   });
-  const days: Day[] = ranges.map((d) => ({
-    key: d.key,
-    x: xOfCol(d.start) - DAY_GAP / 2,
-    width: (d.end - d.start) * COL_W + DAY_GAP,
-  }));
   const lastCol = Math.max(0, ...colOf.values());
-  const width = nodes.length ? xOfCol(lastCol) + CARD_W + LEFT_PAD * 2 : 600;
-  return { nodes, days, ticks: [] as Tick[], width };
+  const width = nodes.length ? LEFT_PAD * 2 + lastCol * COL_W + CARD_W : 600;
+  return { nodes, days: [] as Day[], ticks: [] as Tick[], width };
 }
 
 function tickStep(pxPerHour: number): number {
@@ -391,15 +386,21 @@ export function computeLayout(input: TimelineInput, options: LayoutOptions): Lay
   const grouping = options.view === 'threads' ? byThreads(input, events) : bySessions(input, events);
   const rowH = options.align === 'compact' ? CARD_ROW_H : DOT_ROW_H;
   const { lanes, rowY, height } = placeLanes(grouping, rowH);
-  const placed =
-    options.align === 'compact'
-      ? compactNodes(events, grouping, rowY)
-      : timeNodes(events, grouping, rowY, options.pxPerHour);
+  const laneOfRow = new Map(grouping.lanes.flatMap((lane) => lane.rows.map((row) => [row.id, lane.id] as const)));
+  const laneOf = (eventId: number) => laneOfRow.get(grouping.rowOf.get(eventId) ?? '') ?? '';
+  const compact = options.align === 'compact';
+  const placed = compact
+    ? compactNodes(events, grouping, rowY, laneOf)
+    : timeNodes(events, grouping, rowY, options.pxPerHour);
   const byId = new Map(placed.nodes.map((n) => [n.event.id, n]));
-  const shape = options.align === 'compact' ? cardPath : dotPath;
   const edges: Edge[] = grouping.edges
     .filter((e) => byId.has(e.from) && byId.has(e.to) && e.from !== e.to)
-    .map((e) => ({ ...e, id: `${e.kind}:${e.from}:${e.to}`, path: shape(byId.get(e.from)!, byId.get(e.to)!) }));
+    .map((e) => {
+      const cross = laneOf(e.from) !== laneOf(e.to);
+      const [a, b] = [byId.get(e.from)!, byId.get(e.to)!];
+      const path = compact ? (cross ? crossPath(a, b) : cardPath(a, b)) : dotPath(a, b);
+      return { ...e, id: `${e.kind}:${e.from}:${e.to}`, cross, path };
+    });
   return { align: options.align, lanes, edges, height: Math.max(height, rowH), ...placed };
 }
 

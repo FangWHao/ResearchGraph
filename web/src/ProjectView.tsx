@@ -59,7 +59,7 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onDel
   const [align, setAlign] = useState<Align>(() => remembered('rg.align', ['compact', 'time'], 'compact'));
   const [zoom, setZoom] = useState<number | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
-  const [jumps, setJumps] = useState(0);
+  const [jump, setJump] = useState({ n: 0, latest: false });
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
@@ -90,6 +90,11 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onDel
     }, 1500);
     return () => window.clearInterval(timer);
   }, [status?.running, project.id, load]);
+
+  // 打开项目、切换视图或对齐方式时：紧凑模式回到起点，真实时间模式滚到最新
+  useEffect(() => {
+    setJump((j) => ({ n: j.n + 1, latest: align === 'time' }));
+  }, [project.id, view, align, data !== null]);
 
   const pxPerHour = useMemo(() => zoom ?? defaultZoom(data?.events ?? []), [zoom, data?.events]);
   const stepZoom = useCallback(
@@ -267,7 +272,7 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onDel
               pxPerHour={pxPerHour}
               selection={selection}
               onSelect={setSelection}
-              jump={`${project.id}:${view}:${align}:${jumps}`}
+              jump={jump}
             />
             {selectedEvent ? (
               <EventPanel data={data} event={selectedEvent} onChanged={load} onClose={() => setSelection(null)} onSelectEvent={selectEvent} />
@@ -295,7 +300,7 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onDel
         ) : null}
         <span className="spacer" />
         <span className="muted hide-narrow">←/→ 切换事件 · Esc 关闭</span>
-        <button type="button" className="btn small ghost" onClick={() => setJumps(jumps + 1)}>
+        <button type="button" className="btn small ghost" onClick={() => setJump((j) => ({ n: j.n + 1, latest: true }))}>
           最新
           <Icon name="toEnd" size={14} />
         </button>
