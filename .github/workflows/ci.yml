@@ -55,6 +55,8 @@ jobs:
           tests/golden/test_client_install.py
           tests/golden/test_runtime.py
           tests/golden/test_impact.py
+          tests/golden/test_project_creation.py
+          tests/golden/test_desktop_assets.py
           tests/test_migrations.py
           -q
   backend:
@@ -102,6 +104,12 @@ jobs:
       - name: 前端类型检查与构建
         working-directory: web
         run: pnpm build
+      - name: 构建包含界面的桌面安装包
+        env:
+          RG_PACKAGE_WEB: '1'
+        run: uv build --wheel
+      - name: 仓库外安装与桌面启动验收
+        run: uv run --no-project --isolated --with ./dist/researchgraph-0.1.0-py3-none-any.whl python -I scripts/check_desktop_install.py
       - name: 安装浏览器验收环境
         working-directory: web
         run: pnpm exec playwright install --with-deps --only-shell chromium

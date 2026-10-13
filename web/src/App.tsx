@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, query, readToken, setToken } from './api';
-import { Badge, ClaimBody, Empty, EvidenceLink, EvidencePanel, Icon, Loading } from './components';
+import { Badge, ClaimBody, EvidenceLink, EvidencePanel, Icon, Loading } from './components';
 import { actionNames, evidenceNames } from './model';
 import { canResolveDecision, requiresDecisionTarget } from './manualDecision';
 import { useManualDecisions } from './useManualDecisions';
@@ -25,6 +25,9 @@ import { useProjectClear } from './useProjectClear';
 import { useResearchGraph } from './useResearchGraph';
 import { parseResearchDetail, researchQuery } from './researchGraph';
 import { ImpactPanel } from './ImpactPanel';
+import { ProjectCreateDialog } from './ProjectCreateDialog';
+import { parseProjectList } from './projectCreate';
+import type { ProjectCreateResult } from './projectCreate';
 
 const GraphView = lazy(() => import('./GraphView').then(module => ({ default: module.GraphView })));
 const FileRunGraphView = lazy(() => import('./FileRunGraphView').then(module => ({ default: module.FileRunGraphView })));
@@ -110,6 +113,13 @@ export function App() {
   const [authorized, setAuthorized] = useState(() => !!readToken());
   const [tokenInput, setTokenInput] = useState(''); const [epoch, setEpoch] = useState(0);
   const [projects, setProjects] = useState<Project[]>([]); const [projectId, setProjectId] = useState('');
+  const projectListKey = JSON.stringify([authorized, epoch]);
+  const [projectList, setProjectList] = useState<{ key: string; state: 'ready' | 'error'; message?: string } | null>(null);
+  const projectListState = projectList?.key === projectListKey ? projectList.state : 'loading';
+  const currentProjectList = useRef(projectListKey); currentProjectList.current = projectListKey;
+  const [projectCreation, setProjectCreation] = useState<{ generation: number; project: string } | null>(null);
+  const creationGeneration = useRef(0); const currentCreation = useRef(projectCreation); currentCreation.current = projectCreation;
+  const [projectReceipt, setProjectReceipt] = useState<ProjectCreateResult | null>(null);
   const [graph, setGraph] = useState<GraphData | null>(null); const [view, setView] = useState<View>(() => {
     const requested = new URLSearchParams(window.location.search).get('view');
     return requested && Object.hasOwn(viewMeta, requested) ? requested as View : 'questions';
@@ -149,6 +159,20 @@ export function App() {
     setEditing({ claim, revision });
   }, [onError]);
   function refresh() { setGraph(null); setEpoch(previous => previous + 1); setConflict(false); setMessage(''); }
+  function openProjectCreation() {
+    const next = { generation: ++creationGeneration.current, project: projectId };
+    currentCreation.current = next; setProjectCreation(next);
+  }
+  function closeProjectCreation() { currentCreation.current = null; setProjectCreation(null); }
+  function createdProject(result: ProjectCreateResult, generation: number) {
+    const intent = currentCreation.current;
+    if (!intent || intent.generation !== generation || intent.project !== currentProject.current || !currentAuthorization.current) return;
+    closeProjectCreation(); setProjectReceipt(result);
+    setProjects(previous => [...previous.filter(item => item.project_id !== result.project.project_id), result.project]);
+    currentProject.current = result.project.project_id; setProjectId(result.project.project_id); setSelectedClaim(null); setSelectedEvidence(null); setGraph(null);
+    setEpoch(previous => previous + 1); setConflict(false);
+    setMessage(`${result.created ? '项目已创建' : '已打开已有项目'}：${result.project.name}`);
+  }
   function changeQuestionDraft(draftProject: string, draft: QuestionDraft) {
     currentDrafts.current = { ...currentDrafts.current, [draftProject]: draft };
     setQuestionDrafts(currentDrafts.current);
@@ -166,13 +190,15 @@ export function App() {
   useEffect(() => {
     if (!authorized) return;
     const controller = new AbortController();
-    api<{ projects: Project[] }>('/projects', undefined, controller.signal).then(result => {
-      if (controller.signal.aborted) return;
-      setProjects(result.projects);
-      setProjectId(current => result.projects.some(item => item.project_id === current) ? current : result.projects[0]?.project_id ?? '');
-    }).catch(error => { if (!controller.signal.aborted) onError(error); });
+    api<unknown>('/projects', undefined, controller.signal).then(result => {
+      if (controller.signal.aborted || currentProjectList.current !== projectListKey) return;
+      const loaded = parseProjectList(result);
+      setProjects(loaded); setProjectList({ key: projectListKey, state: 'ready' });
+      setProjectId(current => loaded.some(item => item.project_id === current) ? current : loaded[0]?.project_id ?? '');
+    }).catch(error => { if (!controller.signal.aborted && currentProjectList.current === projectListKey) { setProjectList({ key: projectListKey, state: 'error', message: error instanceof Error ? error.message : '项目列表读取失败' }); onError(error); } });
     return () => controller.abort();
-  }, [authorized, epoch, onError]);
+  }, [authorized, epoch, onError, projectListKey]);
+  useEffect(() => { closeProjectCreation(); }, [projectId, authorized]);
   useEffect(() => {
     setSelectedClaim(null); setSelectedEvidence(null); setEditing(null); currentQuestionProject.current = null; setQuestionProject(null);
   }, [projectId]);
@@ -227,11 +253,12 @@ export function App() {
     return <button key={key} className={view === key ? 'active' : ''} aria-current={view === key ? 'page' : undefined} aria-label={viewMeta[key].title} onClick={() => { setView(key); setSelectedClaim(null); setSelectedEvidence(null); }}><Icon name={viewMeta[key].icon} />{viewMeta[key].title}{key === 'review' && <span className="nav-count">{candidateCount}</span>}</button>;
   }
   if (!authorized) return <div className="login-page"><section><div className="brand-mark">R<span>G</span></div><span className="eyebrow">ResearchGraph · 本地研究工作区</span><h1>打开你的研究决定史</h1><p>请使用本机服务启动时给出的链接，或输入该次启动的访问令牌。</p><form onSubmit={event => { event.preventDefault(); setToken(tokenInput); setAuthorized(true); refresh(); }}><label>访问令牌<input type="password" value={tokenInput} onChange={event => setTokenInput(event.target.value)} autoComplete="off" required /></label><button type="submit" className="button primary">进入本地工作区 <Icon name="arrow" size={16} /></button></form>{message && <p className="error-message" role="alert">{message}</p>}<small>资料保存在本机 · 远程模型须先获得项目授权</small></section></div>;
-  return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-mark">R<span>G</span></div><div><strong>ResearchGraph</strong><span>研究决定史</span></div></div><div className="project-picker"><label htmlFor="project-picker">当前项目</label><select id="project-picker" value={projectId} onChange={event => setProjectId(event.target.value)}>{projects.map(item => <option key={item.project_id} value={item.project_id}>{item.name}</option>)}{!projects.length && <option value="">尚无项目</option>}</select><span>{project?.sessions ?? 0} 个会话 · {project?.claims ?? 0} 条记录</span></div><div className="nav-label">研究工作区</div><nav aria-label="研究工作区"><div className="workspace-primary">{dailyViews.map(navigationItem)}</div><button className={`more-tools-toggle ${graph?.partial ? 'has-partial-count' : ''} ${toolViews.includes(view) ? 'active' : ''}`} aria-label="更多工具" aria-expanded={moreToolsOpen} aria-controls="workspace-tools" aria-describedby={candidateCount > 0 ? 'workspace-review-hint' : undefined} onClick={() => setMoreToolsOpen(previous => !previous)}><Icon name="versions" /><span>更多工具{!moreToolsOpen && toolViews.includes(view) && <small className="current-tool">{viewMeta[view].title}</small>}</span>{candidateCount > 0 && <span id="workspace-review-hint" className="nav-more-count" title="当前已读记录中的待复核数；完整队列可分页查看">{graph?.partial && '已载入 '}{candidateCount} 待复核</span>}<span className="more-tools-chevron" aria-hidden="true">{moreToolsOpen ? '⌃' : '⌄'}</span></button><div id="workspace-tools" className={`workspace-tools ${moreToolsOpen ? '' : 'is-collapsed'}`}>{toolViews.map(navigationItem)}</div></nav><div className="sidebar-bottom"><label>复核者<input aria-label="复核者姓名" value={name} onChange={event => setName(event.target.value)} maxLength={100} /></label><div className="local-status"><span />本机连接 · 127.0.0.1</div><p>原文保留以供追溯<br />隐私清除除外</p></div></aside><div className="main-shell"><header className="topbar"><div className="breadcrumb">研究工作区 <span>/</span> {project?.name ?? '项目未选择'}</div><form className="global-search" onSubmit={event => { event.preventDefault(); setSearchText(searchInput.trim()); setView('search'); setSelectedClaim(null); setSelectedEvidence(null); }}><Icon name="search" size={16} /><input aria-label="搜索会话原文" placeholder="搜索原文与决定依据…" value={searchInput} onChange={event => setSearchInput(event.target.value)} maxLength={500} /><button type="submit" aria-label="开始搜索"><Icon name="arrow" size={15} /></button></form><button className="icon-button" aria-label="刷新数据" onClick={refresh}><Icon name="refresh" /></button></header><main><div className="page-heading"><div><span className="eyebrow">{project?.name ?? '本地研究工作区'} / {view === 'health' ? '采集与覆盖' : '研究记忆'}</span><h1>{viewMeta[view].title}</h1><p>{viewMeta[view].subtitle}</p></div><div className="revision-tag">图版本 <strong>{view === 'fileRuns' ? fileRuns.data?.revision ?? '—' : graph?.revision ?? '—'}</strong><span>{view === 'fileRuns' ? '登记视图' : '本地资料'}</span></div></div>
+  return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-mark">R<span>G</span></div><div><strong>ResearchGraph</strong><span>研究决定史</span></div></div><div className="project-picker"><div className="project-picker-heading"><label htmlFor="project-picker">当前项目</label><button className="text-button" aria-label="创建项目" disabled={projectListState !== 'ready'} onClick={openProjectCreation}>＋ 创建</button></div><select id="project-picker" value={projectId} onChange={event => setProjectId(event.target.value)}>{projects.map(item => <option key={item.project_id} value={item.project_id}>{item.name}</option>)}{!projects.length && <option value="">{projectListState === 'ready' ? '尚无项目' : projectListState === 'error' ? '项目列表读取失败' : '正在读取项目…'}</option>}</select><span>{project ? `${project.sessions} 个会话 · ${project.claims} 条记录` : projectListState === 'ready' ? '从工作区目录创建第一个项目' : '正在核对项目列表'}</span></div><div className="nav-label">研究工作区</div><nav aria-label="研究工作区"><div className="workspace-primary">{dailyViews.map(navigationItem)}</div><button className={`more-tools-toggle ${graph?.partial ? 'has-partial-count' : ''} ${toolViews.includes(view) ? 'active' : ''}`} aria-label="更多工具" aria-expanded={moreToolsOpen} aria-controls="workspace-tools" aria-describedby={candidateCount > 0 ? 'workspace-review-hint' : undefined} onClick={() => setMoreToolsOpen(previous => !previous)}><Icon name="versions" /><span>更多工具{!moreToolsOpen && toolViews.includes(view) && <small className="current-tool">{viewMeta[view].title}</small>}</span>{candidateCount > 0 && <span id="workspace-review-hint" className="nav-more-count" title="当前已读记录中的待复核数；完整队列可分页查看">{graph?.partial && '已载入 '}{candidateCount} 待复核</span>}<span className="more-tools-chevron" aria-hidden="true">{moreToolsOpen ? '⌃' : '⌄'}</span></button><div id="workspace-tools" className={`workspace-tools ${moreToolsOpen ? '' : 'is-collapsed'}`}>{toolViews.map(navigationItem)}</div></nav><div className="sidebar-bottom"><label>复核者<input aria-label="复核者姓名" value={name} onChange={event => setName(event.target.value)} maxLength={100} /></label><div className="local-status"><span />本机连接 · 127.0.0.1</div><p>原文保留以供追溯<br />隐私清除除外</p></div></aside><div className="main-shell"><header className="topbar"><div className="breadcrumb">研究工作区 <span>/</span> {project?.name ?? '项目未选择'}</div><form className="global-search" onSubmit={event => { event.preventDefault(); setSearchText(searchInput.trim()); setView('search'); setSelectedClaim(null); setSelectedEvidence(null); }}><Icon name="search" size={16} /><input aria-label="搜索会话原文" placeholder="搜索原文与决定依据…" value={searchInput} onChange={event => setSearchInput(event.target.value)} maxLength={500} /><button type="submit" aria-label="开始搜索"><Icon name="arrow" size={15} /></button></form><button className="icon-button" aria-label="刷新数据" onClick={refresh}><Icon name="refresh" /></button></header><main><div className="page-heading"><div><span className="eyebrow">{project?.name ?? '本地研究工作区'} / {view === 'health' ? '采集与覆盖' : '研究记忆'}</span><h1>{viewMeta[view].title}</h1><p>{viewMeta[view].subtitle}</p></div><div className="revision-tag">图版本 <strong>{view === 'fileRuns' ? fileRuns.data?.revision ?? '—' : graph?.revision ?? '—'}</strong><span>{view === 'fileRuns' ? '登记视图' : '本地资料'}</span></div></div>
       {message && <div className={`message-banner ${conflict ? 'conflict' : ''}`} role={conflict ? 'alert' : 'status'}><span>{message}</span>{conflict ? <button className="text-button" onClick={view === 'clear' ? () => { void projectClear.checkStatus(); } : refresh}>{view === 'clear' ? '检查清除状态' : '刷新后重新复核'}</button> : <button className="icon-button" aria-label="关闭提示" onClick={() => setMessage('')}><Icon name="close" size={15} /></button>}</div>}
+      {projectReceipt?.project.project_id === projectId && projectReceipt.sources.some(item => item.state !== 'registered') && <section className="notice project-source-notice" role="status"><strong>项目已保存，以下本地来源未登记：</strong><ul>{projectReceipt.sources.filter(item => item.state !== 'registered').map(item => <li key={item.tool}>{item.tool === 'claude' ? 'Claude Code' : 'Codex'} · {item.state === 'missing' ? '目录不存在' : '目录暂不可访问'} · <span className="mono">{item.path}</span></li>)}</ul><p className="small">可以继续使用项目；来源目录可用后再登记采集。</p></section>}
       {projectClear.status?.state === 'pending' && view !== 'clear' && <div className="message-banner conflict" role="alert"><span>有项目清除尚未完成，普通资料读取暂时被阻止。</span><button className="text-button" onClick={() => setView('clear')}>打开清除恢复</button></div>}
       {graph?.partial && view !== 'clear' && view !== 'fileRuns' && view !== 'graph' && view !== 'notes' && <p className="notice">此视图仅载入前 {graph.limit} 条记录，不能据此判断项目全貌。完整记录可在复核队列分页查看。</p>}
-      {view === 'clear' ? <ProjectClearView project={project} projects={projects} onProject={setProjectId} workspace={projectClear} /> : !projectId ? <Empty title="尚未登记项目">使用项目登记与会话导入后，这里会读取实际研究记录。</Empty> : !graph && ['questions', 'timeline'].includes(view) ? <Loading /> : <>
+      {view === 'clear' ? <ProjectClearView project={project} projects={projects} onProject={setProjectId} workspace={projectClear} /> : !projectId ? projectListState === 'ready' ? <section className="panel project-create-empty" aria-label="创建第一个项目"><h2>从一个研究项目开始</h2><p>填写项目名称与工作区目录，之后可以查看本机会话形成的研究决定史。</p><button className="button primary" onClick={openProjectCreation}>创建第一个项目 <Icon name="arrow" size={16} /></button></section> : projectListState === 'error' ? <section className="panel project-create-empty" aria-label="项目列表暂不可用"><h2>项目列表暂不可用</h2><p className="error-message" role="alert">{projectList?.message}</p><p>尚无法判断是否已有项目，请重新读取。</p><button className="button secondary" onClick={refresh}>重新读取项目列表</button></section> : <Loading /> : !graph && ['questions', 'timeline'].includes(view) ? <Loading /> : <>
         {view === 'questions' && graph && <Questions data={graph} onClaim={onClaim} onEvidence={onEvidence} onCreateQuestion={() => {
           if (!currentDrafts.current[projectId]) changeQuestionDraft(projectId, emptyQuestionDraft());
           setSelectedClaim(null); setSelectedEvidence(null); setEditing(null); currentQuestionProject.current = projectId; setQuestionProject(projectId);
@@ -254,6 +281,7 @@ export function App() {
     </main></div>
     {selectedClaim && <ClaimDrawer project={projectId} onImpactClaim={onImpactClaim} key={JSON.stringify([projectId, selectedClaim, epoch, selectedReading ? researchQuery(selectedReading) : null])} onResolve={decisions.openResolve} id={selectedClaim} epoch={epoch} actor={actor} reading={selectedReading} onClose={() => setSelectedClaim(null)} onEvidence={span => onEvidence(selectedReading ? { ...span, reading: selectedReading } : span)} onError={onError} onWrite={onWrite} onEdit={onEdit} onClaim={selectedReading ? id => { setSelectedClaim(id); setSelectedEvidence(null); } : onClaim} />}
     {selectedEvidence && <aside className="evidence-drawer" role="dialog" aria-label="原文证据"><header><div><span className="eyebrow">来源证据</span><h2>原文 #{selectedEvidence.event_id}</h2></div><button className="icon-button" aria-label="关闭原文" onClick={() => setSelectedEvidence(null)}><Icon name="close" /></button></header><div className="drawer-content"><EvidencePanel target={selectedEvidence} onError={onError} onEvidence={onEvidence} /></div></aside>}
+    {projectCreation && <ProjectCreateDialog key={projectCreation.generation} onClose={closeProjectCreation} onCreated={result => createdProject(result, projectCreation.generation)} onError={onError} />}
     {editing && <EditDialog key={editing.claim.claim_id} claim={editing.claim} revision={editing.revision} actor={actor} onClose={() => setEditing(null)} onWrite={onWrite} onError={onError} />}
     {decisions.dialogs}
     {notes.dialogs}

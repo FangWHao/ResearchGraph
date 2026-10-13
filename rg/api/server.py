@@ -330,6 +330,7 @@ class Handler(BaseHTTPRequestHandler):
             self._unread_body = False
             path = urlsplit(self.path).path
             if path in {
+                "/api/projects",
                 "/api/exports",
                 "/api/privacy",
                 "/api/view-state",
@@ -382,7 +383,11 @@ class Handler(BaseHTTPRequestHandler):
                 },
             )
             try:
-                if path == "/api/project-fragments/dependencies":
+                if path == "/api/projects":
+                    from rg.api.projects import create
+
+                    result = create(store, body)
+                elif path == "/api/project-fragments/dependencies":
                     from rg.store.fragment_dependencies import preview
 
                     result = preview(store, body)

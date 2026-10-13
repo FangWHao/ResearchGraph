@@ -381,17 +381,17 @@ def parser() -> argparse.ArgumentParser:
     review.add_argument("--expected-revision", type=int)
     review.add_argument("--open", action="store_true", help="启动并打开本地复核界面")
     review.add_argument("--port", type=int, default=8787)
-    review.add_argument("--web-dir", type=Path, default=Path("web/dist"))
+    review.add_argument("--web-dir", type=Path, help="覆盖安装包或源码树的默认界面目录")
     served = commands.add_parser("serve", help="启动仅监听 127.0.0.1 的研究记录界面")
     served.add_argument("--port", type=int, default=8787)
-    served.add_argument("--web-dir", type=Path, default=Path("web/dist"))
+    served.add_argument("--web-dir", type=Path, help="覆盖安装包或源码树的默认界面目录")
     served.add_argument("--daily-budget", type=int, default=500000)
     served.add_argument("--input-budget", type=int, default=128000)
     model_connection_arguments(served)
     served.add_argument("--open", action="store_true", help="自动打开浏览器")
     started = commands.add_parser("start", help="统一启动桌面界面、持续采集与文件版本处理")
     started.add_argument("--port", type=int, default=8787)
-    started.add_argument("--web-dir", type=Path, default=Path("web/dist"))
+    started.add_argument("--web-dir", type=Path, help="覆盖安装包或源码树的默认界面目录")
     started.add_argument("--open", action="store_true", help="自动打开桌面浏览器")
     started.add_argument("--interval", type=float, default=2)
     started.add_argument("--limit", type=int, default=20)
@@ -1129,6 +1129,7 @@ def _ask_values(args: argparse.Namespace) -> dict:
 def _serve(args: argparse.Namespace, data_root: Path) -> dict:
     from rg.api.qa import QAConfig
     from rg.api.server import serve
+    from rg.api.static import web_directory
 
     base_url = getattr(args, "base_url", os.environ.get("RG_BASE_URL"))
     model = getattr(args, "model", os.environ.get("RG_MODEL"))
@@ -1142,7 +1143,7 @@ def _serve(args: argparse.Namespace, data_root: Path) -> dict:
         )
     serve(
         data_root,
-        args.web_dir,
+        web_directory(args.web_dir),
         args.port,
         getattr(args, "daily_budget", 500000),
         args.open,
@@ -1155,9 +1156,11 @@ def _serve(args: argparse.Namespace, data_root: Path) -> dict:
 def _start(args: argparse.Namespace) -> dict:
     from contextlib import closing
 
+    from rg.api.static import web_directory
     from rg.api.views import project_exists
     from rg.runtime import Runtime
 
+    args.web_dir = web_directory(args.web_dir)
     if args.daily_budget < 1 or args.input_budget < 1:
         raise ValueError("每日额度与输入预算必须为正整数")
     # 提前校验本地配置；不调用计数或生成，也不授予项目外发许可。
