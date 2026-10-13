@@ -1250,3 +1250,15 @@
 - 后续文件：rg/export/build.py／privacy.py、tests/golden/test_export_version_references.py、Windows CI 及本次中文说明。仅在导出器固定生成位置标记摘要，用户同名字段继续遮盖；自定义规则涉及摘要时拒绝发布，数据库及原件不改。固定手机号形状先实测2 failed／5 passed in3.60s，之后相关四组 `.tools/bin/uv run pytest tests/golden/test_export_version_references.py tests/golden/test_multiedit.py tests/golden/test_exports.py tests/golden/test_root_history.py -q` 实际89 passed in27.90s、退出0；新增原生运行两种导出一致性及项目隐私规则共9 passed in3.06s、退出0。
 - `.tools/bin/uv run ruff check rg/export tests/golden/test_export_version_references.py` 修正新测试导入排序后实际 All checks passed!、退出0；`.tools/bin/uv run pyright rg` 实际0 errors／0 warnings／0 informations、退出0；`git diff --check` 无输出、退出0。完整回归仍交既有 CI，没有本地再跑全部后端或浏览器。
 - 当前桌面包：`RG_PACKAGE_WEB=1 .tools/bin/uv build --wheel --out-dir .cache/main-merge-20261013/wheel` 实际退出0，177后端及10静态资源与当前源码逐字一致，测试／夹具／缓存未入包；3331211字节，SHA256为bf8ff2d44b24b22d7a54ef35413832fffb6831a34c32be10d6923a884ddd72e6。没有重复本机原生Windows安装；当前安装与跨平台完整验证交新提交 CI，旧包检查不冒充本次验证。
+
+
+## 2026-10-13 · PR #1 已合入 main
+
+- 任务：按用户明确授权将现有开发成果合入主分支。PR #1 解除草稿后采用普通合并，保留开发提交；GitHub 实际 state=MERGED、isDraft=false，合并时刻2026-10-13T13:58:30Z，合并提交d8678f283ee0362eae42ef0f84115852e39552a9，代码提交55de1c336b5c5ab1af74c1ed7de12c7e6b1e4e45。
+- 验收：push38405168917 与 PR38405177991 实际均 success；合并前 PR 的四项检查均 COMPLETED／SUCCESS，mergeStateStatus=CLEAN。完整离线测试1838 passed in389.39s，固定案例1791 passed in361.86s，前端238 passed，浏览器224 passed (7.3m)；ruff 实际 All checks passed!，pyright 实际0 errors／0 warnings／0 informations。前端构建、完整 wheel 构建和仓库外安装均通过。
+- Windows：push 实际590 passed／1 skipped in365.09s。PR 首次任务触及10分钟时限，已完成部分566 passed／1 skipped后被取消，不能记为全通过；待流程结束只重跑 Windows，实际590 passed／1 skipped in386.03s、任务success，原后端没有重跑。时限、案例和产品合同均未放宽，前次失败／取消记录保留。
+- 发布命令：`gh pr ready 1`、`gh pr merge 1 --merge --match-head-commit 55de1c336b5c5ab1af74c1ed7de12c7e6b1e4e45 --subject '合并本机研究决定史与原生桌面采集' --body-file .cache/main-merge-20261013/merge-message.txt` 实际退出0；`gh pr view 1 --json state,isDraft,mergedAt,mergeCommit,url,headRefOid,baseRefName` 实际返回上述合并状态。
+- 本机：`git fetch origin main`、`git switch -c main --track origin/main` 实际退出0；`git diff --exit-code 55de1c336b5c5ab1af74c1ed7de12c7e6b1e4e45 HEAD` 无输出、退出0，证明合并树与验收树完全一致。切换后 `git status --short --branch` 实际仅 `## main...origin/main`，目录干净；开发分支保留。
+- 内容检查：先核对1739个既有历史 blob，再核对两个补充提交的13个 blob；实际识别1个本机凭据值，内容匹配均为0，禁止提交文件数0，未输出凭据。无真实材料／数据库／缓存／安装包入库，远程模型调用0。
+- 收尾文件：仅追加 PROGRESS.md／DECISIONS.md，并同步 docs/PR草稿.md 为已验收的最终 PR 说明。文档收尾提交使用 `[skip ci]`，避免中文纪要重复触发整套回归；提交前后另核对除这三个文档外的软件树与已验收提交完全一致，`git diff --check` 无输出、退出0。合并提交本身的 main CI 仍按既有流程自动运行，不把启动中的检查写为通过。
+- 下一步：从 main 开始实际试用和问题修复；正式 Atlas 参考、科研质量／成本、完整研究 I/O、规模及长期使用继续保留，完整 M0–M4 尚未验收。下一个开发任务使用新分支和新会话。
