@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from rg.export.privacy import Privacy
+from rg.export.privacy import GeneratedDigest, Privacy
 from rg.query.graph import SemanticGraph
 from rg.query.l1 import FileRunGraph
 from rg.query.l1_records import all_pages
@@ -121,6 +121,33 @@ def masked_sources(reader: Reader, records: list[dict[str, Any]], privacy: Priva
         else:
             result.append(privacy.walk(record))
     return result
+
+
+def _marked_record(record: dict[str, Any]) -> dict[str, Any]:
+    proof = record.get("path_validation")
+    if not isinstance(proof, dict) or not isinstance(proof.get("input_signature"), str):
+        return record
+    return record | {
+        "path_validation": proof | {"input_signature": GeneratedDigest(proof["input_signature"])}
+    }
+
+
+def masked_member(name: str, value: Any, privacy: Privacy) -> Any:
+    # 仅标记完整 L1 记录的固定结构位置；正文、scope、报告参数中的同名字段不豁免。
+    if name == "graph.json":
+        nodes = [
+            node | {"record": _marked_record(node["record"])}
+            if node["kind"] in {"edit_record", "native_run"}
+            else node
+            for node in value["l1"]["nodes"]
+        ]
+        value = value | {"l1": value["l1"] | {"nodes": nodes}}
+    elif name == "runs.json":
+        value = [
+            run | {"native": _marked_record(run["native"])} if run["native"] else run
+            for run in value
+        ]
+    return privacy.walk(value)
 
 
 def algorithms(store: Store, claims: list[dict[str, Any]], reader: Reader) -> dict[str, Any]:
@@ -285,7 +312,7 @@ def build(store: Store, body: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
                 dumps(
                     masked_sources(reader, value, privacy)
                     if name == "sources.json"
-                    else privacy.walk(value)
+                    else masked_member(name, value, privacy)
                 )
                 + "\n"
             ).encode()

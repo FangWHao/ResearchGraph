@@ -62,6 +62,7 @@ jobs:
           tests/golden/test_l1_paths.py
           tests/golden/test_l1_path_repair.py
           tests/golden/test_multiedit.py
+          tests/golden/test_export_version_references.py
           tests/test_migrations.py
           -q
   backend:

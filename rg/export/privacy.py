@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from rg.extract.redact import Redacted, redact
@@ -41,6 +42,13 @@ ASSIGNMENTS = (
 )
 
 
+@dataclass(frozen=True)
+class GeneratedDigest:
+    """仅由导出器在明确的程序生成字段位置标记，不从用户 JSON 创建。"""
+
+    value: str
+
+
 class Privacy:
     def __init__(self, patterns: Any = None, project_patterns: tuple[str, ...] = ()):
         self.patterns = project_patterns + validate_patterns([] if patterns is None else patterns)
@@ -51,6 +59,12 @@ class Privacy:
         return redact(raw, ASSIGNMENTS + self.patterns)
 
     def walk(self, value: Any, field: str = "") -> Any:
+        if isinstance(value, GeneratedDigest):
+            if not re.fullmatch(r"[a-f0-9]{64}", value.value):
+                raise ValueError("程序生成摘要格式无效，不能发布导出")
+            if any(re.search(pattern, value.value) for pattern in self.patterns):
+                raise ValueError("自定义遮盖规则涉及程序生成摘要，不能发布改变核验依据的导出")
+            return value.value
         if isinstance(value, str):
             if field in APPLICATION_UUID_FIELDS and re.fullmatch(
                 r"[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}", value
