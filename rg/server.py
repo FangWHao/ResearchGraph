@@ -16,8 +16,10 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from rg.config import DB_NAME, DEFAULT_BASE_URL, DEFAULT_MODEL, read_key, save_key
-from rg.model import Call, Model, cached
+import httpx
+
+from rg.config import DB_NAME, DEFAULT_BASE_URL, DEFAULT_MODEL, clean_key, read_key, save_key
+from rg.model import Call, Model, ModelError, cached
 from rg.organize import KINDS, Jobs, add_sessions, cleanup, estimate, fork_point
 from rg.parse import NotASession
 from rg.sources import default_dirs, read_info, scan, under, workspaces
@@ -55,6 +57,7 @@ class App:
         self.store = Store(root / DB_NAME)
         self.jobs = Jobs(self.store, self.roots, self.model)
         self._model: tuple[tuple[str, str, str], Call] | None = None
+        self.transport: httpx.BaseTransport | None = None  # 测试时替换成假接口
         self._model_lock = threading.Lock()
 
     # ----- 设置 -----
@@ -76,7 +79,7 @@ class App:
         identity = (settings["base_url"], settings["model"], key)
         with self._model_lock:
             if self._model is None or self._model[0] != identity:
-                client = Model(settings["base_url"], settings["model"], key)
+                client = Model(settings["base_url"], settings["model"], key, self.transport)
                 tag = f"{settings['base_url']}|{settings['model']}"
                 self._model = (identity, cached(self.store, client, tag))
             return self._model[1]
@@ -182,6 +185,31 @@ def post_settings(
         except ValueError as error:
             raise ApiError(400, str(error)) from None
     return get_state(app, m, {}, {})
+
+
+@route("POST", "/api/settings/check")
+def check_model(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    """用填写中（或已保存）的 Key、接口和模型发一条极短的消息，不保存任何设置。"""
+    settings = app.model_settings()
+    base_url = _text(body, "base_url", 200) or settings["base_url"]
+    model = _text(body, "model", 200) or settings["model"]
+    typed = _text(body, "api_key", 500)
+    key = clean_key(typed) if typed else read_key(app.root)
+    if not key:
+        return {"ok": False, "message": "API Key 格式不对" if typed else "还没有填写 API Key"}
+    try:
+        client = Model(base_url.rstrip("/"), model, key, app.transport, retries=0)
+    except ValueError as error:
+        return {"ok": False, "message": str(error)}
+    try:
+        name = client.check()
+    except ModelError as error:
+        return {"ok": False, "message": str(error)}
+    finally:
+        client.close()
+    return {"ok": True, "message": f"可以使用（{name}）"}
 
 
 @route("GET", "/api/sessions")

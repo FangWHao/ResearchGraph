@@ -27,6 +27,25 @@ class Truncated(ModelError):
     """输出达到 max_tokens 被截断，结果作废。"""
 
 
+class AuthError(ModelError):
+    """Key 无效或没有权限（HTTP 401/403）。重试没有意义，整个任务应当停下。"""
+
+
+def _auth_error(status: int) -> AuthError:
+    # 不带返回原文：有的接口会在 401 的说明里回显部分 Key。
+    return AuthError(f"API Key 无效或没有权限（HTTP {status}）")
+
+
+def _detail(response: httpx.Response) -> str:
+    try:
+        data = response.json()
+    except ValueError:
+        return ""
+    error = data.get("error") if isinstance(data, dict) else None
+    message = error.get("message") if isinstance(error, dict) else None
+    return f"：{' '.join(str(message).split())[:160]}" if message else ""
+
+
 class Model:
     def __init__(
         self,
@@ -81,11 +100,35 @@ class Model:
             else:
                 if response.is_success:
                     return response.json()
+                if response.status_code in {401, 403}:
+                    raise _auth_error(response.status_code)
                 retryable = response.status_code == 429 or response.status_code >= 500
                 if not retryable or attempt == self.retries:
                     raise ModelError(f"模型接口返回 HTTP {response.status_code}")
             time.sleep(2 * (attempt + 1))
         raise ModelError("模型接口不可用")
+
+    def check(self) -> str:
+        """发一条极短的消息，确认 Key、接口地址和模型名都能用。返回接口报告的模型名。"""
+        body = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 1,
+            "thinking": {"type": "disabled"},
+        }
+        try:
+            response = self.client.post(self.base_url + "/v1/messages", json=body)
+        except httpx.HTTPError as error:
+            raise ModelError(f"连不上模型接口：{type(error).__name__}") from None
+        if response.status_code in {401, 403}:
+            raise _auth_error(response.status_code)
+        if not response.is_success:
+            raise ModelError(f"模型接口返回 HTTP {response.status_code}{_detail(response)}")
+        try:
+            data = response.json()
+        except ValueError:
+            raise ModelError("模型接口返回的不是 JSON，接口地址可能不对") from None
+        return str(data.get("model") or self.model) if isinstance(data, dict) else self.model
 
     def __call__(
         self, system: str, user: str, schema: dict[str, Any], max_tokens: int

@@ -89,6 +89,7 @@ h2 { font-size: 16px; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 .error { color: var(--danger); }
+.ok { color: var(--f); }
 .mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; }
 
 /* 引导页 */

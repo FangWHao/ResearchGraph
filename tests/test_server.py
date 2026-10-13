@@ -188,3 +188,32 @@ def test_missing_web_build_and_unknown_routes(server):
     assert client.get("/api/nope").status_code == 404
     assert client.post("/api/projects", content=b"[]").status_code == 400
     assert json.loads(client.get("/api/projects/99").text) == {"error": "项目不存在"}
+
+
+def test_check_key_without_saving(server):
+    app, client = server
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers["x-api-key"])
+        if request.headers["x-api-key"] == "sk-good":
+            return httpx.Response(200, json={"model": "deepseek-flash"})
+        return httpx.Response(401, json={"error": {"message": "bad key sk-bad"}})
+
+    app.transport = httpx.MockTransport(handler)
+    assert client.post("/api/settings/check", json={}).json() == {
+        "ok": False,
+        "message": "还没有填写 API Key",
+    }
+    good = client.post("/api/settings/check", json={"api_key": "sk-good"}).json()
+    assert good == {"ok": True, "message": "可以使用（deepseek-flash）"}
+    bad = client.post("/api/settings/check", json={"api_key": "sk-bad"}).json()
+    assert bad["ok"] is False and "401" in bad["message"] and "sk-bad" not in bad["message"]
+    assert not (app.root / "api_key").exists()  # 检测不保存
+    assert client.post(
+        "/api/settings/check", json={"api_key": "sk-x", "base_url": "http://evil"}
+    ).json() == {
+        "ok": False,
+        "message": "模型接口必须使用 HTTPS",
+    }
+    assert seen == ["sk-good", "sk-bad"]

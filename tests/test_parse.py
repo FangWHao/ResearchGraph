@@ -75,3 +75,19 @@ def test_long_message_is_clipped_not_dropped():
     session = parse_lines([json.dumps(record)])
     text = session.messages[0].text
     assert text.startswith("开头") and text.endswith("结尾") and len(text) < 21_000
+
+
+def test_slash_commands_are_readable_and_not_used_as_title():
+    records = [
+        {
+            "type": "user",
+            "sessionId": "s",
+            "message": {
+                "content": "<command-name>/clear</command-name>\n<command-message>clear</command-message>\n<command-args></command-args>"
+            },
+        },
+        {"type": "user", "sessionId": "s", "message": {"content": "画一下 PDAC 的细胞图谱"}},
+    ]
+    session = parse_lines([json.dumps(r, ensure_ascii=False) for r in records])
+    assert [m.text for m in session.messages] == ["/clear", "画一下 PDAC 的细胞图谱"]
+    assert session.title == "画一下 PDAC 的细胞图谱"

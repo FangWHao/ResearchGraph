@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from rg.model import Call, ModelError, Truncated
+from rg.model import AuthError, Call, ModelError, Truncated
 from rg.parse import Message, NotASession, clip, parse_file
 from rg.sources import SessionInfo, normalize_cwd, scan, under
 from rg.store import Store, now
@@ -445,7 +445,13 @@ def extract_range(
     return validate_events(output, messages, a, b)
 
 
-def extract_session(store: Store, call: Call, session: dict[str, Any], progress: Progress) -> None:
+def extract_session(
+    store: Store,
+    call: Call,
+    session: dict[str, Any],
+    progress: Progress,
+    stop: threading.Event | None = None,
+) -> None:
     messages = store.q(
         "SELECT idx, role, ts, text FROM messages WHERE session_id = ? ORDER BY idx",
         (session["id"],),
@@ -459,6 +465,8 @@ def extract_session(store: Store, call: Call, session: dict[str, Any], progress:
         )
     ]
     for a, b in chunk_ranges(sizes, session["extracted_upto"]):
+        if stop is not None and stop.is_set():
+            return
         events = extract_range(call, session, messages, a, b)
         fresh = [e for e in events if not any(set(e["refs"]) & kept for kept in retained)]
         with store.tx() as db:
@@ -494,14 +502,25 @@ def extract(store: Store, call: Call, project_id: int, progress: Progress) -> No
             total += count
     progress.set("extract", total)
 
+    stop = threading.Event()
+    failure: list[AuthError] = []
+
     def run(session: dict[str, Any]) -> None:
+        if stop.is_set():
+            return
         try:
-            extract_session(store, call, session, progress)
+            extract_session(store, call, session, progress, stop)
+        except AuthError as error:
+            # Key 不对时每个会话都会失败，只报一次，其余会话不再发请求。
+            failure.append(error)
+            stop.set()
         except ModelError as error:
             progress.error(f"「{session['title'] or session['id']}」提取失败：{error}")
 
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         list(pool.map(run, pending))
+    if failure:
+        raise failure[0]
 
 
 # ---------- 归入研究线 ----------
@@ -849,9 +868,14 @@ def organize(
         progress.error("还没有设置 API Key")
         progress.set("error")
         return
-    extract(store, call, project_id, progress)
     try:
+        extract(store, call, project_id, progress)
         place(store, call, project_id, progress)
+    except AuthError as error:
+        progress.error(f"{error}。请在设置里检测 Key，改好后点“重试”，已整理的部分不会丢")
+        progress.estimate = estimate(store, project_id)
+        progress.set("error")
+        return
     except ModelError as error:
         progress.error(f"归入研究线失败：{error}")
     with store.tx() as db:

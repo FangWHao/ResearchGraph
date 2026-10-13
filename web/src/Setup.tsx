@@ -23,6 +23,22 @@ export function Setup({ state, first, onDone, onCancel }: Props) {
   const [model, setModel] = useState(state.model.model);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [check, setCheck] = useState<{ ok: boolean; message: string } | 'running' | null>(null);
+
+  const test = async () => {
+    setCheck('running');
+    try {
+      setCheck(
+        await api.checkModel({
+          ...(key.trim() ? { api_key: key.trim() } : {}),
+          base_url: baseUrl.trim(),
+          model: model.trim(),
+        }),
+      );
+    } catch (e) {
+      setCheck({ ok: false, message: e instanceof Error ? e.message : String(e) });
+    }
+  };
 
   const toggle = (path: string) => {
     const next = new Set(chosen);
@@ -117,15 +133,34 @@ export function Setup({ state, first, onDone, onCancel }: Props) {
         </p>
         <label className="field">
           <span>DeepSeek API Key{state.model.has_key ? '（已设置，留空表示不修改）' : ''}</span>
-          <input
-            className="input"
-            type="password"
-            autoComplete="off"
-            placeholder={state.model.has_key ? '••••••••' : 'sk-…'}
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-          />
+          <div className="row">
+            <input
+              className="input"
+              type="password"
+              autoComplete="off"
+              placeholder={state.model.has_key ? '••••••••' : 'sk-…'}
+              value={key}
+              onChange={(e) => {
+                setKey(e.target.value);
+                setCheck(null);
+              }}
+            />
+            <button
+              type="button"
+              className="btn"
+              disabled={check === 'running' || (!key.trim() && !state.model.has_key)}
+              onClick={test}
+            >
+              {check === 'running' ? '检测中…' : '检测'}
+            </button>
+          </div>
         </label>
+        {check && check !== 'running' ? (
+          <div className={`small ${check.ok ? 'ok' : 'error'}`}>
+            {check.ok ? '✓ ' : '✗ '}
+            {check.message}
+          </div>
+        ) : null}
         <button type="button" className="link small" onClick={() => setAdvanced(!advanced)}>
           {advanced ? '收起高级设置' : '高级设置（换接口或模型）'}
         </button>
@@ -133,11 +168,25 @@ export function Setup({ state, first, onDone, onCancel }: Props) {
           <>
             <label className="field">
               <span>接口地址（Anthropic Messages 兼容）</span>
-              <input className="input" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
+              <input
+                className="input"
+                value={baseUrl}
+                onChange={(e) => {
+                  setBaseUrl(e.target.value);
+                  setCheck(null);
+                }}
+              />
             </label>
             <label className="field">
               <span>模型</span>
-              <input className="input" value={model} onChange={(e) => setModel(e.target.value)} />
+              <input
+                className="input"
+                value={model}
+                onChange={(e) => {
+                  setModel(e.target.value);
+                  setCheck(null);
+                }}
+              />
             </label>
           </>
         ) : null}

@@ -27,3 +27,16 @@
 - 验收：ActiveState=active / SubState=running / ExecMainStatus=0；`ss` 显示只监听 127.0.0.1:8788；`/` 200 text/html，`/api/state` 200（sources 空，发现 claude 38、codex 326、codex 31 个文件，has_key false，项目 0）；Host 为 evil.example 时返回 403。浏览器打开首次引导页没有报错，修正了“高级设置”链接居中的样式。
 - 回滚：`uv pip install --python ~/.local/share/researchgraph/venv/bin/python --reinstall-package researchgraph .cache/main-merge-20261013/wheel/researchgraph-0.1.0-py3-none-any.whl` 后重启服务，旧版仍读 `rg.db`。
 - 下一步：用户在引导页填写 API Key，选一个真实项目试整理，反馈效果。
+
+## 2026-10-14 · 一键检测 API Key，Key 无效时只报一次
+
+- 起因：用户第一次填了一个 DeepSeek 不认的 Key（46 位，DeepSeek 返回 401），每个会话各报一条“提取失败：HTTP 401”，状态栏被刷满。用户随后换好 Key，整理出 25 个会话、151 个事件。
+- 改动：
+  - `rg/model.py`：401/403 抛 `AuthError`，不重试，也不带接口返回的原文（有的接口会回显部分 Key）。`Model.check()` 只发一条 `ping`（max_tokens 1），确认 Key、接口地址和模型名都能用。
+  - `rg/server.py`：`POST /api/settings/check` 用填写中或已保存的 Key 检测，不保存设置。App 加了可注入的 `transport`，供测试使用。
+  - `rg/organize.py`：遇到 AuthError，所有提取线程停下，只记一条错误；已整理的进度不前进也不丢失，改好 Key 后点“重试”接着做。
+  - `rg/parse.py`：斜杠命令去掉 `<command-name>` 等标签，自动标题跳过 `/clear` 这类命令。
+  - 前端：设置页 Key 输入框旁边加“检测”按钮；出错的状态栏增加“设置”按钮。
+  - 测试：新增 `tests/test_model.py`，并在 organize / server / parse 测试里补了对应用例。
+- 验收：`uv run pytest -q` → 40 passed in 6.31s；ruff All checks passed!，格式检查 18 files already formatted；pyright 0 errors；`pnpm test` 8 passed，`pnpm build` 成功。重装本机服务（wheel SHA256 df5eb2db64a9e106c14955dd94fe9f02b39f68c2ea80e03946538c0f124adf98）前确认没有整理任务在跑；重启后 active/running，项目数据完好（1 个项目、25 个会话、151 个事件）。线上 `/api/settings/check` 用已保存的 Key 返回 `可以使用（deepseek-flash）`，浏览器里点“检测”显示 ✓，页面无报错。
+- 下一步：用户看真实项目的整理效果并反馈。

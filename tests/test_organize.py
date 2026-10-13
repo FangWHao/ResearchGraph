@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from rg.model import ModelError, Truncated
+from rg.model import AuthError, ModelError, Truncated
 from rg.organize import (
     EVENT_SYSTEM,
     Progress,
@@ -309,6 +309,29 @@ def test_model_failure_keeps_progress_for_retry(store, copy_fixture):
     assert (
         store.one("SELECT extracted_upto FROM sessions WHERE tool = 'codex'")["extracted_upto"] == 5
     )
+
+
+def test_invalid_key_stops_everything_with_one_message(store, copy_fixture):
+    calls = []
+
+    def unauthorized(system, user, schema, tokens):
+        calls.append(system)
+        raise AuthError("API Key 无效或没有权限（HTTP 401）")
+
+    paths = [
+        copy_fixture("claude/research-synthetic.jsonl"),
+        copy_fixture("codex/research-synthetic.jsonl"),
+    ]
+    pid = new_project(store, paths)
+    progress = run(store, unauthorized, pid)
+    assert progress.phase == "error"
+    assert len(progress.errors) == 1 and "HTTP 401" in progress.errors[0]
+    assert EVENT_SYSTEM in calls and len(calls) <= 2  # 每个会话最多一次，不再继续发
+    assert [r["extracted_upto"] for r in store.q("SELECT extracted_upto FROM sessions")] == [0, 0]
+    assert progress.estimate and progress.estimate["sessions"] == 2
+
+    progress = run(store, FakeModel(), pid)  # 改好 Key 后重试，从头接着做
+    assert progress.phase == "done"
 
 
 def write_fork(original: Path, fork: Path, native: bool) -> None:

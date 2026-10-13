@@ -39,6 +39,9 @@ INJECTED_TAGS = (
 _TAG_NAMES = "|".join(re.escape(t) for t in INJECTED_TAGS)
 _INJECTED = re.compile(rf"<({_TAG_NAMES})\b[^>]*>.*?(?:</\1>|\Z)", re.S)
 _INSTRUCTION_PREFIXES = ("# AGENTS.md instructions", "<INSTRUCTIONS>")
+# Claude Code 的斜杠命令：<command-name>/clear</command-name><command-args>…</command-args>
+_COMMAND_TAGS = re.compile(r"</?command-(?:name|args)>")
+_SLASH_COMMAND = re.compile(r"^/[\w:-]+(\s|$)")
 
 CLAUDE_IGNORED = {
     "attachment",
@@ -120,7 +123,14 @@ class Session:
     def title(self) -> str | None:
         if self.custom_title or self.ai_title:
             return _one_line(self.custom_title or self.ai_title or "", TITLE_CHARS)
-        first = next((m.text for m in self.messages if m.role == "user" and m.text), None)
+        first = next(
+            (
+                m.text
+                for m in self.messages
+                if m.role == "user" and m.text and not _SLASH_COMMAND.match(m.text)
+            ),
+            None,
+        )
         return _one_line(first, TITLE_CHARS) if first else None
 
     def touch(self, ts: Any) -> None:
@@ -147,7 +157,8 @@ def clip(text: str, limit: int) -> str:
 def clean_user_text(text: str) -> str:
     if text.lstrip().startswith(_INSTRUCTION_PREFIXES):
         return ""
-    return _INJECTED.sub("", text).strip()
+    text = _INJECTED.sub("", text)
+    return " ".join(_COMMAND_TAGS.sub(" ", text).split()) if "<command-" in text else text.strip()
 
 
 def _blocks_text(value: Any) -> str:

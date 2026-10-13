@@ -19,7 +19,7 @@ def data_dir(path: str | Path | None = None) -> Path:
     return root
 
 
-def _clean_key(value: str) -> str | None:
+def clean_key(value: str) -> str | None:
     match = re.search(r"\bsk-[A-Za-z0-9_-]+", value)
     if match:
         return match[0]
@@ -32,16 +32,16 @@ def _clean_key(value: str) -> str | None:
 def read_key(root: Path) -> str | None:
     """环境变量 RG_API_KEY 优先，其次 RG_API_KEY_FILE，最后数据目录里的 api_key。"""
     if os.environ.get("RG_API_KEY"):
-        return _clean_key(os.environ["RG_API_KEY"])
+        return clean_key(os.environ["RG_API_KEY"])
     path = Path(os.environ.get("RG_API_KEY_FILE") or root / KEY_NAME).expanduser()
     try:
-        return _clean_key(path.read_text(encoding="utf-8"))
+        return clean_key(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, NotADirectoryError):
         return None
 
 
 def save_key(root: Path, key: str) -> None:
-    cleaned = _clean_key(key)
+    cleaned = clean_key(key)
     if not cleaned:
         raise ValueError("API Key 格式不正确")
     path = root / KEY_NAME

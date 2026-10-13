@@ -277,6 +277,9 @@ function StatusBar({
           <button type="button" className="btn small" onClick={onRetry}>
             重试
           </button>
+          <button type="button" className="btn small" onClick={onSettings}>
+            设置
+          </button>
         </>
       ) : (
         <span className="muted">
