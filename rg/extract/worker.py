@@ -15,7 +15,8 @@ from rg.derive.rule_references import policy as rule_qualification_policy
 from rg.extract.budgets import Budgets
 from rg.extract.locator import CUE_PATTERNS, positions, units, windows
 from rg.extract.monitor import set_status
-from rg.extract.paths import file_paths
+from rg.extract.path_context import PathContext, PathKey
+from rg.extract.path_context import policy as path_policy
 from rg.extract.privacy import ProjectCounter
 from rg.extract.progress import (
     adopt_legacy,
@@ -137,7 +138,12 @@ class Worker:
                     policy.identity,
                     source_qualification_policy(),
                     *(
-                        [working_scope_policy(), RULE_VERSION, rule_qualification_policy()]
+                        [
+                            working_scope_policy(),
+                            path_policy(),
+                            RULE_VERSION,
+                            rule_qualification_policy(),
+                        ]
                         if stage != "pass1"
                         else []
                     ),
@@ -563,6 +569,7 @@ class Worker:
             source_qualification_policy(),
             working_scope_policy(),
             rule_qualification_policy(),
+            path_policy(),
         ]
         if isinstance(self.counter, ProjectCounter) and self.counter.policy.rule_id:
             result.append(self.counter.policy.identity)
@@ -660,7 +667,7 @@ class Worker:
                 self.counter,
                 before_event=item.ids[0],
                 scope=scope,
-                paths=self._paths(item),
+                path_keys=self._paths(item, project_id),
                 before_offset=item.events[0].get("raw_start"),
                 grouped=True,
             )
@@ -701,7 +708,7 @@ class Worker:
                         output["lookup_terms"],
                         before_event=item.ids[0],
                         scope=scope,
-                        paths=self._paths(item),
+                        path_keys=self._paths(item, project_id),
                         before_offset=item.events[0].get("raw_start"),
                         grouped=True,
                     )
@@ -797,8 +804,9 @@ class Worker:
             manual(self.store, self.config_key, item, failures, type(error).__name__)
             stats["manual"] += 1
 
-    def _paths(self, item: Segment) -> set[str]:
-        paths: set[str] = set()
+    def _paths(self, item: Segment, project: str) -> set[PathKey]:
+        paths: set[PathKey] = set()
+        context = PathContext(self.store, project)
         for event in item.events:
             if event["kind"] in {"tool_call", "file_edit"}:
                 row = self.store.db.execute(
@@ -808,5 +816,7 @@ class Worker:
                     (event["event_id"],),
                 ).fetchone()
                 parsed = parse(row["parser"], json.loads(self.store.raw(event["event_id"])))
-                paths.update(file_paths(parsed[row["record_index"]].text))
+                paths.update(
+                    context.event_keys(event["event_id"], parsed[row["record_index"]].text)
+                )
         return paths

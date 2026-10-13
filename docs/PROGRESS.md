@@ -1194,3 +1194,12 @@
 - Windows安装脚本首轮在自身临时cwd执行清理，断言通过但清理失败退出1，不算成功；使用恢复cwd的上下文后实际退出0。前端首次旧Empty无用导入导致构建失败，修正后实际238 passed／26文件／1.18秒，构建265模块／1.12秒退出0；仅创建项目浏览器2 passed／13.8秒退出0，实际空库HTTP覆盖登记／缺失来源／重放／503／400。完整后端与浏览器交CI。
 - 下一步：提交并更新已有未合并草稿，读取新HEAD完整CI；继续跨工作树路径检索及实际接入／科研使用验收。安装包不进Git；真实参考、I/O、质量／成本、p95、规模和两周使用边界继续保留。
 - 完整包实际3317250字节、SHA23d9f43d5ade03c51a40831d683473a204c77a0804b4a3d4d71030f50c9a8a08；十个静态文件及全部后端资源与当前文件逐字相同，真实凭据匹配0。安装与功能回执已实际终态通过，后续当前提交与云端结果另核对。
+
+## 2026-10-13 · 跨工作树路径召回与干净仓库入口修复
+
+- 开始前读末40行、§2／5／6.6／7.6–7.8及路径／普通取舍决定。上一dde2fa4的PR38383710007和push38383703299实际均failure；push Windows成功，PR后端1 failed／1758 passed in368.73s，旧review入口测试依赖未构建web/dist。修正测试自身临时页面，保留原断言与生产资源预检，不调整CI顺序掩盖问题。
+- 文件：新增rg/extract/path_context.py和黄金test_path_context.py，修改paths／working_set／worker／linker、共享公开对象用例助手和tests/test_api.py；Windows CI增加新路径专项。更新README、需求状态、决定、草稿，新增中文跨工作树验收；前端没有修改。
+- 功能：同项目已登记且唯一共同目录的仓库内路径参与提取工作集与跨会话候选对；相对路径取逐记录原生目录及固定工具参数，缺失／非法观测和跨来源／片段阻断。最长根、子目录前缀、data根、跨项目共同目录、Windows盘符／UNC和含空格路径分别核对。物理路径和版本保留，同版本继续要求算法／摘要相等；模型候选、完整范围和工作集预算不变。路径策略进入持久配置及非pass1／链接缓存身份，不探测当前研究目录或运行会话命令。
+- 初轮新专项2 failed／11 passed in4.44s，合成用例违反追加保护；改为创建时给定内容和追加缺失观测模拟，触发器保留。中间五组63 passed in17.94s、入口单独1 passed in0.93s；最终 `uv run pytest tests/golden/test_path_context.py tests/golden/test_working_selection.py tests/golden/test_links_overview.py tests/golden/test_scoped_working_context.py tests/test_worker.py tests/test_api.py::test_review_open_passes_review_entry_to_server -q` 实际64 passed in18.21s，退出0。全量ruff实际All checks passed，pyright0／0／0，均退出0；没有本地全量后端／浏览器重复回归。
+- 桌面wheel构建与原生Windows隔离环境安装实际退出0；仓库外Python3.12.3／CP936／utf8_mode0新路径及入口16 passed in8.32s、退出0，没有跳过。172后端资源／10静态资源与当前文件逐字相同，包3320246字节、SHA1c6e9d1a10a2e091687d4e14836a1ff8241d48843fc7d258f511f86e1e915963；生成包和临时测试不进Git，远程模型0。
+- 下一步：提交并维护已有未合并草稿，核对新HEAD完整CI；继续实际客户端／科研使用验收。历史根身份双时间账本、跨设备别名、符号链接目标及真实I/O尚有边界；正式参考、质量／成本、p95、规模和两周使用保留，完整M0–M4未完成。

@@ -57,6 +57,7 @@ jobs:
           tests/golden/test_impact.py
           tests/golden/test_project_creation.py
           tests/golden/test_desktop_assets.py
+          tests/golden/test_path_context.py
           tests/test_migrations.py
           -q
   backend:

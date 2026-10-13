@@ -7,7 +7,7 @@ from contextlib import closing
 from typing import Any
 
 from rg.derive.eligibility import assess, recorded
-from rg.extract.paths import file_paths
+from rg.extract.path_context import PathContext, PathKey
 from rg.extract.privacy import ProjectCounter
 from rg.extract.working_scopes import context, scope_shape
 from rg.query.reader import event_state
@@ -29,6 +29,7 @@ def working_set(
     paths: set[str] | None = None,
     before_offset: int | None = None,
     grouped: bool = False,
+    path_keys: set[PathKey] | None = None,
 ) -> list[dict[str, Any]]:
     def qualification(claim: int) -> dict[str, Any]:
         saved = recorded(store, claim)
@@ -72,6 +73,14 @@ def working_set(
         if before_event
         else None
     )
+    path_context = PathContext(store, project_id)
+    query_paths = (
+        path_keys
+        if path_keys is not None
+        else path_context.keys(
+            paths or set(), path_context.cwd(before_event) if before_event else None
+        )
+    )
     for row in rows:
         row_scope = json.loads(row["scope"] or "{}")
         if scope is not None and row_scope != scope:
@@ -111,7 +120,8 @@ def working_set(
             else 1
             if row["claim_id"] in matches
             else 2
-            if (paths or set()) & file_paths(label + " " + payload.get("content", ""))
+            if query_paths
+            & path_context.claim_keys(row["claim_id"], label + " " + payload.get("content", ""))
             else 3
             if prior
             else 4

@@ -404,13 +404,17 @@ def test_graph_bound_is_explicit_not_complete_subgraph(browser_api, monkeypatch)
     assert len(result["claims"]) == 1
 
 
-def test_review_open_passes_review_entry_to_server(store: Store, monkeypatch):
+def test_review_open_passes_review_entry_to_server(store: Store, monkeypatch, tmp_path: Path):
     from rg.cli.main import parser, run
 
     calls = []
+    web = tmp_path / "review-web"
+    web.mkdir()
+    (web / "index.html").write_text("<html>合成复核入口</html>", encoding="utf-8")
     monkeypatch.setattr("rg.api.server.serve", lambda *args, **kwargs: calls.append((args, kwargs)))
-    result = run(parser().parse_args(["review", "--open"]), store)
+    result = run(parser().parse_args(["review", "--open", "--web-dir", str(web)]), store)
     assert result == {"server": "stopped"}
     assert calls[0][1]["initial_view"] == "review"
-    run(parser().parse_args(["serve"]), store)
+    assert calls[0][0][1] == web
+    run(parser().parse_args(["serve", "--web-dir", str(web)]), store)
     assert calls[1][1]["initial_view"] == "questions"

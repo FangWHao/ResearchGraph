@@ -26,10 +26,12 @@ def add_object(
     label: str = "方法甲",
     kind: str = "approach",
     scope: str = "data_v2",
+    content: str | None = None,
+    cwd: str | None = None,
 ) -> tuple[int, int]:
     path = tmp_path / (name + ".jsonl")
     text = f"会话{name}的独立原文，采用{label}。"
-    lines(path, [record(text, name, sessionId=name)])
+    lines(path, [record(text, name, sessionId=name, **({"cwd": cwd} if cwd else {}))])
     scan_file(store, path, "claude", project)
     event = store.db.execute("SELECT max(event_id) FROM raw_events").fetchone()[0]
     raw = store.raw(event)
@@ -47,7 +49,7 @@ def add_object(
                 "temp_id": "new:1",
                 "kind": kind,
                 "label": label,
-                "content": label,
+                "content": label if content is None else content,
                 "scope": {"dataset_version": scope},
                 "evidence": [
                     {

@@ -14,6 +14,8 @@ from rg.derive.eligibility import assess
 from rg.derive.eligibility import policy as source_qualification_policy
 from rg.extract.locator import _bounded_prefix
 from rg.extract.monitor import set_status
+from rg.extract.path_context import PathContext, PathKey
+from rg.extract.path_context import policy as path_policy
 from rg.extract.privacy import ProjectCounter
 from rg.extract.redact import redact
 from rg.extract.schemas import STRING, obj
@@ -38,6 +40,7 @@ def source_policy() -> dict[str, str]:
         "link": LINK_VERSION,
         "parser": PARSER_VERSION,
         "slim": SLIM_VERSION,
+        **path_policy(),
     }
 
 
@@ -128,7 +131,8 @@ def iter_pairs(store: Store, project: str, scope: dict[str, str] | None = None) 
     ).fetchall()
     cards: list[dict[str, Any]] = []
     sessions: dict[int, set[int]] = {}
-    versions: dict[int, set[tuple[str, str, str]]] = {}
+    versions: dict[int, set[tuple[PathKey, str, str]]] = {}
+    paths = PathContext(store, project)
     seen = set()
     for row in rows:
         entity = row["entity_id"]
@@ -167,7 +171,7 @@ def iter_pairs(store: Store, project: str, scope: dict[str, str] | None = None) 
             )
         }
         versions[row["claim_id"]] = {
-            tuple(r)
+            (key, r["algo"], r["digest"])
             for r in store.db.execute(
                 "SELECT av.path, av.algo, av.digest FROM effective_artifact_versions av "
                 "JOIN evidence_spans es ON es.event_id=av.evidence_event_id "
@@ -175,6 +179,7 @@ def iter_pairs(store: Store, project: str, scope: dict[str, str] | None = None) 
                 (row["claim_id"], project),
             )
             if all(value and value.strip().lower() != "unknown" for value in r)
+            for key in paths.keys({r["path"]})
         }
     for index, first in enumerate(cards):
         eligible = [
