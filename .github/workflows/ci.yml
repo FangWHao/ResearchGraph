@@ -12,7 +12,54 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  windows-storage:
+  main:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: 取回代码
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: 安装固定版本 uv 与 Python
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: '0.12.24'
+          python-version: '3.12'
+          enable-cache: true
+      - name: 按锁文件安装依赖
+        run: uv sync --locked
+      - name: 后端测试
+        run: uv run --no-sync pytest -q
+      - name: 代码检查
+        run: uv run --no-sync ruff check rg tests scripts
+      - name: 类型检查
+        run: uv run --no-sync pyright rg
+      - name: 安装固定版本 Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '24.21.0'
+      - name: 安装固定版本 pnpm
+        run: npm install --global pnpm@12.10.1
+      - name: 按前端锁文件安装依赖
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: 前端测试
+        working-directory: web
+        run: pnpm test
+      - name: 前端类型检查与构建
+        working-directory: web
+        run: pnpm build
+      - name: 构建包含界面的 wheel
+        env:
+          RG_PACKAGE_WEB: '1'
+        run: uv build --wheel
+      - name: 仓库外安装后能启动
+        run: |
+          cd "$RUNNER_TEMP"
+          uv run --no-project --isolated --with "$GITHUB_WORKSPACE"/dist/researchgraph-*.whl rg --help
+          uv run --no-project --isolated --with "$GITHUB_WORKSPACE"/dist/researchgraph-*.whl python -c "from rg.server import web_dir; assert web_dir() and 'site-packages' in str(web_dir())"
+
+  windows:
     runs-on: windows-2025
     timeout-minutes: 10
     steps:
@@ -28,97 +75,8 @@ jobs:
           enable-cache: true
       - name: 按锁文件安装依赖
         run: uv sync --locked
-      - name: 使用系统默认编码验收存储、快照、导出与范围提取
+      - name: 使用系统默认编码运行后端测试
         env:
           PYTHONUTF8: '0'
           PYTHONIOENCODING: utf-8
-        run: >-
-          uv run --no-sync pytest
-          tests/golden/test_storage_portability.py
-          tests/golden/test_store_lease.py
-          tests/golden/test_project_clear.py
-          tests/golden/test_native_files.py
-          tests/golden/test_scoped_working_context.py
-          tests/golden/test_rule_scope_versions.py
-          tests/golden/test_rule_reference_qualification.py
-          tests/golden/test_notes.py
-          tests/golden/test_worktree_discovery.py
-          tests/golden/test_root_history.py
-          tests/golden/test_project_fragments.py
-          tests/golden/test_fragment_assignments.py
-          tests/golden/test_fragment_dependencies.py
-          tests/golden/test_record_denials.py
-          tests/golden/test_clear_continuation.py
-          tests/golden/test_science_migration.py
-          tests/golden/test_alias_clear.py
-          tests/golden/test_automatic_assignment.py
-          tests/golden/test_hook_install.py
-          tests/golden/test_client_install.py
-          tests/golden/test_runtime.py
-          tests/golden/test_impact.py
-          tests/golden/test_project_creation.py
-          tests/golden/test_desktop_assets.py
-          tests/golden/test_path_context.py
-          tests/golden/test_l1_paths.py
-          tests/golden/test_l1_path_repair.py
-          tests/golden/test_multiedit.py
-          tests/golden/test_export_version_references.py
-          tests/test_migrations.py
-          -q
-  backend:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - name: 取回代码
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - name: 安装固定版本 uv 与 Python
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
-        with:
-          version: '0.12.24'
-          python-version: '3.12'
-          enable-cache: true
-      - name: 按锁文件安装依赖
-        run: uv sync --locked
-      - name: 全部离线测试
         run: uv run --no-sync pytest -q
-      - name: 固定案例
-        run: uv run --no-sync pytest tests/golden -q
-      - name: 代码检查
-        run: uv run --no-sync ruff check rg tests scripts
-      - name: 类型检查
-        run: uv run --no-sync pyright rg
-      - name: 命令入口
-        run: uv run --no-sync rg --help
-      - name: 官方 MCP 客户端兼容性
-        run: PYTHONPATH=. uv run --no-sync --with 'mcp==2.3.0' python scripts/check_mcp_client.py
-      - name: 项目接入包 MCP 启动
-        run: PYTHONPATH=. uv run --no-sync --with 'mcp==2.3.0' python scripts/check_client_package.py
-      - name: 安装固定版本 Node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: '24.21.0'
-      - name: 安装固定版本 pnpm
-        run: npm install --global pnpm@12.10.1
-      - name: 按前端锁文件安装依赖
-        working-directory: web
-        run: pnpm install --frozen-lockfile
-      - name: 前端语义测试
-        working-directory: web
-        run: pnpm test
-      - name: 前端类型检查与构建
-        working-directory: web
-        run: pnpm build
-      - name: 构建包含界面的桌面安装包
-        env:
-          RG_PACKAGE_WEB: '1'
-        run: uv build --wheel
-      - name: 仓库外安装与桌面启动验收
-        run: uv run --no-project --isolated --with ./dist/researchgraph-0.1.0-py3-none-any.whl python -I scripts/check_desktop_install.py
-      - name: 安装浏览器验收环境
-        working-directory: web
-        run: pnpm exec playwright install --with-deps --only-shell chromium
-      - name: 浏览器与真实本地 API 验收
-        working-directory: web
-        run: pnpm test:browser

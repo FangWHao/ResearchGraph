@@ -1,68 +1,70 @@
 # ResearchGraph · 开发 Agent 说明
 
-把 Codex / Claude Code 的本地会话整理成可查证的研究决定史。
-完整规格见 `docs/ResearchGraph_执行版_v2.md`。只读当前任务涉及的 `§` 章节，不要整份读入。
+把 Claude Code / Codex 的本地会话整理成研究时间线：研究线是泳道，泳道里有主线和分支，每个事件都能点开看原话。
+设计见 `docs/设计.md`（一页）。旧版完整规格、进度和决定在 `docs/archive/`，旧代码在 tag `v0-full-spec`，一般不需要读。
 
 ## 开始每个任务前
 
 1. 读 `docs/PROGRESS.md` 的最后 40 行。
-2. 读任务指定的 `§` 章节，以及 §2（原则）。
+2. 读 `docs/设计.md`。
 3. 有疑问先查 `docs/DECISIONS.md`。那里没有答案，就停下来问，不要猜。
 
 ## 结束每个任务时
 
-1. 运行验收命令，把输出贴在汇报里。不能只写"已完成"。
+1. 运行验收命令，把输出贴在汇报里。不能只写“已完成”。
 2. 在 `docs/PROGRESS.md` 追加：日期、任务、改动的文件、测试命令和结果、下一步。
 3. 有设计取舍时，在 `docs/DECISIONS.md` 追加：决定、理由、放弃的替代方案。
-4. 结束本会话。下一个任务开新会话；不要靠 `/compact` 续命。
 
 ## 命令
 
 ```
-uv sync                       # 安装依赖
-uv run pytest -q              # 全部测试
-uv run pytest tests/golden -q # 固定案例（§15）
-uv run rg --help
-cd web && pnpm i && pnpm test
+uv sync                          # 安装依赖
+uv run pytest -q                 # 后端测试
+uv run ruff check rg tests scripts && uv run pyright rg
+uv run rg start --port 8788      # 启动本机界面
+cd web && pnpm i && pnpm test && pnpm build
 ```
+
+本机的 uv 和 Node 在 `.tools/`：`PATH=$PWD/.tools/node-current/bin:$PWD/.tools/bin:$PATH`。
 
 ## 硬规则
 
-- L0 原始事件只追加，不修改、不删除（清除隐私数据的流程除外，见 §11）。
-- 模型输出只能写成 `claim_state='candidate'`；确认只能来自人工或 §7.7 规定的情形。
-- 每次模型调用前必须实测 token，超过预算就不发送（§7.2）。不要用"字符数/4"估算。
-- 截断、超预算、执行器发生压缩的结果一律作废（§7.10）。
-- 解析时排除 `<rg-context>` 标记块和 `research.*` 工具调用（§6.5）。
-- 钩子脚本永远 `exit 0`，只写 spool 和拍快照，不联网、不调模型（§6.8）。
-- 服务只监听 127.0.0.1；不执行会话中出现的命令。
-- SQL 一律用参数绑定；FTS 查询语法与用户文本分开处理。
+- 会话文件只读，从不修改。
+- 没有经过用户在界面上确认发送量（`projects.model_allowed`），不调用模型。
+- 模型输出被截断（`stop_reason = max_tokens`）就作废，不能把半截结果写进库。
+- 模型只提议；编号、时间先后、每个事件只放一处，都由程序校验。
+- 人工改过（`edited = 1`）或删掉（`hidden = 1`）的内容，自动整理和重新整理都不能覆盖或加回来。
+- 解析器遇到不认识的记录类型要计数（`sessions.unknown`），不能静默跳过，也不能报错中断。
+- 服务只监听 127.0.0.1，校验 Host；修改类请求必须带 `X-RG` 头。不执行会话里出现的命令。
+- SQL 一律用参数绑定。
+- API Key 只存在数据目录（0600）或环境变量里，不进仓库、日志、测试和 prompt。
 
 ## 数据与上下文
 
-- **不要读取 `~/.claude/projects` 或 `~/.codex/sessions` 下的完整会话文件**（单个可达 70 MB 以上）。
-  - 开发时用 `fixtures/transcripts/` 里的脱敏样本。
-  - 需要了解真实数据时，运行 `scripts/` 里的统计脚本，只看统计数字。
+- **不要读取 `~/.claude/projects` 或 `~/.codex/sessions` 下的完整会话文件**（单个可达 285 MB）。
+  - 开发用 `fixtures/transcripts/` 里的合成样本。
+  - 需要了解真实数据时运行 `scripts/stats.py`，只看统计数字。
 - 真实会话、临床资料、密钥不进仓库、不进 prompt、不进测试快照。
 - 新增 fixture 前先脱敏：姓名、各类编号、路径中的用户名。
 
 ## 目录
 
 ```
-rg/store     schema.sql、迁移、对象库、备份
-rg/ingest    claude.py codex.py cursor.py dedupe.py spool.py scanner.py
-rg/slim      瘦身与 token 计数
-rg/extract   切片、工作集、提示词、schema、校验、worker、监控
-rg/snapshot  影子仓库快照
-rg/hooks     rg-hook 入口
-rg/api rg/mcp rg/cli
-web/         React + TS + React Flow + ELK.js
-fixtures/    transcripts/（按工具/版本）  golden/（§15 案例）
-tests/
-docs/        规格、PROGRESS.md、DECISIONS.md
+rg/config.py    数据目录、API Key
+rg/sources.py   发现会话目录，读会话元数据
+rg/parse.py     会话解析与瘦身
+rg/store.py     SQLite
+rg/model.py     模型调用与缓存
+rg/organize.py  提取事件、归入研究线、fork、增量更新
+rg/server.py    本机 HTTP 服务
+rg/cli.py       rg start / organize / sessions
+web/src/        React 界面；layout.ts 是时间线布局（纯函数）
+fixtures/transcripts/  合成会话样本
+tests/  web/tests/
 ```
 
 ## 风格
 
 - Python 3.12，类型标注，`ruff` + `pyright`。函数小，避免框架魔法。
-- 解析器每遇到未知记录类型，都要保存原文并计数，不能静默跳过。
-- 测试关注"会导致历史被误读或记录丢失"的行为，不为显示文字写机械测试。
+- 前端不引入图形库；时间线是 HTML 节点加 SVG 连线。
+- 测试关注“会导致历史被误读或记录丢失”的行为，不为显示文字写机械测试。

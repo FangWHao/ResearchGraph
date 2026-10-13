@@ -1,0 +1,582 @@
+"""本机 HTTP 服务：JSON 接口与静态页面。只监听 127.0.0.1。"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import sys
+import threading
+import traceback
+import webbrowser
+from collections.abc import Callable
+from dataclasses import asdict
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
+from urllib.parse import parse_qs, urlparse
+
+from rg.config import DB_NAME, DEFAULT_BASE_URL, DEFAULT_MODEL, read_key, save_key
+from rg.model import Call, Model, cached
+from rg.organize import KINDS, Jobs, add_sessions, cleanup, estimate, fork_point
+from rg.parse import NotASession
+from rg.sources import default_dirs, read_info, scan, under, workspaces
+from rg.store import Store, now
+
+MAX_UPLOAD = 1024 * 1024 * 1024
+CONTENT_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+    ".woff2": "font/woff2",
+}
+
+
+class ApiError(Exception):
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+
+
+def web_dir() -> Path | None:
+    here = Path(__file__).resolve().parent
+    for candidate in (here / "_web", here.parent / "web" / "dist"):
+        if (candidate / "index.html").is_file():
+            return candidate
+    return None
+
+
+class App:
+    def __init__(self, root: Path):
+        self.root = root
+        self.store = Store(root / DB_NAME)
+        self.jobs = Jobs(self.store, self.roots, self.model)
+        self._model: tuple[tuple[str, str, str], Call] | None = None
+        self._model_lock = threading.Lock()
+
+    # ----- 设置 -----
+
+    def roots(self) -> list[str]:
+        return list(self.store.setting("sources", []))
+
+    def model_settings(self) -> dict[str, str]:
+        return {
+            "base_url": self.store.setting("base_url", DEFAULT_BASE_URL),
+            "model": self.store.setting("model", DEFAULT_MODEL),
+        }
+
+    def model(self) -> Call | None:
+        key = read_key(self.root)
+        if not key:
+            return None
+        settings = self.model_settings()
+        identity = (settings["base_url"], settings["model"], key)
+        with self._model_lock:
+            if self._model is None or self._model[0] != identity:
+                client = Model(settings["base_url"], settings["model"], key)
+                tag = f"{settings['base_url']}|{settings['model']}"
+                self._model = (identity, cached(self.store, client, tag))
+            return self._model[1]
+
+    # ----- 查询 -----
+
+    def project(self, project_id: int) -> dict[str, Any]:
+        row = self.store.one("SELECT * FROM projects WHERE id = ?", (project_id,))
+        if row is None:
+            raise ApiError(404, "项目不存在")
+        return row
+
+    def event(self, event_id: int) -> dict[str, Any]:
+        row = self.store.one("SELECT * FROM events WHERE id = ? AND hidden = 0", (event_id,))
+        if row is None:
+            raise ApiError(404, "事件不存在")
+        return row
+
+    def branch_in_project(self, branch_id: Any, project_id: int) -> int:
+        row = self.store.one(
+            "SELECT b.id FROM branches b JOIN threads t ON t.id = b.thread_id "
+            "WHERE b.id = ? AND t.project_id = ?",
+            (branch_id, project_id),
+        )
+        if row is None:
+            raise ApiError(400, "分支不属于这个项目")
+        return row["id"]
+
+    def event_in_project(self, event_id: Any, project_id: int) -> int | None:
+        if event_id is None:
+            return None
+        row = self.store.one(
+            "SELECT id FROM events WHERE id = ? AND project_id = ? AND hidden = 0",
+            (event_id, project_id),
+        )
+        if row is None:
+            raise ApiError(400, "事件不属于这个项目")
+        return row["id"]
+
+
+# ----- 接口 -----
+
+Handler = Callable[[App, re.Match[str], dict[str, Any], dict[str, list[str]]], Any]
+ROUTES: list[tuple[str, re.Pattern[str], Handler]] = []
+
+
+def route(method: str, pattern: str) -> Callable[[Handler], Handler]:
+    def register(func: Handler) -> Handler:
+        ROUTES.append((method, re.compile(f"^{pattern}$"), func))
+        return func
+
+    return register
+
+
+def _text(body: dict[str, Any], name: str, limit: int, required: bool = False) -> str | None:
+    value = body.get(name)
+    if value is None and not required:
+        return None
+    if not isinstance(value, str) or (required and not value.strip()):
+        raise ApiError(400, f"{name} 不能为空")
+    return value.strip()[:limit]
+
+
+@route("GET", "/api/state")
+def get_state(app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]) -> Any:
+    projects = app.store.q(
+        "SELECT p.*, (SELECT COUNT(*) FROM sessions s WHERE s.project_id = p.id) AS sessions, "
+        "(SELECT COUNT(*) FROM events e WHERE e.project_id = p.id AND e.hidden = 0) AS events "
+        "FROM projects p ORDER BY p.id"
+    )
+    return {
+        "sources": app.roots(),
+        "detected": default_dirs(),
+        "model": {**app.model_settings(), "has_key": read_key(app.root) is not None},
+        "projects": projects,
+    }
+
+
+@route("POST", "/api/settings")
+def post_settings(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    if "sources" in body:
+        sources = body["sources"]
+        if not isinstance(sources, list) or not all(isinstance(s, str) for s in sources):
+            raise ApiError(400, "sources 必须是路径列表")
+        cleaned = []
+        for source in sources:
+            path = Path(source.strip()).expanduser()
+            if not path.is_dir():
+                raise ApiError(400, f"目录不存在：{source}")
+            if str(path) not in cleaned:
+                cleaned.append(str(path))
+        app.store.set_setting("sources", cleaned)
+    for name in ("base_url", "model"):
+        value = _text(body, name, 200)
+        if value:
+            app.store.set_setting(name, value.rstrip("/") if name == "base_url" else value)
+    key = _text(body, "api_key", 500)
+    if key:
+        try:
+            save_key(app.root, key)
+        except ValueError as error:
+            raise ApiError(400, str(error)) from None
+    return get_state(app, m, {}, {})
+
+
+@route("GET", "/api/sessions")
+def get_sessions(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    infos = scan(app.store, app.roots())
+    return {"sessions": [asdict(i) for i in infos], "workspaces": workspaces(infos)}
+
+
+@route("POST", "/api/projects")
+def create_project(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    name = _text(body, "name", 80, required=True)
+    workspace = _text(body, "workspace", 1000) or None
+    paths = body.get("sessions") or []
+    if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
+        raise ApiError(400, "sessions 必须是路径列表")
+    infos = []
+    if workspace:
+        infos = [i for i in scan(app.store, app.roots()) if under(i.cwd, workspace)]
+    known = {i.path for i in infos}
+    for path in paths:
+        if path in known:
+            continue
+        try:
+            infos.append(read_info(Path(path)))
+        except (NotASession, OSError, UnicodeError):
+            raise ApiError(400, f"不是可识别的会话文件：{path}") from None
+    with app.store.tx() as db:
+        cursor = db.execute(
+            "INSERT INTO projects(name, workspace, follow, created_at) VALUES (?, ?, ?, ?)",
+            (name, workspace, 1 if workspace and body.get("follow", True) else 0, now()),
+        )
+        project_id = int(cursor.lastrowid or 0)
+    add_sessions(app.store, project_id, infos)
+    if body.get("start", True):
+        app.jobs.start(project_id)
+    return {"id": project_id}
+
+
+@route("POST", r"/api/projects/(\d+)/upload")
+def upload(app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]) -> Any:
+    project_id = int(m[1])
+    app.project(project_id)
+    data: bytes = body["_raw"]
+    raw_name = (query.get("name") or ["session.jsonl"])[0].replace("\\", "/")
+    name = re.sub(r"[^\w.\-]+", "_", Path(raw_name).name).lstrip(".")[-80:] or "session.jsonl"
+    folder = app.root / "uploads" / str(project_id)
+    folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+    target = folder / f"{hashlib.sha256(data).hexdigest()[:16]}-{name}"
+    target.write_bytes(data)
+    try:
+        info = read_info(target)
+    except (NotASession, UnicodeError):
+        target.unlink(missing_ok=True)
+        raise ApiError(400, f"{name} 不是 Claude Code 或 Codex 会话") from None
+    added = add_sessions(app.store, project_id, [info])
+    return {"added": added, "title": info.title}
+
+
+@route("DELETE", r"/api/projects/(\d+)")
+def delete_project(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    project_id = int(m[1])
+    app.project(project_id)
+    if app.jobs.status(project_id)["running"]:
+        raise ApiError(409, "正在整理，稍后再删除")
+    with app.store.tx() as db:
+        db.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+    return {"ok": True}
+
+
+def status(app: App, project_id: int) -> dict[str, Any]:
+    view = app.jobs.status(project_id)
+    if view["estimate"] is None:
+        view["estimate"] = estimate(app.store, project_id)
+    return view
+
+
+@route("GET", r"/api/projects/(\d+)")
+def get_project(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    project_id = int(m[1])
+    project = app.project(project_id)
+    events = app.store.q(
+        "SELECT id, session_id, branch_id, kind, title, summary, ts, anchor, refs, edited "
+        "FROM events WHERE project_id = ? AND hidden = 0",
+        (project_id,),
+    )
+    for event in events:
+        event["refs"] = json.loads(event["refs"])
+    sessions = app.store.q(
+        "SELECT id, tool, path, title, cwd, started_at, ended_at, message_count, extracted_upto, "
+        "missing, fork_of, copied FROM sessions WHERE project_id = ? ORDER BY started_at",
+        (project_id,),
+    )
+    for session in sessions:
+        point = fork_point(app.store, session) if session["fork_of"] else None
+        session["fork_event"] = point["id"] if point else None
+    return {
+        "project": project,
+        "sessions": sessions,
+        "threads": app.store.q("SELECT * FROM threads WHERE project_id = ?", (project_id,)),
+        "branches": app.store.q(
+            "SELECT b.* FROM branches b JOIN threads t ON t.id = b.thread_id WHERE t.project_id = ?",
+            (project_id,),
+        ),
+        "events": events,
+        "status": status(app, project_id),
+    }
+
+
+@route("GET", r"/api/projects/(\d+)/status")
+def get_status(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    app.project(int(m[1]))
+    return status(app, int(m[1]))
+
+
+@route("POST", r"/api/projects/(\d+)/organize")
+def post_organize(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    project_id = int(m[1])
+    app.project(project_id)
+    if body.get("consent") is True:
+        with app.store.tx() as db:
+            db.execute("UPDATE projects SET model_allowed = 1 WHERE id = ?", (project_id,))
+    if not app.jobs.start(project_id, full=body.get("full") is True):
+        raise ApiError(409, "这个项目正在整理")
+    return status(app, project_id)
+
+
+@route("PATCH", r"/api/events/(\d+)")
+def patch_event(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    event = app.event(int(m[1]))
+    changes: dict[str, Any] = {}
+    if "title" in body:
+        changes["title"] = _text(body, "title", 40, required=True)
+    if "summary" in body:
+        changes["summary"] = _text(body, "summary", 1000) or ""
+    if "kind" in body:
+        if body["kind"] not in KINDS:
+            raise ApiError(400, "未知的事件种类")
+        changes["kind"] = body["kind"]
+    if "branch_id" in body:
+        changes["branch_id"] = app.branch_in_project(body["branch_id"], event["project_id"])
+    if body.get("hidden") is True:
+        changes["hidden"] = 1
+    if not changes:
+        return {"ok": True}
+    sets = ", ".join(f"{name} = ?" for name in changes)
+    with app.store.tx() as db:
+        db.execute(
+            f"UPDATE events SET {sets}, edited = 1 WHERE id = ?", (*changes.values(), event["id"])
+        )
+        if "branch_id" in changes:
+            db.execute("UPDATE branches SET edited = 1 WHERE id = ?", (changes["branch_id"],))
+        cleanup(db, event["project_id"])
+    return {"ok": True}
+
+
+@route("GET", r"/api/events/(\d+)/messages")
+def event_messages(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    event = app.event(int(m[1]))
+    try:
+        context = max(0, min(20, int((query.get("context") or ["0"])[0])))
+    except ValueError:
+        context = 0
+    refs = sorted(json.loads(event["refs"]))
+    wanted: set[int] = set()
+    for ref in refs:
+        wanted.update(range(ref - context, ref + context + 1))
+    rows = app.store.q(
+        "SELECT idx, role, ts, text FROM messages WHERE session_id = ? ORDER BY idx",
+        (event["session_id"],),
+    )
+    session = app.store.one(
+        "SELECT id, tool, title, path, missing FROM sessions WHERE id = ?", (event["session_id"],)
+    )
+    return {
+        "session": session,
+        "messages": [{**r, "ref": r["idx"] in refs} for r in rows if r["idx"] in wanted],
+    }
+
+
+@route("PATCH", r"/api/threads/(\d+)")
+def patch_thread(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    title = _text(body, "title", 30, required="title" in body)
+    summary = _text(body, "summary", 300)
+    with app.store.tx() as db:
+        db.execute(
+            "UPDATE threads SET title = COALESCE(?, title), summary = COALESCE(?, summary), "
+            "edited = 1 WHERE id = ?",
+            (title, summary, int(m[1])),
+        )
+    return {"ok": True}
+
+
+@route("POST", r"/api/projects/(\d+)/threads")
+def create_thread(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    project_id = int(m[1])
+    app.project(project_id)
+    title = _text(body, "title", 30, required=True)
+    with app.store.tx() as db:
+        tid = db.execute(
+            "INSERT INTO threads(project_id, title, edited) VALUES (?, ?, 1)", (project_id, title)
+        ).lastrowid
+        bid = db.execute(
+            "INSERT INTO branches(thread_id, title, position, edited) VALUES (?, '', 0, 1)", (tid,)
+        ).lastrowid
+    return {"thread_id": tid, "branch_id": bid}
+
+
+@route("POST", r"/api/threads/(\d+)/branches")
+def create_branch(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    thread = app.store.one("SELECT * FROM threads WHERE id = ?", (int(m[1]),))
+    if thread is None:
+        raise ApiError(404, "研究线不存在")
+    title = _text(body, "title", 30, required=True)
+    source = app.event_in_project(body.get("from_event"), thread["project_id"])
+    with app.store.tx() as db:
+        position = db.execute(
+            "SELECT COALESCE(MAX(position) + 1, 0) FROM branches WHERE thread_id = ?",
+            (thread["id"],),
+        ).fetchone()[0]
+        bid = db.execute(
+            "INSERT INTO branches(thread_id, title, position, from_event, edited) "
+            "VALUES (?, ?, ?, ?, 1)",
+            (thread["id"], title, position, source),
+        ).lastrowid
+    return {"branch_id": bid}
+
+
+@route("PATCH", r"/api/branches/(\d+)")
+def patch_branch(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    row = app.store.one(
+        "SELECT b.*, t.project_id FROM branches b JOIN threads t ON t.id = b.thread_id "
+        "WHERE b.id = ?",
+        (int(m[1]),),
+    )
+    if row is None:
+        raise ApiError(404, "分支不存在")
+    title = _text(body, "title", 30)
+    source = row["from_event"]
+    target = row["into_event"]
+    if "from_event" in body:
+        source = app.event_in_project(body["from_event"], row["project_id"])
+    if "into_event" in body:
+        target = app.event_in_project(body["into_event"], row["project_id"])
+    with app.store.tx() as db:
+        db.execute(
+            "UPDATE branches SET title = COALESCE(?, title), from_event = ?, into_event = ?, "
+            "edited = 1 WHERE id = ?",
+            (title, source, target, row["id"]),
+        )
+    return {"ok": True}
+
+
+# ----- HTTP -----
+
+
+def find_route(method: str, path: str) -> tuple[Handler, re.Match[str]] | None:
+    for allowed, pattern, func in ROUTES:
+        match = pattern.match(path)
+        if match and allowed == method:
+            return func, match
+    return None
+
+
+def make_handler(app: App, port: int, static: Path | None) -> type[BaseHTTPRequestHandler]:
+    hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
+
+    class RequestHandler(BaseHTTPRequestHandler):
+        server_version = "ResearchGraph"
+
+        def log_message(self, format: str, *args: Any) -> None:
+            pass
+
+        def send(
+            self, status: int, data: bytes, content_type: str, cache: str = "no-store"
+        ) -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", cache)
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(data)
+
+        def json(self, status: int, payload: Any) -> None:
+            data = json.dumps(payload, ensure_ascii=False).encode()
+            self.send(status, data, "application/json; charset=utf-8")
+
+        def allowed(self) -> bool:
+            # Host 校验防 DNS 重绑定；修改类请求要求自定义头，跨站页面无法直接发出。
+            if self.headers.get("Host") not in hosts:
+                self.json(403, {"error": "只接受本机地址访问"})
+                return False
+            if self.command != "GET" and self.headers.get("X-RG") != "1":
+                self.json(403, {"error": "缺少 X-RG 请求头"})
+                return False
+            return True
+
+        def handle_any(self) -> None:
+            if not self.allowed():
+                return
+            url = urlparse(self.path)
+            if not url.path.startswith("/api/"):
+                if self.command == "GET":
+                    self.static(url.path)
+                else:
+                    self.json(405, {"error": "不支持的请求"})
+                return
+            found = find_route(self.command, url.path)
+            if found is None:
+                self.json(404, {"error": "接口不存在"})
+                return
+            func, match = found
+            try:
+                body = self.body(url.path.endswith("/upload"))
+                self.json(200, func(app, match, body, parse_qs(url.query)))
+            except ApiError as error:
+                self.json(error.status, {"error": str(error)})
+            except Exception:
+                traceback.print_exc(file=sys.stderr)
+                self.json(500, {"error": "服务内部错误"})
+
+        def body(self, raw: bool) -> dict[str, Any]:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length > (MAX_UPLOAD if raw else 10 * 1024 * 1024):
+                raise ApiError(413, "请求太大")
+            data = self.rfile.read(length) if length else b""
+            if raw:
+                return {"_raw": data}
+            if not data:
+                return {}
+            try:
+                value = json.loads(data)
+            except ValueError:
+                raise ApiError(400, "请求不是合法 JSON") from None
+            if not isinstance(value, dict):
+                raise ApiError(400, "请求必须是 JSON 对象")
+            return value
+
+        def static(self, path: str) -> None:
+            if static is None:
+                self.send(
+                    503,
+                    "界面还没有构建：在 web 目录运行 pnpm build".encode(),
+                    "text/plain; charset=utf-8",
+                )
+                return
+            target = (static / path.lstrip("/")).resolve()
+            if not target.is_relative_to(static) or not target.is_file():
+                target = static / "index.html"
+            cache = "no-cache" if target.name == "index.html" else "max-age=31536000, immutable"
+            content_type = CONTENT_TYPES.get(target.suffix, "application/octet-stream")
+            self.send(200, target.read_bytes(), content_type, cache)
+
+        do_GET = do_POST = do_PATCH = do_DELETE = handle_any
+
+    return RequestHandler
+
+
+def serve(root: Path, port: int, open_browser: bool = False) -> None:
+    app = App(root)
+    static = web_dir()
+    static = static.resolve() if static else None
+    server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(app, port, static))
+    url = f"http://127.0.0.1:{port}/"
+    print(f"ResearchGraph 已启动：{url}（数据目录 {root}）", flush=True)
+    if open_browser:
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+        app.store.close()

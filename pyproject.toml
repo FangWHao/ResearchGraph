@@ -1,18 +1,12 @@
 [project]
 name = "researchgraph"
-version = "0.1.0"
-description = "可查证的科研会话与研究决定史"
+version = "0.2.0"
+description = "把 Claude Code / Codex 会话整理成研究时间线"
 requires-python = ">=3.12,<3.14"
-dependencies = [
-    "httpx>=0.28,<1",
-    "jsonschema>=4.23,<5",
-    "tiktoken>=0.12,<1",
-    "zstandard>=0.23,<1",
-]
+dependencies = ["httpx>=0.28,<1"]
 
 [project.scripts]
-rg = "rg.cli.main:main"
-rg-hook = "rg.hooks.entry:main"
+rg = "rg.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "ruff>=0.11", "pyright>=1.1.400"]
@@ -36,6 +30,7 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]  # 行宽交给 ruff format；中文提示词不强行折行
 
 [tool.pyright]
 pythonVersion = "3.12"
