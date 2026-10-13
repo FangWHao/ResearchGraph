@@ -183,6 +183,10 @@ class Handler(BaseHTTPRequestHandler):
             return qa.options(store, values["project"], self.server.qa_config)
         if path == "/api/health":
             return views.health(store, values, self.server.daily_budget)
+        if path == "/api/impact":
+            from rg.api.graph import impact
+
+            return impact(store, values)
         if path == "/api/parser-health":
             from rg.query.parsers import query
 

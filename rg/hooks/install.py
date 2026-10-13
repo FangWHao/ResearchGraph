@@ -81,8 +81,11 @@ def definitions(store: Store, client: str, workspace: Path, project_id: str) -> 
             handler.update(command=python, args=arguments)
         else:
             if os.name == "nt":
-                raise ValueError("原生 Windows Codex 钩子命令尚未验收；请从 WSL 安装")
-            handler["command"] = shlex.join([python, *arguments])
+                from rg.hooks.commands import windows_command
+
+                handler["command"] = windows_command([python, *arguments])
+            else:
+                handler["command"] = shlex.join([python, *arguments])
         if event not in {"SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"}:
             handler["async"] = True
         group: dict[str, Any] = {"hooks": [handler]}

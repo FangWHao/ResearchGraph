@@ -48,12 +48,21 @@ cd ..
 从仓库根目录完成上面的 `pnpm build`，然后启动：
 
 ```bash
-uv run rg --data-dir /tmp/rg-demo serve --port 8787 --open
+uv run rg --data-dir /tmp/rg-demo start --port 8787 --open
+# 只打开界面时仍可使用 serve。
+uv run rg --data-dir /tmp/rg-demo serve --port 8787
 # 使用同一个数据目录，也可以直接打开复核页。
 uv run rg --data-dir /tmp/rg-demo review --open --port 8787
 ```
 
 服务只监听 `127.0.0.1`。终端返回带本次随机令牌的浏览器链接；页面取得令牌后清除地址中的片段，后续请求同源 API。界面读取指定数据目录，不会自动导入 Atlas。问题页、队列、时间线、健康、搜索与图均可打开记录的原文窗口；复核支持确认、驳回、按片段批量确认，以及保留旧记录的人工修改。
+
+`start` 同时持续扫描已登记来源、消费钩子队列、派生运行与编辑、处理文件版本。模型配置完成后，加 `--extract` 可自动提取、关联及生成概览；完整输入默认 128k，仍核对项目外发许可和每日额度。采集、文件处理和模型提取使用独立进程，空闲时释放数据库连接；Ctrl+C 一起关闭，父进程断开控制管道后工作进程也退出。`runtime-status` 与健康接口给出最后一轮的回执，保存状态不代表进程仍存活。
+
+```bash
+uv run rg --data-dir /tmp/rg-demo start --extract --open
+uv run rg --data-dir /tmp/rg-demo runtime-status
+```
 
 ## 清除管理目录中的整个项目
 
@@ -95,6 +104,17 @@ uv run rg --data-dir /tmp/rg-demo mcp --project PROJECT_ID
 `research.evidence(version_id)` 同样支持后台物理版本，`observations` 按 `limit/offset` 分页。快照版本使用保存快照的发生时间，当前摘要使用实际完整读取结束时间；入库截止另核对观察和必要的快照记录。缓存继续沿用原读取窗口，发现快照只是线索。摘要时间和条数只计算双截止内的观察，缺失读取窗口显示未知，不采用版本表首次插入时间补造历史。状态卡按同一规则装填文件版本；指定分析范围时仍不猜文件归属。新增版本、观察或快照会改变 `revision`，续页可提交 `expected_revision`，冲突后重新开始。这里返回登记元数据，不打开当前文件或推定运行输入输出。见[物理版本 MCP 验收](docs/acceptance/M4物理版本MCP双时间验收_20261010.md)。
 
 ## Codex 与 Claude 项目接入包
+
+在已登记工作区可以直接安装，两种客户端一次预检，同名文件冲突时保留原件：
+
+```bash
+uv run rg --data-dir /合成数据目录 client-install --project 项目ID --root /项目目录 --check
+uv run rg --data-dir /合成数据目录 client-install --project 项目ID --root /项目目录
+# 只接入一个客户端。
+uv run rg --data-dir /合成数据目录 client-install --project 项目ID --root /项目目录 --client codex
+```
+
+安装合并项目 MCP 条目和四个技能，保留其它服务器、设置及已有 TOML 注释；重复安装逐字不变。不修改个人全局配置，也不代替原生工作区信任、MCP 首次许可或钩子安装。移动解释器／数据目录、已有同名服务指向不同项目或技能被改过时，明确报冲突，由使用者核对后重新接入。检查模式不创建客户端目录。原有离线接入包仍可生成：
 
 ```bash
 uv run rg --data-dir /合成数据目录 client-pack --project 项目ID --output /新目录/接入包
@@ -152,15 +172,27 @@ uv run rg verify-export /tmp/history.zip
 
 `--until` 是有效时间截止，与 `--occurred-until` 同义；`--known-until` 限定当时已经入库的记录。未指定时取同一次读取开始的当前时间。`--scope` 按完整字段对象相等筛选，省略时包含该项目所有可见范围；包中同时记录这两个截止、范围和图修订号。可用 `--expected-revision` 拒绝变化后的导出。
 
-本地界面的“历史导出”可选择项目、双截止、所有/完整相等/明确未知范围，主动下载 ZIP；正文默认不加入，可选遮盖片段及本次临床正则。修订变化后先主动刷新，再下载；取消等待、项目或条件变化后的迟到响应不会自动下载。手机也可切换项目。详见[历史导出验收](docs/acceptance/M4双时间历史导出验收_20261010.md)和[前端导出验收](docs/acceptance/前端历史导出验收_20261010.md)。
+本地界面的“历史导出”可选择项目、双截止、所有/完整相等/明确未知范围，主动下载 ZIP；正文默认不加入，可选遮盖片段及本次临床正则。修订变化后先主动刷新，再下载；取消等待、项目或条件变化后的迟到响应不会自动下载。详见[历史导出验收](docs/acceptance/M4双时间历史导出验收_20261010.md)和[前端导出验收](docs/acceptance/前端历史导出验收_20261010.md)。
 
-ZIP 包含图、全部可见断言版本、决定/证据状态事件、当时已知的审核动作、可定位的证据引用、来源实例与字节位置、算法和对象摘要，以及可见的文件观察和候选运行报告。它遍历全部分页，不受问题／时间线简版视图的 2000 条上限影响；关系和共同输入保留候选、依据及证据，范围外端点只列未解析 ID。`graph.json` 的 `semantic` 和 `l1` 分别使用完整 L2 语义图与下述文件运行图引擎；实际运行输入输出完整性与影响传播仍待验收。
+ZIP 包含图、全部可见断言版本、决定/证据状态事件、当时已知的审核动作、可定位的证据引用、来源实例与字节位置、算法和对象摘要，以及可见的文件观察和候选运行报告。它遍历全部分页，不受问题／时间线简版视图的 2000 条上限影响；关系和共同输入保留候选、依据及证据，范围外端点只列未解析 ID。`graph.json` 的 `semantic` 和 `l1` 分别使用完整 L2 语义图与下述文件运行图引擎；真实运行输入输出完整性仍待验收。
 
 Claude MultiEdit 逐项核对保存的编辑数组，每一步作用于上一步正文，并与工具报告的最终候选一致。请求不一致或无法核验时只展示已知前文；旧后候选保留原编号，研究图不将它接为当前后版本。核验通过仍是工具文本候选，不代表真实物理文件已确认。读取不改写旧行，迁移 25 仅使含旧 MultiEdit 的图修订失效一次，详见[多步编辑顺序核验](docs/acceptance/Claude多步编辑顺序核验_20261011.md)。
 
 默认不包含引用正文、完整会话、二进制数据或环境副本。确需正文时显式加 `--include-evidence`，仅加入已选择断言的引用片段；先校验原文摘要和 UTF8 边界，再等长字节遮盖。常见密钥、身份证、手机、邮箱和用户名被遮盖，凭据字段另行清空。`--redact-pattern 'ZY\d+'` 可重复指定本次导出的额外临床编号规则；项目已保存规则始终同时应用。分享副本中的范围可能遮盖，选择仍按原范围执行；规则影响结构 ID 或造成字段碰撞时拒绝发布。
 
 导出只读证据库，不联网、不调用模型或读取当前工作区文件。文件必须使用已有父目录中的新名称，拒绝父目录符号链接及重解析点、证据库内目标和覆盖；发布前后核对已打开目录身份，目录变化时清理本次创建的文件并报告失败。POSIX 请求 0600 权限并报告实际模式；原生 Windows 继承目标目录 ACL，返回 `requested_mode=null`，实际访问权限需按 ACL 核对。Windows 挂载目录也可能不体现 POSIX 模式，不能据创建参数认定文件已经私有化。默认引用包在原文对象缺失时仍可生成并标注未读取，显式正文则拒绝缺失或损坏的原件。`verify-export` 不需要数据库，只校验包内成员摘要，不能证明研究结论或清单真实性。本地同源令牌接口 `POST /api/exports` 接受同样阅读条件并直接返回 ZIP，不保存服务端副本。
+
+## 查询下游影响
+
+```bash
+uv run rg --data-dir /tmp/rg-demo impact --project PROJECT_ID --entity ENTITY_ID --scope data=v2
+uv run rg --data-dir /tmp/rg-demo impact --project PROJECT_ID --version VERSION_ID --include-reported
+uv run rg --data-dir /tmp/rg-demo impact --project PROJECT_ID --entity ENTITY_ID --collection paths
+```
+
+默认只沿同范围、有效且经确认的支持／反对／选择关系及汇合端口查找下游核对项。比较汇合只沿被选输入；共同输入和证据综合保留各端口。`same_topic`、归属、替代及对象合并不作为依赖路径。候选路径需 `--include-candidates`，报告式 I/O 需 `--include-reported`，均显示潜在依赖；报告不会升级为真实执行事实。对象有多个范围时必须指定完整范围。
+
+结果与路径分别分页，带原文引用、双截止及修订；深度默认32、最多64，达到遍历上限时明确显示未完整遍历。查询不会修改采用、证据、运行或审核状态。HTTP 同源令牌接口为 `GET /api/impact`，使用 `entity_id` 或 `version_id` 和同样的条件。实现与本轮接入验收见[日常使用与影响查询](docs/acceptance/日常使用与影响查询验收_20261013.md)。
 
 ## 文件运行图
 
@@ -343,7 +375,7 @@ uv run rg --data-dir /tmp/rg-demo hook-install --project PROJECT_ID --root /work
 uv run rg --data-dir /tmp/rg-demo hook-install --project PROJECT_ID --root /workspace/demo --client codex
 ```
 
-`uv sync` 提供 `rg-hook` 命令。`init` 在数据目录生成示例，`project add` 更新只读根目录清单；两者都不会修改个人工具设置或启用钩子。`hook-install` 只合并明确指定且唯一登记的项目本地配置，保留原字段和其它钩子；配置损坏、链接、重复或被修改的同名定义、检测到并发编辑时拒绝覆盖。原生 Windows Codex 的命令执行尚未验收，命令明确拒绝安装，Windows 可从 WSL 接入；Claude 配置使用固定解释器和参数数组。
+`uv sync` 提供 `rg-hook` 命令。`init` 在数据目录生成示例，`project add` 更新只读根目录清单；两者都不会修改个人工具设置或启用钩子。`hook-install` 只合并明确指定且唯一登记的项目本地配置，保留原字段和其它钩子；配置损坏、链接、重复或被修改的同名定义、检测到并发编辑时拒绝覆盖。原生 Windows Codex 使用固定系统 PowerShell 和编码后的参数调用隔离解释器，路径中的中文、空格与 shell 符号已在公开隔离项目实测；0.162.0 的四类基本回调通过。Claude 配置使用固定解释器和参数数组。个人客户端启用、全事件和真实耗时仍分别验收。
 
 安装回执的 `configured` 只证明配置存在，`activation` 为未知。重开该项目后检查客户端是否禁用钩子；Codex 还需在 `/hooks` 信任定义，修改后重新信任。命令不修改个人设置或持久信任，也不启动常驻服务；M2 正式验收前拒绝安装到 ResearchGraph 开发目录。当前两个 WSL 原生客户端已在隔离合成项目中实测四个基本回调，范围见[项目钩子接入验收](docs/acceptance/项目钩子接入验收_20261013.md)。官方协议见 [Codex 钩子](https://learn.chatgpt.com/docs/hooks)和 [Claude Code 钩子](https://code.claude.com/docs/en/hooks)。
 

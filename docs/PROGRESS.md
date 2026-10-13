@@ -1172,3 +1172,14 @@
 - 本轮最终完整后端 `uv run pytest -q` 实际1719 passed in627.85s，退出0，包装630.598秒；包括1672固定案例。中断前Windows仅部分日志且没有退出回执，工具句柄缺失、Windows及Linux对应实际进程0后才重跑；保留日志，不能记通过。重跑原生Windows3.12.3仓库外安装二十一组实际463 passed／3 skipped in137.37s，退出0，包装139.169秒；新增两跳过为建立符号链接权限不足，另一本来跳过。
 - 170成员／165运行资源与当前源码、wheel及原生安装逐字一致，CP936／utf8_mode0、真实密钥和私有文件0匹配。wheel SHA115c988e2d7173a3b18fa253913faf17237df1ffa07e6ce8039bf5e71243d5d8；八代码文件、165资源及115测试／夹具冻结一致。私有试点当前只统计48候选、人核true为0、三个文件，未读正文进开发上下文；没有伪造正式参考。
 - 本批交付范围八代码／CI与七中文文档；全部本地验收终态通过，未改前端。后续完整Git恢复、真实私有历史零匹配、当前提交推送及未合并草稿正文按实际回执核对；新HEAD云端终态另记，不用c3绿灯代替。
+
+## 2026-10-13 · 日常启动、客户端安装与下游核对
+
+- 开始前读末40行、§2／7.11／8／9／10、关系语义及既有决定；按用户自主开发、简单桌面界面及减少重复测试的授权集中补功能。此前84a5220的PR38341459762与push38341455018实际成功，各30步骤／15标记；不代替新提交结果。
+- 文件：新增 rg/clients/install.py、rg/runtime.py、rg/query/impact.py、rg/hooks/commands.py 及三组黄金案例；修改CLI、HTTP、健康、钩子安装、原生脚本和Windows CI名单。已授权前端子代理新增ImpactPanel、impact、CSS及两测试文件，接入App／VersionsView／FileRunGraphView。更新README、需求状态、决定、进度及草稿，新增中文日常验收。
+- 功能：客户端项目技能和MCP无损合并／检查／幂等；start统一管理离线扫描、spool、派生、文件处理及明确开启后的模型流水线，空闲释放连接；impact返回双时间、范围和修订固定的只读下游对象／路径，报告依赖潜在、状态不变；详情折叠入口不增加主导航。Windows Codex固定系统PowerShell编码参数，工作区中文和shell符号实际支持，不改个人设置。
+- 阶段七组专项 `uv run pytest ... -q` 实际112 passed in44.62s；修复后最终三组 `uv run pytest tests/golden/test_client_install.py tests/golden/test_runtime.py tests/golden/test_impact.py -q` 实际28 passed in8.87s、退出0。完整后端及浏览器交现有CI，本地未再运行全量。
+- Windows仓库外安装四组初次2 failed／50 passed／3 skipped，修正测试UTF-8后仍1 failed。实际诊断为频繁状态读取阻止原子替换，错误回执二次写失败及缓冲stdin守护线程触发退出故障；共享删除读取、辅助回执隔离、非缓冲控制修正后实际52 passed／3 skipped in12.27s、退出0，CP936／utf8_mode0；原八秒断言不变。3跳过不算通过。
+- 原生Windows Codex0.162.0实际退出0、5.656秒、一次回环固定请求、四回调齐全、index及研究数据库不变、远程模型0。实际Linux CLI接入检查／安装／重复均0；start事件1到2、模型0、无效影响HTTP400、状态命令0、Ctrl+C退出0。全量ruff最终All checks passed，pyright0／0／0；wheel构建和原生安装实际0。
+- 前端实际 `pnpm test` 235 passed／25文件／1.58秒，tsc退出0，构建262模块／1.41秒退出0；仅影响专项浏览器2 passed／12.2秒退出0，验证固定分页、GET-only、图不变及迟到401隔离。首次缺pnpm与libasound的失败保留，使用已有固定环境后通过；未跑完整浏览器。
+- 下一步：提交并维护已有未合并草稿，读取新HEAD云端终态；推进剩余真实科研与个人接入验收。跨worktree身份、完整物理历史diff、全部工具版本和真实规模边界不冒充完成；参考、真实I/O、成本、p95及两周使用继续保留。

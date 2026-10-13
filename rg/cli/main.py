@@ -84,6 +84,21 @@ def parser() -> argparse.ArgumentParser:
     file_graph.add_argument("--occurred-until")
     file_graph.add_argument("--scope", action="append", default=[])
     file_graph.add_argument("--expected-revision", type=int)
+    impact = commands.add_parser("impact", help="只读查询对象或文件版本的下游核对项")
+    impact.add_argument("--project", required=True)
+    seed = impact.add_mutually_exclusive_group(required=True)
+    seed.add_argument("--entity", dest="entity_id")
+    seed.add_argument("--version", dest="version_id")
+    impact.add_argument("--include-candidates", action="store_true")
+    impact.add_argument("--include-reported", action="store_true")
+    impact.add_argument("--max-depth", type=int, default=32)
+    impact.add_argument("--collection", choices=["affected", "paths"], default="affected")
+    impact.add_argument("--limit", type=int, default=20)
+    impact.add_argument("--offset", type=int, default=0)
+    impact.add_argument("--scope", action="append", default=[])
+    impact.add_argument("--known-until")
+    impact.add_argument("--occurred-until")
+    impact.add_argument("--expected-revision", type=int)
     exported = commands.add_parser("export", help="只读导出限定双时间和范围的历史 ZIP")
     exported.add_argument("--project", required=True)
     exported.add_argument("--output", type=Path, required=True, help="新 ZIP 文件，父目录需已存在")
@@ -103,6 +118,16 @@ def parser() -> argparse.ArgumentParser:
     client_pack.add_argument(
         "--encoding", choices=["cl100k_base", "o200k_base"], default="cl100k_base"
     )
+    client_install = commands.add_parser(
+        "client-install", help="一键合并项目技能与 MCP，保留其它客户端配置"
+    )
+    client_install.add_argument("--project", required=True)
+    client_install.add_argument("--root", type=Path, required=True)
+    client_install.add_argument("--client", choices=["codex", "claude", "both"], default="both")
+    client_install.add_argument(
+        "--encoding", choices=["cl100k_base", "o200k_base"], default="cl100k_base"
+    )
+    client_install.add_argument("--check", action="store_true", help="只预检，不写客户端文件")
     client_record = commands.add_parser("client-record", help="明确调用的人工技能读取 JSON 原话")
     client_record.add_argument("kind", choices=["question", "decide", "note"])
     client_record.add_argument("--project", required=True)
@@ -364,6 +389,20 @@ def parser() -> argparse.ArgumentParser:
     served.add_argument("--input-budget", type=int, default=128000)
     model_connection_arguments(served)
     served.add_argument("--open", action="store_true", help="自动打开浏览器")
+    started = commands.add_parser("start", help="统一启动桌面界面、持续采集与文件版本处理")
+    started.add_argument("--port", type=int, default=8787)
+    started.add_argument("--web-dir", type=Path, default=Path("web/dist"))
+    started.add_argument("--open", action="store_true", help="自动打开桌面浏览器")
+    started.add_argument("--interval", type=float, default=2)
+    started.add_argument("--limit", type=int, default=20)
+    started.add_argument("--project", help="限制自动模型提取项目；本地扫描沿已登记来源")
+    started.add_argument(
+        "--extract", action="store_true", help="同时自动提取、关联与概览；仍需各项目外发许可"
+    )
+    started.add_argument("--daily-budget", type=int, default=500000)
+    started.add_argument("--input-budget", type=int, default=128000)
+    model_connection_arguments(started)
+    commands.add_parser("runtime-status", help="查看统一入口最后回执，不以保存的状态推断存活")
     backed = commands.add_parser("backup", help="使用 SQLite backup API 备份证据")
     backed.add_argument("destination", type=Path)
     derived = commands.add_parser("derive", help="从已复制的 L0 派生运行与编辑，不读当前文件")
@@ -430,6 +469,30 @@ def parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace, store: Store) -> object:
+    if args.command == "impact":
+        from rg.query.impact import query
+
+        values = {
+            key: getattr(args, key)
+            for key in (
+                "entity_id",
+                "version_id",
+                "include_candidates",
+                "include_reported",
+                "max_depth",
+                "collection",
+                "limit",
+                "offset",
+                "known_until",
+                "occurred_until",
+                "expected_revision",
+            )
+            if getattr(args, key) is not None
+        }
+        scope = parse_scope(args.scope)
+        if scope is not None:
+            values["scope"] = scope
+        return query(store, args.project, values)
     if args.command == "version-diff":
         from rg.query.version_diff import query
 
@@ -515,6 +578,10 @@ def run(args: argparse.Namespace, store: Store) -> object:
         from rg.clients.package import package
 
         return package(store, args.project, args.output, args.encoding)
+    if args.command == "client-install":
+        from rg.clients.install import install
+
+        return install(store, args.project, args.root, args.client, args.encoding, check=args.check)
     if args.command == "client-record":
         from rg.clients.record import record
 
@@ -1085,6 +1152,40 @@ def _serve(args: argparse.Namespace, data_root: Path) -> dict:
     return {"server": "stopped"}
 
 
+def _start(args: argparse.Namespace) -> dict:
+    from contextlib import closing
+
+    from rg.api.views import project_exists
+    from rg.runtime import Runtime
+
+    if args.daily_budget < 1 or args.input_budget < 1:
+        raise ValueError("每日额度与输入预算必须为正整数")
+    # 提前校验本地配置；不调用计数或生成，也不授予项目外发许可。
+    with closing(Store(args.data_dir)) as store:
+        project_exists(store, args.project)
+        if args.extract:
+            if not args.base_url or not args.model:
+                raise ValueError("自动提取需同时配置 base URL 和模型名")
+            provider = Provider(args.base_url, args.model, load_key(args.key_file))
+            try:
+                Worker(store, provider, args.input_budget, daily_budget=args.daily_budget)
+            finally:
+                provider.close()
+    config = {
+        "interval": args.interval,
+        "limit": args.limit,
+        "extract": args.extract,
+        "project": args.project,
+        "base_url": args.base_url,
+        "model": args.model,
+        "key_file": str(args.key_file.expanduser().absolute()) if args.key_file else None,
+        "daily_budget": args.daily_budget,
+        "input_budget": args.input_budget,
+    }
+    with Runtime(args.data_dir, config):
+        return _serve(args, args.data_dir)
+
+
 def json_output(value: object) -> str:
     text = json.dumps(value, ensure_ascii=False, indent=2)
     if sys.stdout.encoding:
@@ -1101,6 +1202,14 @@ def main() -> None:
     args = cli.parse_args()
     store = None
     try:
+        if args.command == "start":
+            print(json_output(_start(args)))
+            return
+        if args.command == "runtime-status":
+            from rg.runtime import status
+
+            print(json_output(status(args.data_dir)))
+            return
         if args.command == "serve" or (args.command == "review" and args.open):
             # 服务仅在请求期间打开数据库；启动时的连接不能永久占住清除。
             if not (args.data_dir / ".clear-active.json").exists():
@@ -1161,6 +1270,7 @@ def main() -> None:
                 "export",
                 "graph",
                 "l1-graph",
+                "impact",
             }
             or (args.command == "ask" and args.retrieve_only)
             or (

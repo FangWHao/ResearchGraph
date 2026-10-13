@@ -4,10 +4,11 @@ import { DateText, Empty, Loading } from './components';
 import { healthCount, queueText } from './health';
 import { versionMetadata } from './l1';
 import { exactPathError, metadataBoolean, objectFields, observationConflict, observationListIssue, observationSignature, parseVersionsPage, versionOrigin, versionsNextOffset } from './versions';
-import type { FileVersionRecord, VersionsPage } from './types';
+import type { FileVersionRecord, ResearchReading, VersionsPage } from './types';
 import './versions.css';
 import { VersionDiffPanel } from './VersionDiffPanel';
 import { useVersionDiff } from './useVersionDiff';
+import { ImpactPanel } from './ImpactPanel';
 
 function Observations({ version }: { version: FileVersionRecord }) {
   const observations = Array.isArray(version.observations) ? version.observations : null;
@@ -48,7 +49,7 @@ function Observations({ version }: { version: FileVersionRecord }) {
   </details>;
 }
 
-export function VersionsView({ project, epoch, onError }: { project: string; epoch: number; onError: (error: unknown) => void }) {
+export function VersionsView({ project, epoch, onError, onImpactClaim }: { project: string; epoch: number; onError: (error: unknown) => void; onImpactClaim?: (id: number, reading: ResearchReading) => void }) {
   const [selection, setSelection] = useState({ project, draft: '', path: '', offset: 0 });
   const [retry, setRetry] = useState(0);
   const [inputError, setInputError] = useState<{ project: string; message: string } | null>(null);
@@ -117,6 +118,7 @@ export function VersionsView({ project, epoch, onError }: { project: string; epo
             </dl>
             {typeof version.path === 'string' && !exactPathError(version.path) && version.path !== path && <button className="text-button" onClick={() => filter(version.path!)}>只看此路径版本</button>}
             <Observations version={version} />
+            {typeof version.version_id === 'string' && healthCount(data.revision) != null && <ImpactPanel key={JSON.stringify([project, version.version_id, data.revision, epoch])} target={{ project, revision: data.revision!, versionId: version.version_id }} onClaim={onImpactClaim} onError={onError} />}
             <details className="version-diagnostics"><summary>版本身份 · 仅元数据</summary><dl className="version-metadata">
               <div><dt>版本标识</dt><dd>{queueText(version.version_id)}</dd></div><div><dt>项目 ID</dt><dd>{queueText(version.project_id)}</dd></div>
               <div><dt>根目录 ID</dt><dd>{queueText(version.root_id)}</dd></div><div><dt>内容对象标识（记录值）</dt><dd>{version.content_sha256 === null ? '无内容副本记录' : queueText(version.content_sha256)}</dd></div>

@@ -23,7 +23,7 @@ from rg.store.database import Store
 def check_client(client: str, executable: str, base: Path) -> dict:
     own = base / client
     own.mkdir()
-    workspace = own / "workspace"
+    workspace = own / "workspace 中文 '$(`)"
     workspace.mkdir()
     (workspace / "public.txt").write_text("公开合成钩子验收\n", encoding="utf-8")
     subprocess.run(["git", "init", "-b", "main", str(workspace)], check=True, capture_output=True)
@@ -39,8 +39,14 @@ def check_client(client: str, executable: str, base: Path) -> dict:
         key: value
         for key, value in os.environ.items()
         if key in {"PATH", "LANG", "LC_ALL", "TERM", "TMPDIR"}
+        or os.name == "nt"
+        and key.upper() in {"SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP"}
     }
     env["HOME"] = str(profile)
+    if os.name == "nt":
+        env["USERPROFILE"] = str(profile)
+        env["APPDATA"] = str(profile / "AppData/Roaming")
+        env["LOCALAPPDATA"] = str(profile / "AppData/Local")
     try:
         with closing(Store(own / "data")) as store:
             project_id = store.project("公开合成原生钩子项目", [workspace])

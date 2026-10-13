@@ -56,6 +56,23 @@ def l1(store: Store, values: dict[str, str]) -> dict[str, Any]:
     return l1_query(store, values.get("project", ""), parameters(values))
 
 
+def impact(store: Store, values: dict[str, str]) -> dict[str, Any]:
+    from rg.query.impact import query as impact_query
+
+    arguments = parameters(values)
+    for key in ("include_candidates", "include_reported"):
+        if key in arguments:
+            if arguments[key] not in {"true", "false"}:
+                raise ValueError("影响查询开关仅接受 true/false")
+            arguments[key] = arguments[key] == "true"
+    if "max_depth" in arguments:
+        depth = arguments["max_depth"]
+        if not depth.isascii() or not depth.isdecimal() or len(depth) > 2:
+            raise ValueError("影响深度需为有限正整数")
+        arguments["max_depth"] = int(depth)
+    return impact_query(store, values.get("project", ""), arguments)
+
+
 def source(store: Store, values: dict[str, str]) -> dict[str, Any]:
     from rg.query.reader import Reader
 

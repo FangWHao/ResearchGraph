@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -42,11 +41,6 @@ def test_install_preserves_foreign_settings_and_repeat_bytes(store, tmp_path, cl
     }
     raw = json.dumps(foreign).encode()
     path.write_bytes(raw)
-    if client == "codex" and os.name == "nt":
-        with pytest.raises(ValueError, match="尚未验收"):
-            installer.install(store, project_id, root, client)
-        assert path.read_bytes() == raw
-        return
     first = installer.install(store, project_id, root, client)
     body = json.loads(path.read_bytes())
     assert first["changed"] and first["configured"] and first["events_to_add"] == 8

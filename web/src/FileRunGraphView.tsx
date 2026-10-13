@@ -7,9 +7,10 @@ import { DateText, Empty } from './components';
 import { scopeText } from './model';
 import { drawableL1Edges, l1Collections, l1KindNames, l1NodeTitle, l1RelationNames, l1RoleNames, nativeState, nodeEvidence, object } from './fileRunGraph';
 import type { FileRunData, L1Edge, L1Node, L1Record } from './fileRunGraph';
-import type { Project } from './types';
+import type { Project, ResearchReading } from './types';
 import type { useFileRunGraph } from './useFileRunGraph';
 import './fileRunGraph.css';
+import { ImpactPanel } from './ImpactPanel';
 
 type FileNode = Node<{ value: L1Node }>;
 let engine: Promise<ELK> | undefined;
@@ -74,7 +75,7 @@ function Observation({ item }: { item: L1Record }) {
     <details><summary>完整观察元数据</summary><pre>{JSON.stringify(item, null, 2)}</pre></details>
   </article>;
 }
-function NodeDetail({ node, data, onEvidence }: { node: L1Node; data: FileRunData; onEvidence: (id: number) => void }) {
+function NodeDetail({ node, data, onEvidence, onNode, onImpactClaim }: { node: L1Node; data: FileRunData; onEvidence: (id: number) => void; onNode: (id: string) => void; onImpactClaim?: (id: number, reading: ResearchReading) => void }) {
   const r = node.record; const reported = object(r.reported) ? r.reported : {}; const observations = data.observations.filter(item => item.owner_node_id === node.node_id);
   const versions = Array.isArray(r.versions) ? r.versions.filter(object) : [];
   return <section className="file-run-detail" aria-label="文件运行节点详情"><span className="eyebrow">{l1KindNames[node.kind] ?? '未知记录类型'}</span><h2>{l1NodeTitle(node)}</h2><p>{status(node)} · {scopeText(node.scope)}</p>
@@ -90,6 +91,7 @@ function NodeDetail({ node, data, onEvidence }: { node: L1Node; data: FileRunDat
     {node.kind === 'edit_record' && <p>工具报告的编辑记录与版本分别保留。补丁不等于完整编辑前后字节；不能读取当前文件补齐旧记录。</p>}
     {node.kind === 'attempt' && <><p>保留全部 {versions.length} 个内容版本，未按编号或入库时间选择当前事实。</p>{versions.map((version, index) => <article className="file-run-version" key={String(version.claim_id ?? index)}><strong>内容记录 #{text(version.claim_id)} · {claimNames[String(version.effective_state)] ?? '审核状态未知'}{version.replaced === true && ' · 已被替代的历史'}</strong><pre>{JSON.stringify(version, null, 2)}</pre></article>)}</>}
     <EvidenceButtons ids={nodeEvidence(data, node)} onOpen={onEvidence} />
+    {node.kind === 'artifact_version' && typeof r.version_id === 'string' && <ImpactPanel key={JSON.stringify([data.project_id, r.version_id, data.revision, data.occurred_until, data.known_until, data.scope_filter, data.scope])} target={{ project: data.project_id, revision: data.revision, versionId: r.version_id, reading: data, ...(data.scope_filter ? { scope: data.scope } : {}) }} onNode={onNode} onClaim={onImpactClaim} />}
     <h3>独立观察 · {observations.length}</h3>{observations.map(item => <Observation key={String(item.observation_id)} item={item} />)}{!observations.length && <p className="small muted">当前双截止内没有独立观察；不是实际 I/O 已完整记录的证明。</p>}
     <details><summary>完整节点登记元数据</summary><pre>{JSON.stringify(node, null, 2)}</pre></details>
   </section>;
@@ -97,7 +99,7 @@ function NodeDetail({ node, data, onEvidence }: { node: L1Node; data: FileRunDat
 function EdgeDetail({ edge, onEvidence }: { edge: L1Edge; onEvidence: (id: number) => void }) {
   return <section className="file-run-detail" aria-label="文件运行关系详情"><h2>{l1RelationNames[edge.relation] ?? edge.relation}{edge.role != null && ` · ${l1RoleNames[String(edge.role)] ?? text(edge.role)}`}</h2><p>{associationNames[String(edge.association_state)] ?? '关联依据未知'} · {basisNames[String(edge.basis)] ?? text(edge.basis)} · {claimNames[String(edge.claim_state)] ?? '无研究审核声明'}</p><p>源：{l1KindNames[edge.source.kind] ?? edge.source.kind} · {text(edge.source.record_id)}{!edge.source.resolved && '（未知或截止内不可见）'}</p><p>目标：{l1KindNames[edge.target.kind] ?? edge.target.kind} · {text(edge.target.record_id)}{!edge.target.resolved && '（未知或截止内不可见）'}</p><p>输入输出声明属于报告或编辑记录，未成为原生运行的实际 I/O 事实。</p><EvidenceButtons ids={edge.evidence_event_ids} onOpen={onEvidence} /><pre>{JSON.stringify(edge, null, 2)}</pre></section>;
 }
-export function FileRunGraphView({ project, projects, onProject, workspace: w }: { project: Project | undefined; projects: Project[]; onProject: (id: string) => void; workspace: ReturnType<typeof useFileRunGraph> }) {
+export function FileRunGraphView({ project, projects, onProject, workspace: w, onImpactClaim }: { project: Project | undefined; projects: Project[]; onProject: (id: string) => void; workspace: ReturnType<typeof useFileRunGraph>; onImpactClaim?: (id: number, reading: ResearchReading) => void }) {
   const [focused, setFocused] = useState<{ type: 'node' | 'edge'; id: string } | null>(null);
   const container = useRef<HTMLDivElement>(null);
   const data = w.data; const projection = useMemo(() => data ? drawableL1Edges(data) : null, [data]);
@@ -133,7 +135,7 @@ export function FileRunGraphView({ project, projects, onProject, workspace: w }:
       <details className="file-run-picker" open><summary>按名称打开节点 · {data.nodes.length}</summary><div aria-label="全部文件运行节点，可滚动" tabIndex={0}>{data.nodes.map(node => <button className={`file-run-node-choice ${selectedNode?.node_id === node.node_id ? 'active' : ''}`} data-node-id={node.node_id} key={node.node_id} onClick={() => select('node', node.node_id)}><span>{l1KindNames[node.kind] ?? node.kind} · {l1NodeTitle(node)}</span><small>{status(node)}</small></button>)}</div></details>
       <details className="file-run-picker"><summary>全部原关系 · {data.edges.length}</summary><div tabIndex={0} aria-label="全部文件运行关系，可滚动">{data.edges.map(edge => <button key={edge.edge_id} data-edge-id={edge.edge_id} className="file-run-node-choice" onClick={() => select('edge', edge.edge_id)}><span>{l1RelationNames[edge.relation] ?? edge.relation}{edge.role != null && ` · ${l1RoleNames[String(edge.role)] ?? text(edge.role)}`} · {text(edge.source.record_id)} → {text(edge.target.record_id)}</span><small>{associationNames[String(edge.association_state)] ?? '关联依据未知'} · {edge.resolved ? '端点已解析' : '端点未知或截止外'}</small></button>)}</div></details>
       {(data.unresolved.length > 0 || projection!.omitted.length > 0) && <section className="file-run-unresolved" aria-label="文件运行图未解析诊断"><h3>保留未解析关系与绘图诊断</h3><p>{data.unresolved.length} 条服务端未解析记录 · {projection!.omitted.length} 条关系的端点缺失、截止内不可见或类型不符，未补造实际 I/O。详情与原证据仍可打开。</p>{projection!.omitted.map(edge => <button className="text-button" key={edge.edge_id} onClick={() => select('edge', edge.edge_id)}>{l1RelationNames[edge.relation] ?? edge.relation} · {text(edge.source.record_id)} → {text(edge.target.record_id)}</button>)}<details><summary>完整诊断记录</summary><pre>{JSON.stringify(data.unresolved, null, 2)}</pre></details></section>}
-      {selectedNode && <NodeDetail node={selectedNode} data={data} onEvidence={id => { void w.evidence(id); }} />}{selectedEdge && <EdgeDetail edge={selectedEdge} onEvidence={id => { void w.evidence(id); }} />}
+      {selectedNode && <NodeDetail node={selectedNode} data={data} onEvidence={id => { void w.evidence(id); }} onNode={id => select('node', id)} onImpactClaim={onImpactClaim} />}{selectedEdge && <EdgeDetail edge={selectedEdge} onEvidence={id => { void w.evidence(id); }} />}
       <details className="file-run-picker"><summary>全部原件引用 · {data.evidence.length}</summary><div>{data.evidence.map(item => <button className="text-button" key={String(item.event_id)} onClick={() => { void w.evidence(Number(item.event_id)); }}>打开历史原文 E{String(item.event_id)}</button>)}</div></details>
     </>}
     {w.event != null && <section className="file-run-source" role="dialog" aria-modal="false" aria-label="文件运行图历史原文"><header><h2>历史原文 E{w.event}</h2><button className="button secondary" onClick={w.closeEvidence}>关闭历史原文</button></header><p className="small muted">仅此图的固定双截止和修订，原始 JSON 字节窗口保留转义；没有加入当前时刻的其它派生观察。</p>{w.windows.map(window => <article key={window.window_start}><p className="small muted">原件字节 {window.window_start}–{window.window_end} / {window.total_bytes} · 来源文件字节 {text(window.source_byte_start)}–{text(window.source_byte_end)}</p><pre data-testid="l1-history-text">{window.text}</pre><p className="small muted">窗口 SHA256 <span className="mono">{window.window_sha256}</span></p></article>)}{w.evidenceError && <p className="error-message" role="alert">{w.evidenceError}</p>}{w.evidenceBusy && <p role="status">正在读取历史原文窗口…</p>}{w.windows.at(-1)?.next_byte_offset != null && <button className="button secondary" disabled={w.evidenceBusy || w.conflict} onClick={() => { void w.evidence(w.event!, true); }}>读取后续原文字节</button>}{w.conflict && <button className="button secondary" onClick={() => { void w.load(); }}>重新读取图后核对原文</button>}</section>}

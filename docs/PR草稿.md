@@ -1,39 +1,32 @@
-本地 Claude Code／Codex 会话可形成带原文、双时间和审核记录的研究决定史。流式持续采集、离线钩子、影子快照、持久提取队列、研究图、检索、问答、历史导出及 MCP 已接通；模型只写候选，确认来自人工或严格独立原话规则。目标场景是本机 Windows／WSL／Linux 与桌面浏览器。
+本机 Codex／Claude Code 的会话现在可从项目接入、持续采集、提取到桌面查询连起来使用。`client-install` 合并项目技能与 MCP，保留其它配置并拒绝覆盖冲突；`start` 一次管理界面及扫描、spool、派生、文件处理，明确加 `--extract` 后串接现有提取／关联／概览。默认离线，模型调用继续执行项目许可、真实 token 计数、128k 可调预算和每日额度。
 
-桌面默认只显示研究问题、研究图、研究问答，原文搜索位于顶部，八个低频工具收进更多工具；待复核提示仍可见，图未完整加载时明确只统计已载入记录，工具深链自动展开。问答隐私摘要碰巧命中手机号或十八位数字形状时，预览与实发保持一致，正文和范围继续遮盖。
+新增 `impact` CLI 与认证 `GET /api/impact`，按对象或文件版本查询下游核对项和关系路径。项目、完整范围、发生／获知截止及修订固定，确认关系与候选／报告依赖分开；比较汇合仅沿选中输入，不沿 same_topic 等检索关系传播。两集合独立分页，深度或数量达到上限明确不完整，不改变任何科研状态、不推定真实 I/O 完整性。桌面仍默认研究问题／研究图／研究问答，影响入口只放在已有详情折叠区，无新增主导航。
 
-已登记项目可用 hook-install 安装项目本地配置，保留原设置和其它钩子，检查模式不写客户端文件，重复调用不重写。配置损坏、链接、同名定义冲突或检测到并发编辑时拒绝覆盖。固定解释器隔离工作区导入，入口异常也静默退出0；明确范围外事件不采集，未知与超限输入保留原件。安装与生效分别报告，不改个人配置或持久信任，不启用 ResearchGraph 开发钩子。原生 Windows Codex 的命令 shell 尚未验收，明确拒绝安装，WSL 可用；Claude 使用执行文件及参数数组。
+原生 Windows Codex 钩子已补齐固定系统 PowerShell 编码参数执行；含中文、空格、引号及 shell 符号的隔离工作区实测四类回调齐全。Windows 高频状态读取阻止原子替换的问题已修复，使用共享删除读取、辅助回执失败隔离及非缓冲控制管道；工作进程空闲释放数据库，监督器接续实际退出的进程，父管道断开后退出。配置存在与客户端实际生效分别报告，不改个人设置或信任。
 
-真实原生对照发现 Codex 退出时取消异步 Stop，导致回执丢失。Stop／SessionEnd 改为两秒预算同步落盘，后续扫描仍在后台，不联网、不读会话、不调模型；执行规格、示例和安装定义一致更新。两个 WSL 原生客户端已在隔离合成项目中实际保存开始、提示、回复完成、会话结束四类事件，Git index 和研究数据库未改变。该测试不修改个人信任，不能冒充个人客户端已启用。
+## 验证
 
-项目可一次开启未来记录自动归属；旧日志归属与科研状态不回填。具有完整依赖的物理片段支持明确迁移，当前查询按有效归属、历史查询恢复当时归属；整项目清除保留其它项目仍使用的对象和确切影子引用，中断后可继续。完整研究图批量核对历史归属，合成2033记录固定双截止下逐字一致，SQL 从33467降至2346。普通及历史详情失败明确提示并支持主动GET重读，迟到响应按项目、记录和读取条件隔离。
-
-## 验收
-
-当前后端及仓库外Windows交付安装均对应最终冻结文件实际通过。前端本轮未修改，源码与c3baf07逐字相同，沿用该版本已通过的实际输出。
+按用户要求只运行本地相关检查，完整回归交现有 CI；没有删旧用例、放宽超时或增加失败跳过。
 
 ```text
-uv run pytest -q                         1719 passed in627.85s，退出0
-uv run pytest 两组钩子／快照专项           50 passed in15.59s，退出0
-uv run ruff check .                      All checks passed!，退出0
-uv run pyright                           0 errors, 0 warnings, 0 informations，退出0
-uv run python scripts/check_native_hooks.py  两个原生客户端四回调齐全，退出0，远程模型0
-rg控制台 init／登记／检查／安装／重复       五次退出0，八类定义，重复字节不变
-Windows3.12.3 -I 仓库外安装二十一组        463 passed, 3 skipped in137.37s，退出0
-c3baf07：pnpm test                        232 passed／24文件，退出0
-c3baf07：pnpm exec tsc --noEmit            退出0
-c3baf07：pnpm build                       259模块，退出0
-c3baf07：pnpm test:browser                 220 passed，退出0
+最终新功能三组 pytest                   28 passed in 8.87s，退出0
+阶段七组相关 pytest                     112 passed in 44.62s，退出0
+ruff check rg tests scripts             All checks passed!，退出0
+pyright                                0 errors, 0 warnings, 0 informations，退出0
+start／client-install／impact --help     退出0
+Windows3.12.3 -I 仓库外安装四组          52 passed, 3 skipped in 12.27s，退出0
+原生Windows Codex0.162.0                 5.656秒，四回调齐全，退出0，远程模型0
+真实CLI／HTTP合成日常启动                事件1到2，模型0，Ctrl+C退出0
+pnpm test                              235 passed／25文件／1.58s，退出0
+pnpm exec tsc --noEmit                  退出0
+pnpm build                             262模块／1.41s，退出0
+影响专项浏览器                          2 passed in 12.2s，退出0
 ```
 
-最终165资源与170成员的wheel及Windows安装逐字相同、真实密钥及私有文件零匹配；CP936／utf8_mode0保持。三跳过包含新增两项建立符号链接权限不足与原有一项，不算通过。新增27项黄金案例覆盖配置丢失、重复定义、并发编辑、跨项目采集、未知原件及导入失败；Windows CI 增加该组，原超时与全部既有步骤保留。完整后端包含1672项固定案例，单独固定案例命令与当前提交双CI以[检查页](https://github.com/FangWHao/ResearchGraph/pull/1/checks)实际终态为准，不借用c3baf07绿灯。
+Windows三跳过包含原有平台条件及符号链接权限不足，不算通过。浏览器专项通过实际本机 HTTP 验证报告依赖分级、固定双截止分页、GET-only／图逐字不变及迟到401隔离。Windows首次两失败、诊断阶段进程退出、浏览器缺依赖的首次失败均保留；最终修复后才计通过。此前84a5220同HEAD的PR38341459762与push38341455018已实际成功，但不能代替当前提交；当前完整后端／固定案例／浏览器以[检查页](https://github.com/FangWHao/ResearchGraph/pull/1/checks)的实际终态为准。
 
-异步Stop原生红灯、专项首轮两项失败和脚本入口／空服务表错误均保留，修正后才记成功。前端与运行代码的冻结、交付包和完整Git历史独立恢复按实际回执核对。
+## 实际验收边界
 
-## 保留的边界
+工程合成结果不代替科研效果。Atlas参考候选未取得正式人工参考回执；真实找回率、模型解释质量与成本、个人接入、全八类钩子、真实I/O、提示时刻p95、规模和两周使用仍待实际验收。跨worktree身份及完整物理历史diff保留限制；跨设备、HPC及运行包装留在M5以后。资料、密钥、数据库及缓存不提交，草稿保持未合并，未宣布完整M0–M4验收完成。
 
-本机原生会话独立归档已验收，WSL843／Windows31文件完整SHA256恢复一致；WSL保留期3650天已核对，活跃源后续追加不属于捕获版本。归档、真实文件、逐文件清单不提交。
-
-工程合成验收不代替科研效果。Atlas48条候选参考尚无正式人工验收回执；个人真实钩子启用、全八类事件、真实I/O、提示快照p95、强杀、研究质量与成本、规模和两周使用仍待验收。跨设备、HPC 和运行包装依§3留在M5以后。完整M0–M4未宣布完成，资料／凭据／数据库／缓存不提交，草稿保持未合并。
-
-证据见[项目钩子接入验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/项目钩子接入验收_20261013.md)、[桌面入口精简验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/桌面入口精简验收_20261013.md)、[未来记录自动归属验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/未来记录自动归属验收_20261012.md)和[需求落实及剩余项](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。
+说明见[日常使用与影响查询验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/日常使用与影响查询验收_20261013.md)、[使用说明](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/README.md)及[需求落实情况](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。

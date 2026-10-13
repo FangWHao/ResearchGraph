@@ -52,6 +52,9 @@ jobs:
           tests/golden/test_alias_clear.py
           tests/golden/test_automatic_assignment.py
           tests/golden/test_hook_install.py
+          tests/golden/test_client_install.py
+          tests/golden/test_runtime.py
+          tests/golden/test_impact.py
           tests/test_migrations.py
           -q
   backend:

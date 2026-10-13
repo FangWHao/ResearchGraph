@@ -260,6 +260,9 @@ class Store:
                 "SELECT count(*) FROM effective_jobs WHERE kind='spool_hint' AND state='failed'"
             ).fetchone()[0],
         }
+        from rg.runtime import status as runtime_status
+
+        result["runtime"] = runtime_status(self.root)
         result["extraction"] = monitor(self, project, day, daily_budget, limit, offset)
         from rg.extract.queue_health import health as queue_health
 
