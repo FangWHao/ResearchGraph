@@ -1262,3 +1262,15 @@
 - 内容检查：先核对1739个既有历史 blob，再核对两个补充提交的13个 blob；实际识别1个本机凭据值，内容匹配均为0，禁止提交文件数0，未输出凭据。无真实材料／数据库／缓存／安装包入库，远程模型调用0。
 - 收尾文件：仅追加 PROGRESS.md／DECISIONS.md，并同步 docs/PR草稿.md 为已验收的最终 PR 说明。文档收尾提交使用 `[skip ci]`，避免中文纪要重复触发整套回归；提交前后另核对除这三个文档外的软件树与已验收提交完全一致，`git diff --check` 无输出、退出0。合并提交本身的 main CI 仍按既有流程自动运行，不把启动中的检查写为通过。
 - 下一步：从 main 开始实际试用和问题修复；正式 Atlas 参考、科研质量／成本、完整研究 I/O、规模及长期使用继续保留，完整 M0–M4 尚未验收。下一个开发任务使用新分支和新会话。
+
+
+## 2026-10-13 · 本机服务启动与 SSH 试用入口
+
+- 任务：按用户“启动一下，远程 SSH 访问”授权，将已合入 main 的桌面包实际安装并启动。开始前读末40行、§2／10／11及本地界面、日常入口和首次建库决定。
+- 部署：校验桌面 wheel 的 SHA256 为 bf8ff2d44b24b22d7a54ef35413832fffb6831a34c32be10d6923a884ddd72e6，使用 Python3.12.3 在 `~/.local/share/researchgraph/venv` 离线安装19个运行依赖；实际安装退出0。数据目录为 `~/.researchgraph`，与开发测试库分开，本次初始项目数为0。没有把合成验收库当成真实研究记录。
+- 服务：新增个人 `~/.config/systemd/user/researchgraph.service`，通过 `systemctl --user start researchgraph.service` 启动，实际 `ActiveState=active`、`SubState=running`、`ExecMainStatus=0`。统一入口 `rg --data-dir ~/.researchgraph start --port 8788` 管理界面与扫描／文件处理子进程；现有 linger=yes，未修改登录设置或启用开机自启。
+- 端口与访问：8787 已被 RStudio 占用，使用空闲8788；`ss -ltnp 'sport = :8788'` 实际仅监听127.0.0.1:8788，归属本次 rg 进程。已有WSL SSH服务 active／running，Tailscale在线；未改SSH认证、密钥或防火墙。远程电脑使用 `ssh -L 127.0.0.1:8788:127.0.0.1:8788 用户名@这台WSL的SSH地址`，浏览器保持相同127.0.0.1与端口，满足Host／Origin检查。用户电脑到本机的实际SSH连接需用户执行，未冒充远端连通验收。
+- 凭据：随机本机访问令牌仅保存在权限0600的启动日志及 `~/.researchgraph/access-url.txt`，不进入仓库或开发上下文。该链接属于本次启动，服务重启后从启动日志取得最新链接。生产数据根和日志目录权限0700；未读取或发送目录里的模型密钥，本次远程模型调用0，extract回执disabled。
+- 验收：独立已安装命令的 `runtime-status` 显示scan／files为idle、extract为disabled；保存回执的liveness仍unknown，另外实测主进程和两个子进程存在。Python真实HTTP请求：界面200，三个JS／CSS静态资源200，带本次令牌的 `/api/projects` 与 `/api/health` 均200，项目数0。
+- 浏览器：首次启动因未带本机已有libasound路径失败，退出1；只设置既有 `.tools/browser-libs/usr/lib/x86_64-linux-gnu` 的LD_LIBRARY_PATH后再次检查当前生产服务，实际 `browser_http=200`、`first_project_button_visible=true`、`hash_removed=true`、`page_errors=0`、`http_failures=0`，退出0。截图及无令牌JSON回执保存在个人数据目录，未运行完整回归或改产品代码。
+- 文件：仓库仅追加本文件及DECISIONS.md；实际虚拟环境、systemd配置、数据库、日志、访问链接、浏览器回执均在个人目录，不入Git。下一步由用户通过SSH隧道查看界面并创建实际项目；Atlas正式参考、科研质量及长期使用验收仍未完成。
