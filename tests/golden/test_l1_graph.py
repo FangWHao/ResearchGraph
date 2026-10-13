@@ -280,6 +280,7 @@ def test_schema_v16_upgrade_is_atomic_retains_original_and_edit_revision_trigger
         with closing(Store(root)) as old:
             owner = seed_l1_graph(old)
             revision = old.revision()
+            registered_roots = old.db.execute("SELECT count(*) FROM source_roots").fetchone()[0]
             edit = dict(old.db.execute("SELECT * FROM edit_records").fetchone())
     with monkeypatch.context() as change:
         change.setitem(migrations.MIGRATIONS, 17, (*migrations.MIGRATIONS[17], "INVALID SQL"))
@@ -293,7 +294,12 @@ def test_schema_v16_upgrade_is_atomic_retains_original_and_edit_revision_trigger
         ).fetchone()
     with closing(Store(root)) as restored:
         assert restored.raw(1) == raw
-        assert restored.revision() == revision + 1
+        # 迁移17使编辑投影失效；迁移37为每个旧根追加未知发生时间的登记基线。
+        expected_revision = revision + 1 + registered_roots
+        assert restored.revision() == expected_revision
+        assert restored.db.execute(
+            "SELECT count(*) FROM source_root_observations WHERE basis='legacy_baseline'"
+        ).fetchone()[0] == registered_roots
         assert dict(restored.db.execute("SELECT * FROM edit_records").fetchone()) == edit
         assert (
             FileRunGraph(Reader(restored, owner, {})).metadata()["node_kinds"]["edit_record"] == 1
@@ -302,6 +308,10 @@ def test_schema_v16_upgrade_is_atomic_retains_original_and_edit_revision_trigger
         assert restored.db.execute(
             "SELECT 1 FROM sqlite_master WHERE name='edit_record_revision'"
         ).fetchone()
+    with closing(Store(root)) as repeated:
+        assert repeated.revision() == expected_revision
+        assert repeated.raw(1) == raw
+        assert dict(repeated.db.execute("SELECT * FROM edit_records").fetchone()) == edit
 
 
 def test_readonly_cli_and_export_use_same_complete_graph_and_source_window_has_no_future_context(

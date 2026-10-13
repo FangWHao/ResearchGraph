@@ -271,6 +271,7 @@ def test_v26_migration_is_atomic_and_never_rewrites_proof_or_reads_raw(tmp_path,
                 for name in ("claims", "review_actions", "raw_events")
             }
             revision = old.revision()
+            registered_roots = old.db.execute("SELECT count(*) FROM source_roots").fetchone()[0]
     with monkeypatch.context() as failure:
         failure.setitem(migrations.MIGRATIONS, 27, (*migrations.MIGRATIONS[27], "INVALID SQL"))
         with pytest.raises(sqlite3.OperationalError):
@@ -285,7 +286,12 @@ def test_v26_migration_is_atomic_and_never_rewrites_proof_or_reads_raw(tmp_path,
         )
     with patch.object(Store, "raw", side_effect=AssertionError("迁移和只读视图不能打开正文")):
         with closing(Store(root)) as current:
-            assert current.revision() == revision + 1
+            # 迁移27使旧确认依据失效，迁移37另为旧根登记追加历史基线。
+            expected_revision = revision + 1 + registered_roots
+            assert current.revision() == expected_revision
+            assert current.db.execute(
+                "SELECT count(*) FROM source_root_observations WHERE basis='legacy_baseline'"
+            ).fetchone()[0] == registered_roots
             for name, rows in originals.items():
                 assert [tuple(r) for r in current.db.execute("SELECT * FROM " + name)] == rows
             row = next(r for r in Reader(current, project, {}).claims() if r["claim_id"] == claim)
@@ -294,7 +300,7 @@ def test_v26_migration_is_atomic_and_never_rewrites_proof_or_reads_raw(tmp_path,
                 current.db.execute("SELECT count(*) FROM rule_reference_checks").fetchone()[0] == 0
             )
         with closing(Store(root)) as repeated:
-            assert repeated.revision() == revision + 1
+            assert repeated.revision() == expected_revision
 
 
 def test_rule_policy_invalidates_model_stages_and_configuration_without_repeating_pass1(

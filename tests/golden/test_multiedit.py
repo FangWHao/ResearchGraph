@@ -314,6 +314,7 @@ def test_schema25_only_invalidates_old_multiedit_projection_atomically(
             if has_multiedit:
                 seed_multiedit_store(store, tmp_path)
             revision = store.revision()
+            registered_roots = store.db.execute("SELECT count(*) FROM source_roots").fetchone()[0]
             initial = "\n".join(
                 line for line in unchanged(store).splitlines() if line.startswith("INSERT INTO")
             )
@@ -344,12 +345,20 @@ def test_schema25_only_invalidates_old_multiedit_projection_atomically(
             upgraded_revision = upgraded.revision()
             old_sessions = [tuple(r) for r in upgraded.db.execute("SELECT * FROM sessions")]
     with closing(Store(root)) as reopened:
-        assert reopened.revision() == upgraded_revision
+        # 继续升级到当前版本时，迁移37会逐根追加历史基线并发布修订。
+        expected_revision = upgraded_revision + registered_roots
+        assert reopened.revision() == expected_revision
+        assert reopened.db.execute(
+            "SELECT count(*) FROM source_root_observations WHERE basis='legacy_baseline'"
+        ).fetchone()[0] == registered_roots
         assert reopened.raw(1) == raw
         current = [tuple(r) for r in reopened.db.execute("SELECT * FROM sessions")]
         assert [r[:-2] for r in current] == old_sessions
         assert all(r[-2:] == (None, "") for r in current)
         assert reopened.db.execute("PRAGMA foreign_key_check").fetchone() is None
+    with closing(Store(root)) as repeated:
+        assert repeated.revision() == expected_revision
+        assert repeated.raw(1) == raw
 
 
 def test_graph_never_reads_body_pending_becomes_checked_only_through_background_derive(

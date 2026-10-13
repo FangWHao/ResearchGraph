@@ -12,6 +12,7 @@
 ## 当前验证
 
 ```text
+合并前旧升级修订／根登记专项            14 passed in 5.81s，退出0
 根登记及相关升级／快照失败用例          13 passed in 5.74s，退出0
 四项云端失败用例加新登记功能            14 passed in 4.80s，退出0
 原生Windows3.12.3 -I 仓库外五组          28 passed in 10.08s，退出0
@@ -22,12 +23,12 @@ pyright                                0 errors, 0 warnings, 0 informations，�
 安装资源核对                            177后端／10静态资源与当前逐字相同
 ```
 
-新固定案例覆盖同事务登记、幂等、追加保护、元数据变化、双截止与微秒、旧库未知时间基线、失败迁移回滚、只读备份、L1登记证明及共享根最终清除。上一47712f1两组CI都实际失败：后端4失败／1821通过，Windows4失败／568通过／1跳过。原因是两个旧别名升级用例的模拟版本33表／科研集合遗漏新增表，以及两个升级用例写死终点35；本轮明确还原旧场景的固定合同并跟随当前终点，保留回滚、外键、原件、视图／索引／触发器和追加保护断言。产品合同未放宽，新提交完整结果见[检查页](https://github.com/FangWHao/ResearchGraph/pull/1/checks)。
+新固定案例覆盖同事务登记、幂等、追加保护、元数据变化、双截止与微秒、旧库未知时间基线、失败迁移回滚、只读备份、L1登记证明及共享根最终清除。合并前 c087e77 的两组 CI 实际失败：后端3失败／1832通过，Windows2失败／580通过／1跳过；三个旧升级测试未计入迁移37按旧根追加的基线修订。本次按升级前登记根数精确核对新基线及修订，重复打开仍要求稳定，原回滚、原件、外键及旧审核依据检查保留。产品合同和 CI 步骤未放宽，当前提交完整结果见[检查页](https://github.com/FangWHao/ResearchGraph/pull/1/checks)。
 
 本地只复验相关失败与新功能；初轮截止和旧版本设定失败保留在中文验收记录中，不记为全通过。前端未改，既有前端与浏览器结果不冒充本轮验收，完整回归交现有CI。公开合成输入、仓库外安装及原生Windows证明工程行为，不能代替真实科研参考。
 
 ## 实际验收边界
 
-Atlas正式参考仍未人工确认，找回率／解释质量／成本、个人客户端全事件、完整研究I/O、提示p95、规模及两周使用仍待实际验收。旧登记实际发生时刻、跨设备别名、符号链接目标、大小写不明及未保存历史正文不能补造；根登记也不自动重探测仓库或证明完整I/O。完整M0–M4尚未验收，草稿保持未合并；真实资料、密钥、数据库和生成缓存不提交。
+Atlas正式参考仍未人工确认，找回率／解释质量／成本、个人客户端全事件、完整研究I/O、提示p95、规模及两周使用仍待实际验收。旧登记实际发生时刻、跨设备别名、符号链接目标、大小写不明及未保存历史正文不能补造；根登记也不自动重探测仓库或证明完整I/O。完整M0–M4尚未验收；按用户明确授权在当前 CI 全部通过后合入 main，供实际试用。真实资料、密钥、数据库和生成缓存不提交。
 
 详见[根身份账本验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/根目录身份双时间账本验收_20261013.md)、[旧L1路径补齐验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/旧L1路径追加复核验收_20261013.md)、[桌面完整包验收](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/acceptance/首次启动与桌面完整包验收_20261013.md)、[使用说明](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/README.md)与[需求落实情况](https://github.com/FangWHao/ResearchGraph/blob/codex/m1-backend-20261009/docs/REQUIREMENTS_STATUS.md)。

@@ -1236,3 +1236,13 @@
 - 全量ruff实际All checks passed，pyright0 errors／0 warnings／0 informations、退出0；类型初轮1 error已用明确字典类型修正。桌面wheel构建及原生Windows缓存环境重安装实际退出0；仓库外 `python.exe -I .../native_check.py` 五组实际28 passed in10.08s、退出0，Python3.12.3／cp936／utf8_mode0，无跳过。只复验相关失败与新功能，没有本地完整后端／前端／浏览器重复回归。
 - 177后端／10静态资源与当前逐字相同，包3330644字节、SHAa31c4c21f98d1af7dbbf10dd943b042259ceed6fc51562c2c8ec04223e0694e6；测试／夹具／缓存不入包，生成物不进Git，模型0。
 - 下一步：提交并维护已有未合并草稿，核对新HEAD完整CI；继续真实客户端、研究I/O和真实科研使用验收。登记账本不补造旧发生时间／跨设备身份；正式参考、质量／成本、p95、规模与两周使用继续保留，完整M0–M4尚未验收。
+
+## 2026-10-13 · 主分支合并准备与旧升级修订计数修复
+
+- 任务：按用户“你先弄到 main”授权完成已有 PR #1 的合并；先读末40行、§2／8.3及 GitHub／根登记决定。当前分支干净、PR 无冲突，账号具有合并权限；此前草稿策略由本次明确授权更新。
+- 文件：修改 tests/golden/test_l1_graph.py、test_multiedit.py、test_rule_reference_qualification.py，追加本文件及 DECISIONS.md，更新中文 PR 说明。产品代码和 CI 步骤未改。
+- 最新 c087e77 的 PR38399928554／push38399919710 均实际失败。PR 后端3 failed／1832 passed in352.01s，Windows2 failed／580 passed／1 skipped in275.38s；失败均为旧升级测试遗漏迁移37按根追加基线带来的修订。日志保存于忽略缓存，未将失败算作通过。
+- 首先复现 `.tools/bin/uv run pytest tests/golden/test_l1_graph.py::test_schema_v16_upgrade_is_atomic_retains_original_and_edit_revision_trigger tests/golden/test_multiedit.py::test_schema25_only_invalidates_old_multiedit_projection_atomically tests/golden/test_rule_reference_qualification.py::test_v26_migration_is_atomic_and_never_rewrites_proof_or_reads_raw -q`，实际3 failed／1 passed in3.95s、退出1。按升级前根数核对新增基线和修订；增加重复打开的原件及修订稳定断言，原失败回滚和完整性检查保留。
+- 最终同一命令追加 `tests/golden/test_root_history.py`，实际14 passed in5.81s、退出0。`.tools/bin/uv run ruff check tests/golden/test_l1_graph.py tests/golden/test_multiedit.py tests/golden/test_rule_reference_qualification.py` 实际 All checks passed!、退出0；`git diff --check` 无输出、退出0。本地只复验失败及相关登记功能，完整后端、Windows、前端、浏览器和安装验收交既有 CI。
+- 下一步：推送本次修复并等待当前提交全部 CI 成功，再解除草稿并通过 PR 合入 main，核对远端合并状态和本机主分支；真实科研质量及长期使用验收继续保留，不因合并补写通过。
+- 提交内容核对：合并范围内1739个历史 blob 和本次六个改动文件与本机凭据做内容匹配，实际匹配数0；当前禁止提交文件数0，退出0，凭据内容未输出。
