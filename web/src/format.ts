@@ -12,6 +12,11 @@ export function fmtTime(ts: string | null | undefined): string {
   return d ? `${d.getMonth() + 1}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}` : '时间未知';
 }
 
+export function fmtClock(ts: string | null | undefined): string {
+  const d = parse(ts);
+  return d ? `${pad(d.getHours())}:${pad(d.getMinutes())}` : '';
+}
+
 export function fmtFull(ts: string | null | undefined): string {
   const d = parse(ts);
   return d

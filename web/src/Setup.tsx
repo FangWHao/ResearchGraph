@@ -75,18 +75,21 @@ export function Setup({ state, first, onDone, onCancel }: Props) {
 
   return (
     <div className="page">
-      {first ? (
-        <div className="steps">
-          <b>① 找到会话</b> → <span>② 新建项目</span> → <span>③ 自动整理时间线</span>
-        </div>
-      ) : null}
-      <h1>{first ? '欢迎使用 ResearchGraph' : '设置'}</h1>
+      <header className="page-head">
+        {first ? (
+          <ol className="steps">
+            <li className="on"><b>1</b>找到会话</li>
+            <li><b>2</b>新建项目</li>
+            <li><b>3</b>整理成时间线</li>
+          </ol>
+        ) : null}
+        <h1>{first ? '欢迎使用 ResearchGraph' : '设置'}</h1>
+        {first ? <p>把 Claude Code 和 Codex 的会话整理成一张研究时间线。先告诉它会话在哪里。</p> : null}
+      </header>
 
       <section className="card">
         <h2>会话目录</h2>
-        <p className="muted small">
-          ResearchGraph 只读取这些目录里的会话文件，不会修改它们。
-        </p>
+        <p>只读取这些目录里的会话文件，不会修改它们。</p>
         <div className="list">
           {state.detected.length === 0 && extra.length === 0 ? (
             <div className="muted">没有在常见位置找到 Claude Code 或 Codex 的会话，可以在下面手动填写目录。</div>
@@ -128,9 +131,7 @@ export function Setup({ state, first, onDone, onCancel }: Props) {
 
       <section className="card">
         <h2>整理用的模型</h2>
-        <p className="muted small">
-          自动整理会把会话里的文字发送给模型。每个项目第一次整理前都会先告诉你发送量，你确认后才会发送。
-        </p>
+        <p>自动整理会把会话里的文字发送给模型。每个项目第一次整理前都会先告诉你发送量，你确认后才会发送。</p>
         <label className="field">
           <span>DeepSeek API Key{state.model.has_key ? '（已设置，留空表示不修改）' : ''}</span>
           <div className="row">

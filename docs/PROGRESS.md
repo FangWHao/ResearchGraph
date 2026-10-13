@@ -40,3 +40,22 @@
   - 测试：新增 `tests/test_model.py`，并在 organize / server / parse 测试里补了对应用例。
 - 验收：`uv run pytest -q` → 40 passed in 6.31s；ruff All checks passed!，格式检查 18 files already formatted；pyright 0 errors；`pnpm test` 8 passed，`pnpm build` 成功。重装本机服务（wheel SHA256 df5eb2db64a9e106c14955dd94fe9f02b39f68c2ea80e03946538c0f124adf98）前确认没有整理任务在跑；重启后 active/running，项目数据完好（1 个项目、25 个会话、151 个事件）。线上 `/api/settings/check` 用已保存的 Key 返回 `可以使用（deepseek-flash）`，浏览器里点“检测”显示 ✓，页面无报错。
 - 下一步：用户看真实项目的整理效果并反馈。
+
+## 2026-10-14 · 前端打磨，加横轴对齐开关
+
+- 任务：用户要求打磨前端，并问能否加“是否严格对齐时间轴”的开关，以及现在是否实时更新。
+- 做法：先加载 dataviz 规范并实测配色；用新增的 `scripts/demo.py` 生成合成演示项目（126 个事件、6 条研究线、17 条分支、1 个 fork），在 8790 端口对着它截图调整。没有截用户真实项目的图。
+- 改动：
+  - `web/src/layout.ts`：新增“真实时间”布局（真实刻度、按天和小时画刻度、放得下才显示标题），以及 `defaultZoom`、`rowNeighbors`。
+  - `web/src/Icons.tsx`（新）：种类图形和线条图标。
+  - `Timeline.tsx`：卡片和圆点两种画法；悬停卡片；打开时滚到最新事件；缩放时保持视野中心；选中的事件自动滚进视野。
+  - `Panel.tsx`：默认只显示内容，点编辑才出现表单；前后步骤、分出、汇入可以点击跳转；原话按用户、Agent、工具分开显示。
+  - `ProjectView.tsx`：顶栏放泳道和横轴两个切换以及缩放，状态胶囊，确认和出错提示条，底栏图例；键盘 ←/→、Esc、+/−。
+  - `styles.css`：重写为中性色系统，浅色和深色各一套。
+  - 引导页和新建项目页：换成步骤条和页头。
+  - 文档：设计、AGENTS、DECISIONS。
+- 配色实测：`validate_palette.js --pairs all`。三色方案在浅色和深色下都通过（浅色青色对比度警告，由文字标签补足）。五色方案正常视力色差 12.9，硬性不通过，所以弃用。
+- 修过的问题：Grid 里的固定列滚到最右端后跑出屏幕，改成 flex 结构；按钮内容默认垂直居中，导致标签和分支名重叠；提示条不显示时网格行错位，底栏下面露白；圆点和标题之间露出一段连线；关系标签被截断。
+- 验收：`pnpm test` → 13 passed（布局测试新增真实时间比例、刻度、标题放置、默认缩放、前后事件）；`pnpm build` 成功；`uv run pytest -q` → 40 passed；ruff All checks passed!；pyright 0 errors。浏览器截图：紧凑、真实时间、放大两档、会话视图、事件面板、研究线面板、会话面板、深色、1024 宽、新建项目、设置、菜单，页面报错均为 0。
+- 部署：确认 8788 上没有整理任务后重装（wheel SHA256 5bcf0d9e14dd83566ae4df69f3c6d8fe1278d42cb3e12109eba9e54dcfedcb53）；服务 active/running，页面加载新构建的 index-CnRnr5yR.js，项目数据完好（25 个会话、151 个事件）。
+- 实时更新：目前不是实时的。只有点“更新”时才读会话文件并整理；后台任务运行期间界面轮询进度。是否加自动更新待用户决定。

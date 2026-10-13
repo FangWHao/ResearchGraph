@@ -1,48 +1,117 @@
-import { useMemo } from 'react';
-import { fmtDayKey } from './format';
-import { computeLayout, NODE_H, NODE_W, type Lane, type TimelineInput, type ViewMode } from './layout';
-import { KIND_LABEL } from './types';
+import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { fmtClock, fmtDayKey, fmtTime } from './format';
+import { Icon, KindGlyph } from './Icons';
+import {
+  CARD_H,
+  CARD_ROW_H,
+  CARD_W,
+  computeLayout,
+  DOT_HIT,
+  DOT_ROW_H,
+  LEFT_PAD,
+  type Align,
+  type Lane,
+  type PlacedNode,
+  type TimelineInput,
+  type ViewMode,
+} from './layout';
+import { KIND_LABEL, TOOL_LABEL, type Session } from './types';
 
-const HEADER_W = 'clamp(120px, 28vw, 210px)';
-const AXIS_H = 38;
+const AXIS_H = 40;
 
 export type Selection = { type: 'event'; id: number } | { type: 'lane'; lane: Lane } | null;
 
 interface Props {
   data: TimelineInput;
-  mode: ViewMode;
+  view: ViewMode;
+  align: Align;
+  pxPerHour: number;
   selection: Selection;
   onSelect: (selection: Selection) => void;
+  // 变化时滚到最新（右端）
+  jump: string;
 }
 
-export function Timeline({ data, mode, selection, onSelect }: Props) {
-  const layout = useMemo(() => computeLayout(data, mode), [data, mode]);
+export function Timeline({ data, view, align, pxPerHour, selection, onSelect, jump }: Props) {
+  const layout = useMemo(() => computeLayout(data, { view, align, pxPerHour }), [data, view, align, pxPerHour]);
+  const scroller = useRef<HTMLDivElement>(null);
+  const labels = useRef<HTMLDivElement>(null);
+  const scale = useRef(pxPerHour);
+  const [hovered, setHovered] = useState<number | null>(null);
   const selectedEvent = selection?.type === 'event' ? selection.id : null;
   const selectedLane = selection?.type === 'lane' ? selection.lane.id : null;
+  const sessions = useMemo(() => new Map(data.sessions.map((s) => [s.id, s])), [data.sessions]);
+  const rowH = align === 'compact' ? CARD_ROW_H : DOT_ROW_H;
+
+  const viewport = () => {
+    const el = scroller.current!;
+    return { el, width: el.clientWidth - (labels.current?.offsetWidth ?? 0), height: el.clientHeight - AXIS_H };
+  };
+
+  // 打开项目、切换视图或点“最新”时，把最新的事件滚到眼前
+  useLayoutEffect(() => {
+    if (!scroller.current) return;
+    const latest = layout.nodes.at(-1);
+    const { el, width, height } = viewport();
+    if (!latest) return;
+    const right = align === 'compact' ? latest.x + CARD_W : latest.x + 160;
+    el.scrollLeft = right + 64 - width;
+    el.scrollTop = latest.y - height / 2;
+  }, [jump]);
+
+  // 缩放时保持视野中心对着同一时刻
+  useLayoutEffect(() => {
+    const before = scale.current;
+    scale.current = pxPerHour;
+    if (!scroller.current || align !== 'time' || before === pxPerHour) return;
+    const { el, width } = viewport();
+    const center = el.scrollLeft + width / 2 - LEFT_PAD;
+    el.scrollLeft = center * (pxPerHour / before) + LEFT_PAD - width / 2;
+  }, [pxPerHour, align]);
+
+  // 键盘或面板里跳转到的事件，滚进视野
+  useLayoutEffect(() => {
+    if (selectedEvent === null || !scroller.current) return;
+    const node = layout.nodes.find((n) => n.event.id === selectedEvent);
+    if (!node) return;
+    const { el, width, height } = viewport();
+    const [left, right] = align === 'compact' ? [node.x, node.x + CARD_W] : [node.x - DOT_HIT, node.x + 160];
+    const [top, bottom] = align === 'compact' ? [node.y, node.y + CARD_H] : [node.y - DOT_HIT, node.y + DOT_HIT];
+    if (left < el.scrollLeft + 16) el.scrollLeft = left - 48;
+    else if (right > el.scrollLeft + width - 16) el.scrollLeft = right - width + 48;
+    if (top < el.scrollTop + 8) el.scrollTop = top - 24;
+    else if (bottom > el.scrollTop + height - 8) el.scrollTop = bottom - height + 24;
+  }, [selectedEvent, layout, align]);
+
+  const hoveredNode = hovered === null ? null : layout.nodes.find((n) => n.event.id === hovered) ?? null;
 
   return (
-    <div className="tl-scroll" onClick={() => onSelect(null)}>
-      <div
-        className="tl-grid"
-        style={{
-          gridTemplateColumns: `${HEADER_W} ${layout.width}px`,
-          gridTemplateRows: `${AXIS_H}px ${layout.height}px`,
-        }}
-      >
-        <div className="tl-corner">{mode === 'threads' ? '研究线' : '会话'}</div>
-        <div className="tl-axis">
+    <div className={`tl tl-${align}`} ref={scroller} onClick={() => onSelect(null)}>
+      <div className="tl-inner" style={{ width: `calc(var(--label-w) + ${layout.width}px)` }}>
+        <div className="tl-head" style={{ height: AXIS_H }}>
+        <div className="tl-corner">
+          {view === 'threads' ? `${layout.lanes.length} 条研究线` : `${layout.lanes.length} 个会话`}
+        </div>
+        <div className="tl-axis" style={{ width: layout.width }}>
           {layout.days.map((day) => (
             <div key={`${day.key}:${day.x}`} className="tl-day" style={{ left: day.x, width: day.width }}>
-              {fmtDayKey(day.key)}
+              <span>{fmtDayKey(day.key)}</span>
             </div>
           ))}
+          {layout.ticks.map((tick) => (
+            <span key={tick.x} className="tl-tick" style={{ left: tick.x }}>
+              {tick.label}
+            </span>
+          ))}
         </div>
-        <div className="tl-labels">
+        </div>
+        <div className="tl-body" style={{ height: layout.height }}>
+        <div className="tl-labels" ref={labels}>
           {layout.lanes.map((lane) => (
             <button
               key={lane.id}
               type="button"
-              className={`tl-lane-label${selectedLane === lane.id ? ' on' : ''}`}
+              className={`tl-lane${selectedLane === lane.id ? ' on' : ''}`}
               style={{ top: lane.y, height: lane.height }}
               onClick={(e) => {
                 e.stopPropagation();
@@ -51,69 +120,168 @@ export function Timeline({ data, mode, selection, onSelect }: Props) {
             >
               <span className="tl-lane-title">{lane.title}</span>
               <span className="tl-lane-sub">{lane.subtitle}</span>
-              {lane.rows.slice(1).map((row) => (
-                <span key={row.id} className="tl-row-label" style={{ top: row.y - lane.y + 30 }}>
-                  ↳ {row.label}
-                </span>
-              ))}
+              {lane.rows.length > 1
+                ? lane.rows.slice(1).map((row) => (
+                    <span key={row.id} className="tl-row-label" style={{ top: row.y - lane.y + rowH / 2 - 9 }}>
+                      <Icon name="branch" size={12} />
+                      {row.label}
+                    </span>
+                  ))
+                : null}
             </button>
           ))}
         </div>
-        <div className="tl-canvas">
+        <div className="tl-canvas" style={{ width: layout.width }}>
           {layout.lanes.map((lane) => (
-            <div key={lane.id} className="tl-lane-bg" style={{ top: lane.y, height: lane.height }} />
+            <div key={lane.id} className="tl-lane-line" style={{ top: lane.y + lane.height - 1 }} />
           ))}
-          {layout.lanes.flatMap((lane) =>
-            lane.rows.slice(1).map((row) => <div key={row.id} className="tl-row-line" style={{ top: row.y }} />),
-          )}
           {layout.days.slice(1).map((day) => (
-            <div key={`sep:${day.x}`} className="tl-daysep" style={{ left: day.x }} />
+            <div key={`d:${day.x}`} className="tl-day-line" style={{ left: day.x }} />
           ))}
           <svg className="tl-edges" width={layout.width} height={layout.height}>
             <defs>
-              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-                <path d="M0,0 L10,5 L0,10 z" fill="var(--edge)" />
+              <marker id="tl-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                <path d="M0,0 L8,4 L0,8 z" fill="var(--edge)" />
               </marker>
-              <marker id="arrow-on" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-                <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)" />
+              <marker id="tl-arrow-on" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+                <path d="M0,0 L8,4 L0,8 z" fill="var(--ink)" />
               </marker>
             </defs>
             {layout.edges.map((edge) => {
               const on = selectedEvent !== null && (edge.from === selectedEvent || edge.to === selectedEvent);
+              const arrow = edge.kind !== 'next';
               return (
                 <path
                   key={edge.id}
                   className={`tl-edge ${edge.kind}${on ? ' on' : ''}`}
                   d={edge.path}
-                  markerEnd={on ? 'url(#arrow-on)' : 'url(#arrow)'}
+                  markerEnd={arrow ? (on ? 'url(#tl-arrow-on)' : 'url(#tl-arrow)') : undefined}
                 />
               );
             })}
           </svg>
-          {layout.nodes.map(({ event, x, y }) => {
-            const on = event.id === selectedEvent;
-            return (
-              <button
-                key={event.id}
-                type="button"
-                title={`${KIND_LABEL[event.kind]}：${event.title}\n${event.summary}`}
-                className={`tl-node kind-${event.kind}${on ? ' on' : ''}`}
-                style={{ left: x, top: y, width: NODE_W, height: NODE_H }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelect({ type: 'event', id: event.id });
-                }}
-              >
-                <span className="tl-node-kind">
-                  {KIND_LABEL[event.kind]}
-                  {event.edited ? ' · 已改' : ''}
-                </span>
-                <span className="tl-node-title">{event.title}</span>
-              </button>
-            );
-          })}
+          {layout.nodes.map((node) =>
+            align === 'compact' ? (
+              <Card
+                key={node.event.id}
+                node={node}
+                on={node.event.id === selectedEvent}
+                onSelect={onSelect}
+                onHover={setHovered}
+              />
+            ) : (
+              <Dot
+                key={node.event.id}
+                node={node}
+                on={node.event.id === selectedEvent}
+                onSelect={onSelect}
+                onHover={setHovered}
+              />
+            ),
+          )}
+          {hoveredNode ? <Tip node={hoveredNode} align={align} session={sessions.get(hoveredNode.event.session_id)} /> : null}
+        </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+interface NodeProps {
+  node: PlacedNode;
+  on: boolean;
+  onSelect: (selection: Selection) => void;
+  onHover: (id: number | null) => void;
+}
+
+function handlers({ node, onSelect, onHover }: NodeProps) {
+  return {
+    'data-id': node.event.id,
+    onClick: (e: MouseEvent) => {
+      e.stopPropagation();
+      onSelect({ type: 'event', id: node.event.id });
+    },
+    onPointerEnter: () => onHover(node.event.id),
+    onPointerLeave: () => onHover(null),
+    onFocus: () => onHover(node.event.id),
+    onBlur: () => onHover(null),
+  };
+}
+
+function Card(props: NodeProps) {
+  const { node, on } = props;
+  const { event } = node;
+  return (
+    <button
+      type="button"
+      className={`tl-card${on ? ' on' : ''}`}
+      style={{ left: node.x, top: node.y, width: CARD_W, height: CARD_H }}
+      aria-label={`${KIND_LABEL[event.kind]}：${event.title}`}
+      {...handlers(props)}
+    >
+      <span className="tl-card-meta">
+        <KindGlyph kind={event.kind} />
+        <span>{KIND_LABEL[event.kind]}</span>
+        <span className="tl-card-time">{fmtClock(event.ts)}</span>
+        {event.edited ? (
+          <span className="tl-card-edited" title="手动改过">
+            <Icon name="edit" size={11} />
+          </span>
+        ) : null}
+      </span>
+      <span className="tl-card-title">{event.title}</span>
+    </button>
+  );
+}
+
+function Dot(props: NodeProps) {
+  const { node, on } = props;
+  const { event } = node;
+  return (
+    <button
+      type="button"
+      className={`tl-dot${on ? ' on' : ''}`}
+      style={{ left: node.x - DOT_HIT / 2, top: node.y - DOT_HIT / 2 }}
+      aria-label={`${KIND_LABEL[event.kind]}：${event.title}`}
+      {...handlers(props)}
+    >
+      <span className="tl-dot-mark">
+        <KindGlyph kind={event.kind} size={12} ring />
+      </span>
+      {node.labelWidth > 0 ? (
+        <span className="tl-dot-label" style={{ maxWidth: node.labelWidth - 6 }}>
+          {event.title}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+function Tip({ node, align, session }: { node: PlacedNode; align: Align; session?: Session }) {
+  const { event } = node;
+  const centerX = align === 'compact' ? node.x + CARD_W / 2 : node.x;
+  const top = align === 'compact' ? node.y : node.y - DOT_HIT / 2;
+  const bottom = align === 'compact' ? node.y + CARD_H : node.y + DOT_HIT / 2;
+  const below = top < 140;
+  return (
+    <div
+      className={`tl-tip${below ? ' below' : ''}`}
+      style={{ left: Math.max(150, centerX), top: below ? bottom + 8 : top - 8 }}
+      role="tooltip"
+    >
+      <div className="tl-tip-meta">
+        <KindGlyph kind={event.kind} />
+        <span>{KIND_LABEL[event.kind]}</span>
+        <span>·</span>
+        <span>{fmtTime(event.ts)}</span>
+      </div>
+      <div className="tl-tip-title">{event.title}</div>
+      {event.summary ? <div className="tl-tip-summary">{event.summary}</div> : null}
+      {session ? (
+        <div className="tl-tip-session">
+          {TOOL_LABEL[session.tool]} ·「{session.title ?? '无标题'}」
+        </div>
+      ) : null}
     </div>
   );
 }

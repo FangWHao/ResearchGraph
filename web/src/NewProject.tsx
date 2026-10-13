@@ -73,12 +73,17 @@ export function NewProject({ first, onCreated, onCancel }: Props) {
 
   return (
     <div className="page">
-      {first ? (
-        <div className="steps">
-          <span>① 找到会话</span> → <b>② 新建项目</b> → <span>③ 自动整理时间线</span>
-        </div>
-      ) : null}
-      <h1>新建项目</h1>
+      <header className="page-head">
+        {first ? (
+          <ol className="steps">
+            <li className="done"><b>1</b>找到会话</li>
+            <li className="on"><b>2</b>新建项目</li>
+            <li><b>3</b>整理成时间线</li>
+          </ol>
+        ) : null}
+        <h1>新建项目</h1>
+        <p>一个项目对应一个研究课题。选一个工作目录最省事，以后在这个目录里开的新会话也会自动加入。</p>
+      </header>
 
       <div className="tabs" role="tablist">
         {(
@@ -97,7 +102,7 @@ export function NewProject({ first, onCreated, onCancel }: Props) {
       <section className="card">
         {mode === 'auto' ? (
           <>
-            <p className="muted small">选一个工作目录，这个目录和子目录里的 Claude Code / Codex 会话都会加入项目。</p>
+            <p className="muted small">这个目录和子目录里的 Claude Code / Codex 会话都会加入项目。范围选得越准，时间线越干净。</p>
             <div className="list">
               {listing === null && !error ? <div className="muted">正在查找会话…</div> : null}
               {listing?.workspaces.length === 0 ? <div className="muted">没有找到带工作目录的会话。</div> : null}

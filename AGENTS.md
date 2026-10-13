@@ -44,6 +44,7 @@ cd web && pnpm i && pnpm test && pnpm build
 - **不要读取 `~/.claude/projects` 或 `~/.codex/sessions` 下的完整会话文件**（单个可达 285 MB）。
   - 开发用 `fixtures/transcripts/` 里的合成样本。
   - 需要了解真实数据时运行 `scripts/stats.py`，只看统计数字。
+  - 调界面用 `scripts/demo.py` 生成的合成项目（约 130 个事件），不要截用户真实项目的图。
 - 真实会话、临床资料、密钥不进仓库、不进 prompt、不进测试快照。
 - 新增 fixture 前先脱敏：姓名、各类编号、路径中的用户名。
 
@@ -67,4 +68,5 @@ tests/  web/tests/
 
 - Python 3.12，类型标注，`ruff` + `pyright`。函数小，避免框架魔法。
 - 前端不引入图形库；时间线是 HTML 节点加 SVG 连线。
+- 界面用中性色，颜色只给事件种类：三个色相加形状，配色改动先跑 dataviz 的配色校验（`--pairs all`，浅色和深色都要过）。文字不用数据色。
 - 测试关注“会导致历史被误读或记录丢失”的行为，不为显示文字写机械测试。
