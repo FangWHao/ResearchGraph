@@ -5,6 +5,7 @@ from typing import Any
 
 from rg.derive.edits import diff
 from rg.derive.multiedit import project_edit
+from rg.derive.path_checks import projected
 from rg.derive.records import calls, event
 from rg.store.database import Store
 
@@ -28,6 +29,8 @@ def evidence(store: Store, event_id: int) -> dict[str, Any]:
     for run in runs:
         from rg.query.reader import Reader
         from rg.query.runs import manifests
+
+        run.update(projected(store, run))
 
         run["manifests"] = manifests(
             Reader(store, run["project_id"], {}), run["run_id"], values={"limit": 20}
@@ -53,7 +56,7 @@ def evidence(store: Store, event_id: int) -> dict[str, Any]:
             > 100
         )
     edits = [
-        project_edit(store, dict(row))
+        project_edit(store, projected(store, dict(row)))
         for row in store.db.execute(
             "SELECT * FROM effective_edit_records WHERE request_event_id=? OR result_event_id=? "
             "ORDER BY edit_id LIMIT 20",

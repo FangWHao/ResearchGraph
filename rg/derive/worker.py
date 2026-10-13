@@ -76,6 +76,9 @@ def _derive(
                 )
             counts["l1_failed"] += 1
     from rg.derive.edit_checks import validate_edits
+    from rg.derive.path_checks import check_batch as check_paths
+
+    counts.update(check_paths(store, limit, session=session, retry_unavailable=retry_failed))
 
     checked = validate_edits(store, limit, retry_unavailable=retry_failed)
     if checked:

@@ -118,7 +118,10 @@ def project_edit(store: Store, record: dict[str, Any]) -> dict[str, Any]:
     if record["operation"] != "multiedit":
         return record
     row = dict(record)
-    row["reported_after_version"] = row["after_version"]
+    row["reported_after_version"] = (
+        row.get("path_validation", {}).get("original", {}).get("after_version")
+        or row["after_version"]
+    )
     status = "unavailable"
     if row["after_version"] is not None:
         try:

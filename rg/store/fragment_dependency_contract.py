@@ -17,10 +17,11 @@ extraction_queue extraction_queue_events pipeline_queue pipeline_queue_events
 artifact_versions runs run_io run_observations edit_records workspace_snapshots run_manifests
 artifact_observations artifact_jobs artifact_job_events artifact_discoveries
 artifact_discovery_attempts claim_source_checks rule_reference_checks edit_request_checks
+l1_path_checks l1_repair_versions
 explicit_records note_requests decision_requests decision_resolutions
 """.split()
 )
-SCIENCE_SCHEMA_SHA256 = "cea7e90978fab21869fb02cad20136a7eee02f31a2c9306481af4010f3abc025"
+SCIENCE_SCHEMA_SHA256 = "e0e92f238e862bf41ca7167f90d1ef74ba293f51c44fbc646d76e193335d8dae"
 
 
 def schema_sha256(db: sqlite3.Connection) -> str:

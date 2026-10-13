@@ -3,7 +3,7 @@ from __future__ import annotations
 import difflib
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from zstandard import ZstdError
 
@@ -22,6 +22,22 @@ class PatchFile:
     text: str
     after: str | None = None
     destination: str | None = None
+
+
+class EditPublisher(Protocol):
+    def __call__(
+        self,
+        store: Store,
+        call: Event,
+        value: Event,
+        path: Any,
+        operation: str,
+        patch: str,
+        before: str | None,
+        after: str | None,
+        gap: str | None,
+        user_modified: bool | None = None,
+    ) -> None: ...
 
 
 def codex_patch(text: str) -> list[PatchFile]:
@@ -206,7 +222,9 @@ def save(
     )
 
 
-def claude_edit(store: Store, call: Event, value: Event) -> None:
+def claude_edit(
+    store: Store, call: Event, value: Event, publish: EditPublisher | None = None
+) -> None:
     content = value["record"].get("message", {}).get("content", [])
     tool_count = (
         sum(isinstance(part, dict) and part.get("type") == "tool_result" for part in content)
@@ -261,7 +279,7 @@ def claude_edit(store: Store, call: Event, value: Event) -> None:
     modified = item.get("userModified")
     if modified is True:
         gap = gap or "user_modified"
-    save(
+    (publish or save)(
         store,
         call,
         value,
@@ -275,11 +293,13 @@ def claude_edit(store: Store, call: Event, value: Event) -> None:
     )
 
 
-def codex_edit(store: Store, call: Event, value: Event) -> None:
+def codex_edit(
+    store: Store, call: Event, value: Event, publish: EditPublisher | None = None
+) -> None:
     if native_patch(value, "patch_apply_end"):
         from rg.derive.native_patch import native_edits
 
-        native_edits(store, call, value)
+        native_edits(store, call, value, publish)
         return
     item = block(call)
     patch = item.get("input") or item.get("arguments")
@@ -312,7 +332,7 @@ def codex_edit(store: Store, call: Event, value: Event) -> None:
     success = summary_matches(output, expected, working_dir)
     for part in files:
         gap = "preimage_unknown" if success else "patch_success_not_proven"
-        save(
+        (publish or save)(
             store,
             call,
             value,
@@ -325,11 +345,11 @@ def codex_edit(store: Store, call: Event, value: Event) -> None:
         )
 
 
-def edit(store: Store, call: Event, value: Event) -> None:
+def edit(store: Store, call: Event, value: Event, publish: EditPublisher | None = None) -> None:
     if call["tool"] == "claude":
-        claude_edit(store, call, value)
+        claude_edit(store, call, value, publish)
     else:
-        codex_edit(store, call, value)
+        codex_edit(store, call, value, publish)
 
 
 def diff(store: Store, row: dict[str, Any]) -> dict[str, Any]:

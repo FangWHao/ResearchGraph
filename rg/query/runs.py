@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from rg.api.views import NotFound
+from rg.derive.path_checks import projected
 from rg.derive.runtime import EXEC_TOOLS
 from rg.query.artifacts import snapshot, version_record
 from rg.query.reader import Reader, instant, page
@@ -39,7 +40,7 @@ def native(reader: Reader, identity: str) -> dict[str, Any] | None:
     ).fetchone()
     if row is None or not reader.belongs("runs", "run_id", identity):
         return None
-    run = dict(row)
+    run = projected(reader.store, dict(row), known_at=reader.known_until)
     run["project_id"] = reader.project
     request = reader.store.db.execute(
         "SELECT r.* FROM effective_raw_events r JOIN sessions s USING(session_pk) WHERE event_id=?",

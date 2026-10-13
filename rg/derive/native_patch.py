@@ -9,7 +9,7 @@ from rg.store.database import Store, dumps
 from rg.store.lexical_paths import resolve
 
 if TYPE_CHECKING:
-    from rg.derive.edits import PatchFile
+    from rg.derive.edits import EditPublisher, PatchFile
 
 
 def changes(raw: Any) -> dict[str, dict[str, Any]]:
@@ -95,7 +95,9 @@ def summary_matches(
     return len(actual) == len(wanted) and set(actual) == wanted
 
 
-def native_edits(store: Store, call: Event, value: Event) -> None:
+def native_edits(
+    store: Store, call: Event, value: Event, publish: EditPublisher | None = None
+) -> None:
     # 只由已识别的 event_msg 调用；任意工具输出中的 success/status 不是原生回执。
     from rg.derive.edits import save
 
@@ -131,7 +133,7 @@ def native_edits(store: Store, call: Event, value: Event) -> None:
             if before is not None
             else "preimage_unknown"
         )
-        save(
+        (publish or save)(
             store,
             call,
             value,

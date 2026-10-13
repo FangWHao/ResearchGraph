@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from rg.derive.edit_checks import recorded_edit
+from rg.derive.path_checks import projected
 from rg.query.artifacts import snapshot
 from rg.query.graph import SemanticGraph
 from rg.query.l1_records import artifacts, run_records
@@ -179,6 +180,7 @@ class FileRunGraph:
             if not self.reader.belongs("edit_records", "edit_id", record["edit_id"]):
                 continue
             record["project_id"] = self.reader.project
+            record = projected(self.reader.store, record, known_at=self.reader.known_until)
             if self.reader.scope_filter and not (
                 record["before_version"] in requested or record["after_version"] in requested
             ):

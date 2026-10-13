@@ -20,12 +20,12 @@ BATCH_BYTES = 1048576
 MAX_PATH_BYTES = 16384
 
 
-def saved_cwd(store: Store, event: int) -> str | None:
+def saved_context(store: Store, event: int) -> dict[str, Any] | None:
     """只在同一逻辑片段及物理来源内继承原生目录，未知观测阻断。"""
     if store.db.execute("PRAGMA user_version").fetchone()[0] < 30:
         return None
     row = store.db.execute(
-        "SELECT o.state,o.cwd FROM effective_raw_events current "
+        "SELECT o.* FROM effective_raw_events current "
         "JOIN effective_raw_events r ON r.file_instance_id=current.file_instance_id "
         "AND r.session_pk=current.session_pk AND r.byte_start<=current.byte_start "
         "AND r.record_index=0 LEFT JOIN project_context_observations o "
@@ -35,6 +35,11 @@ def saved_cwd(store: Store, event: int) -> str | None:
         "ORDER BY r.byte_start DESC LIMIT 1",
         (event,),
     ).fetchone()
+    return dict(row) if row and row["observation_id"] is not None else None
+
+
+def saved_cwd(store: Store, event: int) -> str | None:
+    row = saved_context(store, event)
     return native_absolute(row["cwd"]) if row and row["state"] == "declared" else None
 
 

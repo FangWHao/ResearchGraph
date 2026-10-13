@@ -17,6 +17,9 @@ AFTER = "新 新\n<script>字面</script>\n"
 
 
 def transcript(identity: str, edits: Any, *, before: str = BEFORE, after: str = AFTER):
+    # 与同机登记根使用同一原生语法；Windows的无盘符根相对写法不是绝对路径。
+    cwd = str(Path("/synthetic/multiedit").absolute())
+    path = str(Path(cwd) / "example.py")
     old = before.removesuffix("\n").split("\n")
     new = after.removesuffix("\n").split("\n")
     return [
@@ -25,7 +28,7 @@ def transcript(identity: str, edits: Any, *, before: str = BEFORE, after: str = 
             "uuid": f"request-{identity}",
             "sessionId": f"multiedit-{identity}",
             "timestamp": "2026-10-10T08:00:00Z",
-            "cwd": "/synthetic/multiedit",
+            "cwd": cwd,
             "message": {
                 "content": [
                     {
@@ -33,7 +36,7 @@ def transcript(identity: str, edits: Any, *, before: str = BEFORE, after: str = 
                         "id": identity,
                         "name": "MultiEdit",
                         "input": {
-                            "file_path": "/synthetic/multiedit/example.py",
+                            "file_path": path,
                             "edits": edits,
                         },
                     }
@@ -55,7 +58,7 @@ def transcript(identity: str, edits: Any, *, before: str = BEFORE, after: str = 
                 ]
             },
             "toolUseResult": {
-                "filePath": "/synthetic/multiedit/example.py",
+                "filePath": path,
                 "originalFile": before,
                 "structuredPatch": [
                     {

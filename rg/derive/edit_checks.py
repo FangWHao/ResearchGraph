@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from rg.derive.multiedit import project_edit
+from rg.derive.path_checks import projected
 from rg.store.database import Store, dumps, now
 from rg.store.objects import digest
 from rg.store.ownership import read_table
@@ -32,6 +33,7 @@ def signature(store: Store, row: dict[str, Any]) -> str:
         ).fetchone()
         for key in ("before_version", "after_version")
     ]
+    original = projected(store, dict(original)) if original else None
     return digest(
         dumps(
             [ALGORITHM, *[dict(r) if r else None for r in (original, request, *versions)]]
@@ -52,10 +54,20 @@ def recorded_edit(store: Store, record: dict[str, Any]) -> dict[str, Any]:
     if checked:
         payload = json.loads(checked[0])
         return row | {key: payload[key] for key in FIELDS}
+    gap = row["gap"]
+    if (
+        gap in {"reported_edit_request_unsupported", "reported_edit_disagrees_with_request"}
+        and row.get("path_validation", {}).get("original", {}).get("gap") is None
+    ):
+        # 路径复核不代替独立多步请求核验；原请求诊断尚未发布时仍显示待核验。
+        gap = None
     return row | {
         "after_version": None,
-        "reported_after_version": row["after_version"],
-        "gap": row["gap"] or "multiedit_validation_pending",
+        "reported_after_version": (
+            row.get("path_validation", {}).get("original", {}).get("after_version")
+            or row["after_version"]
+        ),
+        "gap": gap or "multiedit_validation_pending",
         "request_validation": {
             "status": "unavailable",
             "basis": "saved_request_and_reported_versions",
@@ -74,7 +86,7 @@ def validate_edits(store: Store, limit: int = 100, *, retry_unavailable: bool = 
             f"SELECT * FROM {read_table(store.db, 'edit_records')} "
             f"WHERE operation='multiedit' ORDER BY edit_id"
         ):
-            row = dict(saved)
+            row = projected(store, dict(saved))
             if row["edit_id"] in attempted:
                 continue
             with store.transaction() as db:

@@ -6,10 +6,11 @@ from rg.store.alias_schema import MIGRATION as ALIAS_MIGRATION
 from rg.store.assignment_schema import MIGRATION as ASSIGNMENT_MIGRATION
 from rg.store.fragment_schema import MIGRATION as FRAGMENT_MIGRATION
 from rg.store.gap_schema import MIGRATION as GAP_MIGRATION
+from rg.store.l1_path_schema import MIGRATION as L1_PATH_MIGRATION
 from rg.store.ownership_schema import MIGRATION as OWNERSHIP_MIGRATION
 from rg.store.ownership_schema import views as ownership_views
 
-LATEST_VERSION = 35
+LATEST_VERSION = 36
 MIGRATIONS = {
     2: (
         "CREATE TABLE candidate_locations ("
@@ -571,6 +572,7 @@ MIGRATIONS[33] = OWNERSHIP_MIGRATION
 
 MIGRATIONS[34] = ALIAS_MIGRATION
 MIGRATIONS[35] = ASSIGNMENT_MIGRATION
+MIGRATIONS[36] = L1_PATH_MIGRATION
 
 
 def migrate(db: sqlite3.Connection) -> None:

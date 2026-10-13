@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from rg.derive.path_checks import projected, registration
 from rg.query.reader import Reader, instant
 
 
@@ -87,13 +88,49 @@ def version_record(
             "WHERE r.event_id=?",
             (version["evidence_event_id"],),
         ).fetchone()
+        metadata = dict(event) if event else None
+        registered_at = registration(reader.store, identity)
+        if metadata and registered_at:
+            times = [instant(metadata["recorded_at"]), instant(registered_at)]
+            if any(t is None for t in times):
+                return None
+            metadata["recorded_at"] = max(t for t in times if t is not None).isoformat()
         if (
-            event is None
+            metadata is None
             or not reader.event_belongs(version["evidence_event_id"])
-            or not reader.visible(event["occurred_at"], event["recorded_at"], ("V", identity))
+            or not reader.visible(metadata["occurred_at"], metadata["recorded_at"], ("V", identity))
         ):
             return None
-        return version | dict(event) | {"citation_id": f"V:{identity}"}, []
+        reviews = []
+        for saved in reader.store.db.execute(
+            "SELECT * FROM effective_edit_records WHERE before_version=? OR after_version=?",
+            (identity, identity),
+        ):
+            if not reader.belongs("edit_records", "edit_id", saved["edit_id"]):
+                continue
+            updated = projected(reader.store, dict(saved), known_at=reader.known_until)
+            check = updated.get("path_validation")
+            if check:
+                roles = [k for k in ("before_version", "after_version") if saved[k] == identity]
+                reviews.append(
+                    {
+                        "edit_id": saved["edit_id"],
+                        "check_id": check["check_id"],
+                        "recorded_at": check["recorded_at"],
+                        "state": "revised"
+                        if any(updated[k] != identity for k in roles)
+                        else "matches",
+                    }
+                )
+        card = version | metadata | {"citation_id": f"V:{identity}"}
+        if reviews:
+            card["edit_path_reviews"] = reviews
+            card["provenance_warnings"] = (
+                ["后来路径复核改变了编辑的版本关联；此处保留原候选历史"]
+                if any(r["state"] == "revised" for r in reviews)
+                else []
+            )
+        return card, []
     observed = observations(reader, version)
     if not observed:
         return None

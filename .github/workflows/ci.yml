@@ -59,6 +59,8 @@ jobs:
           tests/golden/test_desktop_assets.py
           tests/golden/test_path_context.py
           tests/golden/test_l1_paths.py
+          tests/golden/test_l1_path_repair.py
+          tests/golden/test_multiedit.py
           tests/test_migrations.py
           -q
   backend:

@@ -485,22 +485,22 @@ class Reader:
             "text": raw[start:end].decode("utf-8"),
             "next_byte_offset": end - left if end < right else None,
             "window_truncated": start > left or end < right,
-            "artifact_versions": page(
-                [
-                    dict(version)
-                    | {
-                        "project_id": self.project,
-                        "citation_id": f"V:{version['version_id']}",
-                    }
-                    for version in self.store.db.execute(
-                        "SELECT * FROM effective_artifact_versions "
-                        "WHERE evidence_event_id=? "
-                        "ORDER BY version_id",
-                        (event_id,),
-                    )
-                    if self.belongs("artifact_versions", "version_id", version["version_id"])
-                ],
-                values,
-            ),
+            "artifact_versions": page(self.event_versions(event_id), values),
         }
         return self.metadata() | result
+
+    def event_versions(self, event_id: int) -> list[dict[str, Any]]:
+        from rg.query.artifacts import version_record
+
+        result = []
+        for version in self.store.db.execute(
+            "SELECT * FROM effective_artifact_versions WHERE evidence_event_id=? "
+            "ORDER BY version_id",
+            (event_id,),
+        ):
+            if not self.belongs("artifact_versions", "version_id", version["version_id"]):
+                continue
+            card = version_record(self, dict(version))
+            if card:
+                result.append(card[0])
+        return result

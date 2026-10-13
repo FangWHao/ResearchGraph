@@ -1213,3 +1213,14 @@
 - 全量 `.tools/bin/uv run ruff check rg tests scripts` 实际All checks passed；`.tools/bin/uv run pyright` 实际0 errors／0 warnings／0 informations，均退出0。本地未重复完整后端、前端构建或浏览器，完整回归交现有CI。
 - `RG_PACKAGE_WEB=1 .tools/bin/uv build --wheel --out-dir .cache/l1-native-paths-20261013/wheel` 和原生Windowsuv安装实际退出0。最终 `.cache/native-windows/env-312/Scripts/python.exe -I D:/researchgraph/.cache/l1-native-paths-20261013/native_check.py` 在仓库外临时目录实际47 passed in10.02s、退出0，Python3.12.3／CP936／utf8_mode0，无跳过。已安装策略源码与当前逐字一致；第一次资源核对脚本写错成员前缀退出1，按实际rg/_web布局修正后退出0。173后端／10静态资源与当前逐字相同，3321025字节，SHA3a0a22de5ef37aedbff1a7c5de8204b901232ba3114d52e0997d8efa9154f850；测试、夹具及缓存不入包，生成物不进Git，远程模型0。
 - 下一步：提交并维护已有未合并草稿，核对新HEAD完整CI；追加旧L1路径审计证明及查询投影，不回写旧历史。实际客户端全事件／研究I/O、正式参考、质量／成本、p95、规模及两周使用继续保留，完整M0–M4未完成。
+
+## 2026-10-13 · 旧L1路径追加复核与历史读取
+
+- 开始前读末40行、§2／8.3及L1／路径决定；按用户自主开发、简单桌面界面及减少重复全量测试要求推进。此前85ceedf的PR38389861146／push38389854698实际均completed／success，不代替本轮新提交。
+- 文件：新增rg/derive/path_checks.py、rg/store/l1_path_schema.py与黄金test_l1_path_repair.py；修改编辑发布／原生补丁、worker／views／multiedit／edit_checks、逐记录目录读取、query的artifacts／l1／runs／reader、迁移36、固定清除表与科研依赖合同。修改公开MultiEdit夹具、两类旧迁移时间用例及Windows CI；更新README／状态／决定／草稿，新增中文旧L1验收，前端未改。
+- 功能：离线派生有界复核旧路径，保存原调用／结果、目录事件、根声明、算法和输入摘要；稳定重放幂等，输入或登记变化重新核对，不可用仅明确重试。严格可重建报告补登候选，保存点与事务保护半次候选／回执；旧事实、原生退出码与人工状态不回写。新版本按补登时间显示，旧候选保留后来复核提示；科学闭包、备份、整项目清除与原文窗口读取接通，缺原请求／缺根／歧义不补造成功。
+- 最终 `.tools/bin/uv run pytest tests/golden/test_l1_path_repair.py tests/golden/test_science_migration.py -q` 实际38 passed in16.94s、退出0；`.tools/bin/uv run pytest tests/golden/test_multiedit.py -q` 实际34 passed in12.20s、退出0。早期多步编辑身份与独立待核验标记缺陷已修正，原断言保留；合成清除字段／UUID、同会话歧义及根唯一性用例纠正。十二组初轮1 failed／321 passed in95.62s，第二轮3 failed／322 passed in96.85s；四组收尾1 failed／83 passed in24.42s均不记为全通过。
+- 扩大检查在旧规则／快照历史用例两次实测审核或原件时间晚于归属迁移约26秒；只固定合成审核、来源迁移、科学迁移和读取的完整先后，生产墙钟及双截止不改。新原生补丁用例继续要求native_patch_input_missing，不放宽原请求缺口。后续仅复验相关失败及新功能，未重复本地全量后端／前端／浏览器。
+- 全量ruff实际All checks passed，pyright0 errors／0 warnings／0 informations，均退出0。wheel构建及原生Windows安装实际0；原生 `python.exe -I .../native_check.py` 四组最终97 passed in15.29s、退出0，Python3.12.3／CP936／utf8_mode0，无跳过。首轮29 failed／68 passed in15.39s因旧MultiEdit夹具的无盘符POSIX路径不等于Windows登记根；仅将公开夹具改成本机原生绝对语法，产品规则及案例／断言／超时保留，CI增加该组。
+- 175后端／10静态资源与当前文件逐字相同，包3327104字节，SHAf348e78b7017a7e7452ab90141f7f967c53ba784f0144e3e2b36d4a8f329a531；测试／夹具／缓存不入包，生成物不入Git，远程模型0。只证明公开合成资料和安装工程验收，未读取个人原件来伪造科学参考。
+- 下一步：提交并维护已有未合并草稿，核对新HEAD完整CI；继续实际客户端全事件、完整研究I/O及历史根身份合同。正式参考、质量／成本、p95、规模与两周使用继续保留，完整M0–M4未完成。

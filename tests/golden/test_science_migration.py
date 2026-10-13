@@ -273,11 +273,19 @@ def test_failed_local_qualification_rolls_back_every_ownership_record(store, tmp
 
 
 @pytest.mark.parametrize("scoped", (False, True))
-def test_rule_proof_keeps_original_namespace_at_review_time(store, tmp_path, scoped):
+def test_rule_proof_keeps_original_namespace_at_review_time(store, tmp_path, scoped, monkeypatch):
     from rg.derive import rule_references
     from tests.golden.test_rule_reference_qualification import legacy_action
     from tests.golden.test_rule_scope_versions import another_scope
 
+    # 明确审核先于迁移；机器墙钟倒退不能把迁移投影到审核之前。
+    monkeypatch.setattr(
+        "tests.golden.test_rule_reference_qualification.now",
+        lambda: "2099-01-01T00:00:00+00:00",
+    )
+    monkeypatch.setattr("rg.store.science_migration.now", lambda: "2099-01-01T00:00:01+00:00")
+    monkeypatch.setattr("rg.store.fragments.now", lambda: "2099-01-01T00:00:01+00:00")
+    monkeypatch.setattr("rg.query.reader.now", lambda: "2099-01-01T00:00:02+00:00")
     a, target, saved, _review, _definition, output = legacy_action(store, tmp_path, scoped=scoped)
     b = store.project("公开目标命名空间", [])
     other = entity(store, b)
@@ -322,6 +330,13 @@ def test_native_snapshot_io_remains_readable_after_move_and_origin_clear(
     from tests.golden.test_l1 import claude_call, claude_result, ingest
     from tests.golden.test_snapshots_hooks import project, queued
 
+    # 快照字节用真实时刻；这段历史查询明确位于后续归属迁移之前。
+    monkeypatch.setattr(
+        "tests.golden.test_science_migration.now", lambda: "2099-01-01T00:00:00+00:00"
+    )
+    monkeypatch.setattr("rg.store.fragments.now", lambda: "2099-01-01T00:00:01+00:00")
+    monkeypatch.setattr("rg.store.science_migration.now", lambda: "2099-01-01T00:00:01+00:00")
+    monkeypatch.setattr("rg.query.reader.now", lambda: "2099-01-01T00:00:02+00:00")
     a, root_id, work = project(store, tmp_path)
     b = store.project("公开快照接收项目", [])
     one = claude_call(cwd=str(work))
