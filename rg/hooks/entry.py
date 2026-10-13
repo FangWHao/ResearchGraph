@@ -11,7 +11,7 @@ from typing import Any
 
 from rg.ingest.spool import EVENTS, MAX_BYTES, enqueue, enqueue_stream
 from rg.snapshot.capture import capture
-from rg.snapshot.config import choose
+from rg.snapshot.config import choose, load_registry
 from rg.store.lease import lease
 from rg.store.objects import digest
 from rg.store.paths import reject_links
@@ -145,9 +145,42 @@ def main() -> int:
         parser.add_argument("--detached", action="store_true")
         parser.add_argument("--source-sha256")
         parser.add_argument("--requested-at")
+        parser.add_argument("--scope-root", type=Path)
+        parser.add_argument("--scope-project")
         args = parser.parse_args()
+        if (args.scope_root is None) != (args.scope_project is None):
+            raise ValueError("项目钩子范围参数不完整")
+        if args.scope_root is not None and not args.scope_root.is_absolute():
+            raise ValueError("项目钩子范围必须为绝对路径")
         root = args.data_dir.expanduser().resolve()
         raw = sys.stdin.buffer.read(MAX_BYTES + 1)
+        if args.scope_root is not None:
+            # 项目配置可能被子目录继承；明确属于其它工作区的事件不采集。
+            # 无法解析的输入仍按原规则保留，不能伪装成已判断归属。
+            try:
+                payload = json.loads(raw)
+            except (ValueError, UnicodeError):
+                payload = None
+            cwd = payload.get("cwd") if isinstance(payload, dict) else None
+            if isinstance(cwd, str) and Path(cwd).is_absolute():
+                if not Path(cwd).resolve().is_relative_to(args.scope_root.resolve()):
+                    return 0
+                try:
+                    matches = [
+                        value
+                        for value in load_registry(root)
+                        if Path(cwd).resolve().is_relative_to(Path(value["path"]).resolve())
+                    ]
+                    depth = max((len(Path(value["path"]).parts) for value in matches), default=0)
+                    owners = {
+                        value["project_id"]
+                        for value in matches
+                        if len(Path(value["path"]).parts) == depth
+                    }
+                    if len(owners) == 1 and args.scope_project not in owners:
+                        return 0
+                except (ValueError, KeyError, OSError):
+                    pass
         if len(raw) > MAX_BYTES:
             # 超大输入仍保存原件；不解析、不拍快照，由消费端显示 held 缺口。
             enqueue_stream(root, args.tool, sys.stdin.buffer, raw)

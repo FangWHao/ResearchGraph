@@ -51,6 +51,7 @@ jobs:
           tests/golden/test_science_migration.py
           tests/golden/test_alias_clear.py
           tests/golden/test_automatic_assignment.py
+          tests/golden/test_hook_install.py
           tests/test_migrations.py
           -q
   backend:

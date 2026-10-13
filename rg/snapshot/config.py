@@ -90,7 +90,7 @@ def examples(store: Store, output: Path) -> dict[str, Any]:
         ]:
             command = shlex.join(["rg-hook", tool, event, "--data-dir", str(store.root.resolve())])
             handler: dict[str, Any] = {"type": "command", "command": command, "timeout": 2}
-            if event not in {"SessionStart", "UserPromptSubmit"}:
+            if event not in {"SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"}:
                 handler["async"] = True
             group: dict[str, Any] = {"hooks": [handler]}
             if event == "PostToolUse":

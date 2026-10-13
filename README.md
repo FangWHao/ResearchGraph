@@ -307,7 +307,7 @@ uv run rg --data-dir /tmp/rg-demo scan --retry-failed
 
 Codex 原生 `patch_apply_begin/end` 也可派生候选编辑；只按同会话唯一调用 ID 关联，优先保留已有补丁请求。外层执行器回执独立，失败、矛盾、缺少开始及重复 ID 保留缺口。新增后的全文和删除前的全文按原样显示为工具报告候选；更新、移动及缺失全文不读取当前文件补齐。单侧全文不是完整前后比较，删除后未知不变成空文件；单项最多 64000 UTF-8 字节、2000 行，整事件正文合计最多 64000 字节，超限明确不展示。详见[原生补丁验收](docs/acceptance/M2原生补丁与单侧候选全文验收_20261010.md)。
 
-## 影子快照与钩子示例
+## 影子快照与项目钩子接入
 
 已有项目追加根目录时，使用 `project root-add --project PROJECT_ID --path /workspace/another-worktree`；可明确指定 `--kind worktree|data|alias|repo`。`project roots --project PROJECT_ID` 只读列出登记路径、类型和登记时的 Git 身份，支持分页与修订核对。新登记保留 Git 共同目录及远端 URL 摘要，不保存原始 URL；相同摘要不合并项目，追加根目录不改变已有会话归属。显式 data 不探测 Git 或加入钩子快照清单，旧登记的未记录元数据不自动补造。详见[根目录登记验收](docs/acceptance/项目根目录与Git身份登记验收_20261010.md)。
 
@@ -326,8 +326,6 @@ uv run rg --data-dir /tmp/rg-demo project discover-worktrees --project PROJECT_I
 
 结构化 CLI 返回完整 JSON；当前输出编码无法表示中文路径等字符时，使用标准 Unicode 转义，JSON 解码后仍是完整原文。UTF-8／CP936能够表示的内容保持原显示，不改变系统编码。
 
-手机页面已恢复当前项目选择入口，可直接切换项目；各项目页面内草稿和迟到响应沿用原隔离规则。详见[移动端验收](docs/acceptance/移动端项目切换验收_20261010.md)。
-
 ```bash
 # 使用已经登记的项目和根目录；不会操作用户仓库的 index。
 uv run rg --data-dir /tmp/rg-demo snapshot --project PROJECT_ID --root /workspace/demo
@@ -337,9 +335,19 @@ uv run rg --data-dir /tmp/rg-demo snapshot --project PROJECT_ID --root /workspac
 uv run rg --data-dir /tmp/rg-demo scan
 # 输出可检查的 Claude/Codex 配置；目录必须尚不存在。
 uv run rg --data-dir /tmp/rg-demo hook-config --output /tmp/rg-hook-examples
+# 检查已登记项目的本地接入，不写客户端文件。
+uv run rg --data-dir /tmp/rg-demo hook-install --project PROJECT_ID --root /workspace/demo --client claude --check
+# 安装到该项目的 .claude/settings.local.json；重复运行不重复添加。
+uv run rg --data-dir /tmp/rg-demo hook-install --project PROJECT_ID --root /workspace/demo --client claude
+# WSL／Linux 的 Codex 安装到该项目 .codex/hooks.json。
+uv run rg --data-dir /tmp/rg-demo hook-install --project PROJECT_ID --root /workspace/demo --client codex
 ```
 
-`uv sync` 提供 `rg-hook` 命令。`init` 在数据目录生成示例，`project add` 更新只读根目录清单；两者都不会修改个人工具设置或启用钩子。当前仍遵守 §14.8，M2 正式验收前不把钩子接入开发本项目的会话。以后启用时，Codex 需在 `/hooks` 信任定义，修改后重新信任；官方协议见 [Codex 钩子](https://learn.chatgpt.com/docs/hooks)和 [Claude Code 钩子](https://code.claude.com/docs/en/hooks)。Codex 的 SessionEnd 即使设为 async 也按客户端同步执行，入口仍只快速写入原件。
+`uv sync` 提供 `rg-hook` 命令。`init` 在数据目录生成示例，`project add` 更新只读根目录清单；两者都不会修改个人工具设置或启用钩子。`hook-install` 只合并明确指定且唯一登记的项目本地配置，保留原字段和其它钩子；配置损坏、链接、重复或被修改的同名定义、检测到并发编辑时拒绝覆盖。原生 Windows Codex 的命令执行尚未验收，命令明确拒绝安装，Windows 可从 WSL 接入；Claude 配置使用固定解释器和参数数组。
+
+安装回执的 `configured` 只证明配置存在，`activation` 为未知。重开该项目后检查客户端是否禁用钩子；Codex 还需在 `/hooks` 信任定义，修改后重新信任。命令不修改个人设置或持久信任，也不启动常驻服务；M2 正式验收前拒绝安装到 ResearchGraph 开发目录。当前两个 WSL 原生客户端已在隔离合成项目中实测四个基本回调，范围见[项目钩子接入验收](docs/acceptance/项目钩子接入验收_20261013.md)。官方协议见 [Codex 钩子](https://learn.chatgpt.com/docs/hooks)和 [Claude Code 钩子](https://code.claude.com/docs/en/hooks)。
+
+Stop／SessionEnd 只同步落盘，后续扫描仍由后台执行。此次原生对照发现 Codex 退出时取消异步 Stop，已改短时同步并更新 §6.8；其它异步事件及提示快照模式保留。安装命令不执行配置中已有的其它钩子；生成命令使用固定隔离解释器，导入或运行失败静默退出 0。
 
 钩子原始字节先原子写入 spool，任何异常都退出 0，不输出会话上下文、不联网、不调模型、不读 transcript。UserPromptSubmit 仅拍明确登记根目录的快照；未登记或归属歧义保存原件并记录错误类名。异步执行的是隔离 Python 下的本软件入口，输入里的命令和项目里的同名模块都不会执行。快照单独进入待登记队列，因此原始提示先被确认也不会丢掉晚到的快照记录。
 

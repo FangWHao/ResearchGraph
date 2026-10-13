@@ -123,6 +123,13 @@ def parser() -> argparse.ArgumentParser:
     run_evidence.add_argument("--expected-revision", type=int)
     hook_config = commands.add_parser("hook-config", help="生成钩子示例与根目录清单，不安装钩子")
     hook_config.add_argument("--output", type=Path, required=True)
+    hook_install = commands.add_parser(
+        "hook-install", help="安装已登记项目的本地钩子，保留个人配置"
+    )
+    hook_install.add_argument("--project", required=True)
+    hook_install.add_argument("--root", type=Path, required=True)
+    hook_install.add_argument("--client", choices=["codex", "claude"], required=True)
+    hook_install.add_argument("--check", action="store_true", help="只检查并预览，不写客户端配置")
     snapshot = commands.add_parser("snapshot", help="手工拍影子快照，或实测 p95 决定钩子模式")
     snapshot.add_argument("--project", required=True)
     snapshot.add_argument("--root", type=Path, required=True)
@@ -613,6 +620,10 @@ def run(args: argparse.Namespace, store: Store) -> object:
         from rg.snapshot.config import examples
 
         return examples(store, args.output)
+    if args.command == "hook-install":
+        from rg.hooks.install import install
+
+        return install(store, args.project, args.root, args.client, check=args.check)
     if args.command == "snapshot":
         from rg.snapshot.cli import snapshot
 

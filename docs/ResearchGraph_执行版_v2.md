@@ -423,7 +423,7 @@ Claude Code 默认在启动时删除 30 天前的会话文件（`cleanupPeriodDa
 | PreCompact | 有，可阻止 | 有，可阻止 | 记录压缩点，触发增量扫描 | 异步；**永不阻止** |
 | PostCompact | 有，带 `compact_summary` | 有，只有 trigger | 保存摘要（Claude） | 异步 |
 | SubagentStop | 有，带 `agent_transcript_path` | 有 | 登记父子关系 | 异步 |
-| Stop / SessionEnd | 有 | 有 | 触发增量扫描 | 异步 |
+| Stop / SessionEnd | 有 | 有 | 同步落盘触发回执，由后台增量扫描 | 同步，超时 2 s；不联网、不调模型、不读会话 |
 
 **钩子硬规则**
 
