@@ -1,9 +1,0 @@
-.impact-panel { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--line, #dedfd8); }
-.impact-panel > summary { cursor: pointer; font-weight: 600; }
-.impact-options, .impact-actions { display: flex; flex-wrap: wrap; gap: .6rem 1rem; align-items: center; margin: .75rem 0; }
-.impact-options label { display: flex; gap: .4rem; align-items: center; font-size: .85rem; }
-.impact-options input { width: auto; }
-.impact-results { margin: .75rem 0; padding-left: 1.3rem; }
-.impact-results li { margin: .65rem 0; overflow-wrap: anywhere; }
-.impact-results li p { margin: .3rem 0; }
-.impact-results .text-button { display: inline-block; margin-right: .5rem; }

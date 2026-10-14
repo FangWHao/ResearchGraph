@@ -1,318 +1,245 @@
-export type ReviewState = 'candidate' | 'confirmed' | 'dismissed';
-export type Kind = 'question' | 'approach' | 'attempt' | 'finding' | 'decision' | 'join' | 'note';
-export interface Span {
-  span_id: number; event_id: number; byte_start: number; byte_end: number;
-  quote_sha256: string; role: string; session_pk: number; seq: number;
-  path: string; source_byte_start: number; source_byte_end: number;
-  occurred_at: string | null; recorded_at: string;
+// 事件只记三类：尝试（带成败）、决定、结果。question 是旧版本提取的，只用来显示。
+export type Kind = 'attempt' | 'decision' | 'result' | 'question';
+export const KINDS: Kind[] = ['attempt', 'decision', 'result'];
+export const KIND_LABEL: Record<Kind, string> = {
+  attempt: '尝试',
+  decision: '决定',
+  result: '结果',
+  question: '问题',
+};
+export type Outcome = 'success' | 'failed' | 'open';
+export const OUTCOMES: Outcome[] = ['success', 'failed', 'open'];
+export const OUTCOME_LABEL: Record<Outcome, string> = { success: '成功', failed: '失败', open: '未定' };
+// 1 细节，2 关键，3 里程碑
+export type Importance = 1 | 2 | 3;
+export const IMPORTANCE_LABEL: Record<Importance, string> = { 1: '细节', 2: '关键', 3: '里程碑' };
+// “尝试 · 失败 · 里程碑”这样的完整说法，用在提示框和读屏
+export function eventLabel(e: { kind: Kind; outcome: Outcome | null; importance: Importance }): string {
+  return [KIND_LABEL[e.kind], e.outcome ? OUTCOME_LABEL[e.outcome] : '', e.importance === 3 ? '里程碑' : '']
+    .filter(Boolean)
+    .join(' · ');
 }
-export interface Review {
-  action_id: number; action: string; actor: string; reason: string | null;
-  new_claim_id: number | null; recorded_at: string;
-}
-export interface Payload {
-  claim_type: string; kind?: Kind; label?: string; content?: string; temp_id?: string;
-  target?: string | null; source?: string; relation?: string; action?: string; reason?: string;
-  about?: string | null; state?: string; semantics?: string; selected?: string | null;
-  inputs?: { port: string; ref: string }[];
-  [key: string]: unknown;
-}
-export type SourceQualificationStatus = 'not_required' | 'not_excluded' | 'pending' | 'excluded' | 'unavailable';
-export interface SourceQualification {
-  status: SourceQualificationStatus; input_eligible: boolean; policy?: Record<string, string>;
-  references?: Record<string, unknown>[]; checked_at?: string;
-}
-export interface SourceIssue { claim_id: number; status: SourceQualificationStatus }
-export type RuleQualificationStatus = 'not_required' | 'pending' | 'verified' | 'unverifiable' | 'invalid' | 'unavailable';
-export interface RuleQualification {
-  status: RuleQualificationStatus; input_eligible: boolean; review_action_id?: number | null;
-  policy?: Record<string, string>; checked_at?: string | null; proof_known_at?: string | null;
-  reasons?: string[];
-}
-export interface RuleIssue { claim_id: number; status: RuleQualificationStatus }
-export interface Claim {
-  kind?: string;
-  claim_id: number; claim_type: string; entity_id: string | null;
-  payload: Payload; scope: Record<string, string> | null; basis: string; actor: string;
-  claim_state: ReviewState; effective_state: ReviewState;
-  occurred_at: string | null; recorded_at: string;
-  occurred_at_utc?: string | null; recorded_at_utc?: string | null;
-  replaces_claim: number | null; replacement_ids: number[]; review: Review | null;
-  replaced?: boolean;
-  confirmation_source: 'human' | 'rule' | null;
-  evidence: Span[]; groups: { segment_id: string | null; session_pk: number }[];
-  review_history?: Review[];
-  pending_decision?: PendingDecision | null;
-  replaces?: { claim_id: number; payload: Payload; scope: Record<string, string> | null };
-  human_comparisons?: { claim_id: number; actor: string; scope: Record<string, string>; payload: Payload; differing_fields: string[] }[];
-  source_qualification?: SourceQualification; rule_qualification?: RuleQualification; input_eligible?: boolean;
-}
-export interface Project {
-  project_id: string; name: string; remote_model_allowed: number; sessions: number; claims: number;
-}
-export interface ClaimsPage {
-  revision: number; total: number; next_offset: number | null; offset: number; claims: Claim[];
-}
-export interface GraphData {
-  revision: number; claims: Claim[]; partial: boolean; limit: number;
-  run_states: { run_id: string; state: string; exit_code: number | null }[];
-  capabilities: { impact_propagation: boolean; artifact_diff: boolean };
-}
-export interface ResearchReading {
-  project_id: string; revision: number; occurred_until: string; known_until: string;
-}
-export interface ResearchGraphData extends ResearchReading {
-  claims: Claim[]; partial: boolean; total: number; intent: string;
-  scope: Record<string, string> | null; scope_filter: boolean;
-}
-export interface PersonalView {
-  format_version: 1; reading: ResearchReading; show_candidates: boolean;
-  positions: Record<string, { x: number; y: number }>;
-  viewport: { x: number; y: number; zoom: number };
-  selected_versions: Record<string, number>;
-  process_group: { name: string; members: string[] } | null;
-}
-export interface PersonalViewRecord {
-  project_id: string; user: string; view_id: number | null; saved_at: string | null;
-  current_revision: number; view: PersonalView | null; unavailable_reason: string | null;
-}
-export interface QuestionRequest {
-  project_id: string; text: string; scope: Record<string, string> | null;
-  actor: string; expected_revision: number; request_id: string;
-}
-export interface QuestionResult {
-  revision: number; claim_id: number; entity_id: string; event_id: number;
-  request_id: string; replayed: boolean;
-}
-export interface NoteRequest extends QuestionRequest { about: string | null }
-export interface NoteResult extends QuestionResult { claim_state: ReviewState; effective_state: ReviewState }
-export type DecisionAction = 'accept' | 'defer' | 'reject' | 'withdraw';
-export interface PendingDecision {
-  request_id: string; selector: string; action: string; why: string; scope: Record<string, string> | null;
-  target_id: string | null; requires_resolution: boolean; resolved_claim_id: number | null;
-}
-export interface DecisionRequest {
-  project_id: string; selector: string; action: DecisionAction; why: string; scope: Record<string, string> | null;
-  actor: string; request_id: string; expected_revision: number;
-}
-export interface DecisionResult {
-  revision: number; request_id: string; claim_id: number; event_id: number; target_id: string | null;
-  effective_state: ReviewState; replayed: boolean; resolved_claim_id: number | null;
-}
-export interface DecisionTarget {
-  entity_id: string; kind: Kind; claim_id: number; label: string; label_truncated: boolean;
-  label_total_bytes: number; scope: Record<string, string> | null;
-}
-export interface DecisionTargetsPage {
-  revision: number; total: number; next_offset: number | null; offset: number; targets: DecisionTarget[];
-}
-export interface ResolveDecisionRequest { target_id: string; actor: string; request_id: string; expected_revision: number }
-export interface ResolveDecisionResult {
-  revision: number; request_id: string; claim_id: number; event_id: number;
-  original_claim_id: number; original_event_id: number; replayed: boolean;
-}
-export interface EventWindow {
-  event_id: number; session_pk: number; seq: number; kind: string; role: string | null;
-  path: string; source_byte_start: number; source_byte_end: number;
-  occurred_at: string | null; recorded_at: string; exclude_reason: string | null;
-  input_exclude_reason?: string | null;
-  total_bytes: number; window_start: number; window_end: number; window_truncated: boolean;
-  before: string; quote: string; after: string; quote_sha256: string | null;
-}
-export type EvidenceTarget = { event_id: number; byte_start?: number; byte_end?: number; quote_sha256?: string; reading?: ResearchReading };
-export interface ArtifactVersion {
-  version_id: string; path: string; algo: string; digest: string; source: string;
-  phase?: string | null; basis?: string | null; claim_state?: ReviewState | null;
-  representation?: string | null; observed_at?: string | null; size?: number | null;
-  content_sha256?: string | null; project_id?: string; root_id?: string | null;
-  evidence_event_id?: number | null;
-}
-export interface ArtifactObservation {
-  observation_id: string; version_id: string; job_id: number;
-  snapshot_id: number | null; discovery_snapshot_id: number; mode: string;
-  signature: unknown; hash_started_at: string | null; hash_finished_at: string | null;
-  cache_reused: boolean; cached_from: string | null; details: Record<string, unknown>;
-  recorded_at: string;
-}
-export interface FileVersionRecord extends Partial<ArtifactVersion> {
-  observations?: Partial<ArtifactObservation>[]; observations_total?: number;
-  observations_partial?: boolean;
-  occurred_at?: string | null; recorded_at?: string | null; provenance_warnings?: string[];
-  observation_time_basis?: string;
-}
-export interface VersionsPage {
-  revision?: number; versions?: FileVersionRecord[]; total?: number;
-  limit?: number; offset?: number; partial?: boolean;
-}
-export interface ArtifactHealth {
-  versions?: number; archived?: number; current_hashed?: number; cache_reused?: number;
-  jobs?: Partial<Record<'queued' | 'running' | 'paused' | 'failed' | 'done', number>>;
-  discovery?: Partial<Record<'pending' | 'unknown' | 'partial' | 'done', number>>;
-}
-export type RunState = 'requested' | 'started' | 'exited' | 'unknown';
-export interface RunObservation {
-  event_id: number; state: RunState; exit_code: number | null;
-  executor_session_id: number | null; reason: string | null; details: Record<string, unknown>;
-  occurred_at: string | null; recorded_at: string;
-}
-export interface L1Run {
-  run_id: string; project_id: string; session_pk: number | null; call_id: string | null;
-  command: string | null; command_truncated: boolean; command_total_bytes: number;
-  cwd: string | null; snapshot_id: number | null; root_id: string | null;
-  state: RunState; exit_code: number | null; gap: string | null;
-  request_event_id: number | null; requested_at: string | null;
-  started_at: string | null; ended_at: string | null;
-  observations: RunObservation[]; observations_partial: boolean;
-  manifests?: RunManifestPage | null;
-}
-export type ManifestRole = 'inputs' | 'scripts' | 'patches' | 'environment' | 'outputs';
-export interface ManifestReported {
-  inputs: string[] | null; scripts: string[] | null; patches: string[] | null;
-  environment: string[] | null; outputs: string[] | null; parameters: Record<string, unknown> | null;
-  seed: string | null; started_at: string | null; ended_at: string | null;
-  exit_code: number | null; occurred_at: string | null;
-}
-export interface RunManifestIO {
-  io_id: string; role: ManifestRole; ordinal: number; direction: 'in' | 'out';
-  requested_version_id: string; version: FileVersionRecord | null;
-  resolution: 'visible_version' | 'version_unknown_or_not_visible'; resolved_version_id: string | null;
-  association_state: 'reported_only'; claim_state: 'candidate'; basis: 'direct_record';
-}
-export interface RunManifestIOPage {
-  items: RunManifestIO[]; total: number; offset: number; next_offset: number | null; partial: boolean;
-}
-export interface ManifestSnapshot {
-  snapshot_id: number; root_id: string; taken_at: string | null; recorded_at: string | null;
-  shadow_commit: string | null; head_commit: string | null; branch: string | null;
-  skipped: number | boolean; async_race: number | boolean; dirty: number | boolean;
-}
-export interface RunManifest {
-  request_id: string; run_id: string; project_id: string; attempt_id: string | null; snapshot_id: number | null;
-  evidence_event_id: number; scope: Record<string, string> | null; occurred_at: string | null; recorded_at: string;
-  claim_state: 'candidate'; basis: 'direct_record'; reported: ManifestReported; io: RunManifestIOPage;
-  binding_state: 'native_request' | 'native_request_ambiguous' | 'native_run_unknown_or_not_visible';
-  declared_snapshot: ManifestSnapshot | null; reported_exit_conflicts_with_native: boolean;
-  unknown_fields: string[]; actual_io_completeness: 'unknown';
-}
-export interface RunManifestPage { items: RunManifest[]; total: number; offset: number; next_offset: number | null }
-export interface EditDiff {
-  available: boolean; format?: 'reported_versions' | 'reported_before' | 'reported_after' | 'patch_only'; text?: string;
-  complete_versions?: boolean; gap: string | null; reason: string;
-}
-export interface L1Edit {
-  edit_id: string; project_id: string; session_pk: number; call_id: string | null;
-  request_event_id: number; result_event_id: number; path: string | null; root_id: string | null;
-  operation: string; patch_sha256: string | null; before_version: string | null;
-  after_version: string | null; gap: string | null; association_gap?: string | null;
-  reported_after_version?: string | null;
-  request_validation?: {
-    status: 'matches_request' | 'mismatch' | 'unavailable';
-    basis: 'saved_request_and_reported_versions';
-  };
-  user_modified: number | null; occurred_at: string | null; recorded_at: string; diff: EditDiff;
-}
-export interface L1Evidence {
-  runs: L1Run[]; runs_partial: boolean; edits: L1Edit[]; edits_partial: boolean;
-  derivation?: { state: 'queued' | 'waiting' | 'done' | 'failed'; error: string | null; updated_at: string } | null;
-}
-export interface EvidenceData {
-  event: EventWindow; before: EventWindow[]; after: EventWindow[];
-  artifact_versions: ArtifactVersion[];
-  artifact_diff: { available: boolean; reason: string };
-  artifact_versions_partial?: boolean;
-  l1?: L1Evidence | null;
-  session_parent?: SessionParentData | null;
-  event_chain?: EventChainData | null;
-  history_context?: boolean; derived_context_loaded?: boolean;
-}
-export type EventChainState = 'unsupported' | 'unobserved' | 'uuid_unavailable' | 'parent_not_declared'
-  | 'null_parent' | 'invalid_parent' | 'conflicting_record' | 'ambiguous_parent' | 'outside_project'
-  | 'missing_parent' | 'linked' | 'cycle' | 'metadata_incomplete';
-export interface EventChainData {
-  event_id: number; session_pk: number; file_instance_id: number; tool: string; state: EventChainState;
-  record_event_id: number | null; native_uuid: string | null; parent_uuid: string | null;
-  uuid_state: 'valid' | 'invalid' | 'missing'; parent_state: 'declared' | 'null' | 'missing' | 'invalid';
-  is_sidechain: boolean | null; sidechain_state: 'declared' | 'missing' | 'invalid';
-  recorded_at: string | null; basis: 'direct_record' | null;
-  resolution_scope: 'source_file' | 'project_uuid' | 'none';
-  parent_references: { event_id: number; file_instance_id: number }[];
-  parent_references_total: number; parent_references_partial: boolean; parent_source_contexts: number;
-  ancestry_state: EventChainState | 'multiple_source_contexts' | 'depth_limit';
-  ancestry_steps: number; ancestry_limit: number;
-  source_metadata_complete: boolean; scope_metadata_incomplete: boolean;
-}
-export type SessionParentState = 'unobserved' | 'no_parent_declared' | 'invalid' | 'conflicting'
-  | 'missing_parent' | 'ambiguous_parent' | 'cycle' | 'linked' | 'outside_project' | 'unsupported' | 'metadata_incomplete';
-export interface SessionParentObservation {
-  event_id: number; state: 'invalid' | 'conflict' | 'declared' | 'not_declared';
-  basis: 'none' | 'top_level' | 'thread_spawn' | 'both'; reason: string;
-  native_id: string | null; parent_id: string | null; other_parent_id: string | null; recorded_at: string;
-}
-export interface SessionParentData {
-  session_pk: number; tool: string; native_id: string | null; state: SessionParentState;
-  parent_session_pk: number | null; parent_native_id: string | null; parent_event_id: number | null;
-  observations: SessionParentObservation[]; observations_total: number;
-  observations_partial: boolean; observation_highwater: number;
-  source_metadata_complete?: boolean | null; identity_metadata_complete?: boolean | null;
-}
-export interface SearchPage {
-  results: { event_id: number; session_pk: number; text: string; occurred_at: string | null }[];
-  total: number; next_offset: number | null; offset: number;
-}
-export interface HealthData {
-  events: number; unknown: number; bad_lines: number; unassigned_sessions: number;
-  pending: number; manual_jobs: number; revision: number; global_counts: boolean;
-  compression_points: number; hook_failures: number | null; hook_failures_reason: string;
-  extraction_queue?: ExtractionQueue | null;
-  pipeline_queue?: PipelineQueue | null;
-  artifacts?: ArtifactHealth | null;
-  ingest?: {
-    registered_sources: number; known_source_paths: number; spool_receipts: number;
-    spool_unfinished: number; spool_failed: number;
-  };
-  snapshots?: {
-    total: number; skipped: number; async_race: number; partial: number; metadata_unknown: number;
-  };
-  sources: {
-    file_instance_id: number; session_pk?: number; path: string; tool: string; last_read: string | null;
-    committed_offset: number; cursor_lag_bytes: number | null; cleanup_risk: string | null; status: string;
-  }[];
-  extraction: {
-    day_utc: string; alerts: { code: string; message: string; count?: number; stage?: string }[];
-    coverage: {
-      pending_event_stages: number; next_offset: number | null; offset: number;
-      gaps: { event_id: number; session_pk: number; stage: string; segment_id: string | null }[];
-    };
-    daily_usage: {
-      budget_tokens: number; reserved_or_settled_tokens: number; remaining_tokens: number;
-      known_input_tokens: number; known_output_tokens: number; unsettled_sent_attempts: number;
-    };
-    stages: { stage: string; attempts: number; sent: number; mean_utilization: number | null;
-      utilization_samples?: number; validation_samples?: number;
-      validation_rejections: number; citation_failures: number }[];
-  };
+export type ThreadStatus = 'active' | 'done' | 'dropped';
+export const STATUS_LABEL: Record<ThreadStatus, string> = { active: '进行中', done: '已完成', dropped: '已放弃' };
+export type Tool = 'claude' | 'codex';
+export const TOOL_LABEL: Record<Tool, string> = { claude: 'Claude Code', codex: 'Codex' };
+
+export interface DetectedDir {
+  path: string;
+  tool: Tool;
+  files: number;
 }
 
-export type ExtractionQueueState = 'queued' | 'running' | 'done' | 'partial' | 'paused' | 'blocked' | 'cancelled';
-export interface ExtractionQueueTask {
-  queue_id: number; session_pk: number; project_id: string; model: string; max_event_id: number;
-  state: string; attempts: number; error: string | null; defer_reason: string | null;
-  next_attempt_at: string | null; created_at: string; updated_at: string;
-}
-export interface ExtractionQueue {
-  scope?: 'project' | 'all_projects' | null; total?: number;
-  counts?: Partial<Record<ExtractionQueueState, number>>;
-  tasks?: Partial<ExtractionQueueTask>[]; limit?: number; offset?: number; next_offset?: number | null;
+// 三类任务分开选模型：提取调用最多、看一段对话；归类和复审调用少、要看整个项目
+export type Stage = 'extract' | 'threads' | 'review';
+export const STAGES: Stage[] = ['extract', 'threads', 'review'];
+export type Thinking = 'off' | 'low' | 'high' | 'max';
+export const THINKING_LABEL: Record<Thinking, string> = { off: '不思考', low: '低', high: '高', max: '最高' };
+export interface StageModel {
+  model: string;
+  thinking: Thinking;
 }
 
-export interface PipelineQueueTask {
-  queue_id: number; project_id: string; session_pk: number | null;
-  stage: string; target_key: string; state: string; attempts: number;
-  error: string | null; defer_reason: string | null; next_attempt_at: string | null;
-  created_at: string; updated_at: string; result: string | null;
+export interface ModelSettings {
+  base_url: string;
+  model: string; // 提取用的模型，旧界面文字里用
+  models: Record<Stage, StageModel>;
+  has_key: boolean;
 }
-export interface PipelineQueue {
-  scope?: 'project' | 'all_projects' | null; total?: number;
-  counts?: Partial<Record<ExtractionQueueState, number>>;
-  tasks?: Partial<PipelineQueueTask>[]; limit?: number; offset?: number; next_offset?: number | null;
+
+// 接口返回的模型
+export interface ModelInfo {
+  id: string;
+  name: string;
+  context_window: number | null;
+  max_output_tokens: number | null;
+  thinking: Thinking[];
+  default_thinking: Thinking | null;
+}
+
+export interface ProjectSummary {
+  id: number;
+  name: string;
+  workspace: string | null;
+  follow: number;
+  model_allowed: number;
+  created_at: string;
+  organized_at: string | null;
+  sessions?: number;
+  events?: number;
+}
+
+// 自动更新：打开的项目在会话安静 quiet 分钟后整理新内容；新内容超过 limit 字先问（null 不限）；
+// 进入项目时发现离开期间的新内容，on_open = ask 先问，auto 直接更新。
+export interface AutoSettings {
+  enabled: boolean;
+  quiet: number;
+  limit: number | null;
+  on_open: 'ask' | 'auto';
+}
+
+export interface AppState {
+  sources: string[];
+  detected: DetectedDir[];
+  model: ModelSettings;
+  auto: AutoSettings;
+  projects: ProjectSummary[];
+}
+
+export interface SessionInfo {
+  path: string;
+  tool: Tool;
+  native_id: string | null;
+  cwd: string | null;
+  title: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  size: number;
+  mtime: number;
+}
+
+export interface Workspace {
+  cwd: string;
+  sessions: number;
+  claude: number;
+  codex: number;
+  last: string | null;
+}
+
+export interface Session {
+  id: number;
+  tool: Tool;
+  path: string;
+  title: string | null;
+  cwd: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  message_count: number;
+  extracted_upto: number;
+  missing: number;
+  fork_of: number | null;
+  copied: number;
+  fork_event: number | null;
+}
+
+export interface Thread {
+  id: number;
+  project_id: number;
+  title: string;
+  summary: string;
+  status: ThreadStatus | null;
+  edited: number;
+}
+
+export interface Branch {
+  id: number;
+  thread_id: number;
+  title: string;
+  position: number;
+  from_event: number | null;
+  into_event: number | null;
+  edited: number;
+}
+
+export interface TimelineEvent {
+  id: number;
+  session_id: number;
+  branch_id: number | null;
+  kind: Kind;
+  outcome: Outcome | null;
+  importance: Importance;
+  title: string;
+  summary: string;
+  ts: string | null;
+  anchor: number;
+  refs: number[];
+  edited: number;
+}
+
+export type Phase = 'idle' | 'sync' | 'consent' | 'confirm' | 'extract' | 'threads' | 'consolidate' | 'review' | 'done' | 'error';
+
+export interface Estimate {
+  sessions: number;
+  chars: number;
+  calls: number;
+}
+
+export interface Status {
+  phase: Phase;
+  done: number;
+  total: number;
+  running: boolean;
+  auto: boolean;
+  errors: string[];
+  estimate: Estimate | null;
+  finished_at: string | null;
+}
+
+export interface ProjectData {
+  project: ProjectSummary;
+  sessions: Session[];
+  threads: Thread[];
+  branches: Branch[];
+  events: TimelineEvent[];
+  status: Status;
+}
+
+export interface Message {
+  idx: number;
+  role: 'user' | 'assistant' | 'tool';
+  ts: string | null;
+  text: string;
+  ref: boolean;
+  focus?: boolean; // 从搜索结果点进来时命中的那条
+}
+
+export interface HiddenEvent {
+  id: number;
+  kind: Kind;
+  title: string;
+  summary: string;
+  ts: string | null;
+  session_title: string | null;
+}
+
+export interface SearchHit {
+  event: number;
+  session_id: number;
+  idx: number;
+  role: Message['role'];
+  ts: string | null;
+  snippet: string;
+}
+
+export interface SearchResult {
+  terms: string[];
+  events: number[];
+  messages: SearchHit[];
+  more: boolean;
+}
+
+// 只看文件大小和修改时间得到的“有没有新内容”
+export interface Pending {
+  changed: number;
+  new: number;
+  chars: number;
+  unplaced: number; // 已提取、还没归入研究线的事件
+  quiet: number | null;
+}
+
+export interface UsageBucket {
+  calls: number;
+  cached: number;
+  input: number;
+  output: number;
+  cache_read: number;
+}
+
+export interface UsageReport {
+  since: string | null;
+  periods: Record<'today' | 'week' | 'month' | 'all', UsageBucket>;
+  days: (UsageBucket & { day: string })[];
+  projects: (UsageBucket & { id: number | null; name: string | null; last: string })[];
+  stages: (UsageBucket & { stage: Stage })[];
+  models: (UsageBucket & { model: string })[];
 }

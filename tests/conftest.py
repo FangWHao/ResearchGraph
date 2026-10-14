@@ -1,55 +1,81 @@
 from __future__ import annotations
 
-import json
+import re
+import shutil
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from rg.extract.provider import ModelResult
-from rg.store.database import Store
+from rg.model import Meter, Usage
+from rg.organize import CONSOLIDATE_SYSTEM, EVENT_SYSTEM, REVIEW_SYSTEM
+from rg.store import Store
+
+FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "transcripts"
+LINE = re.compile(r"^#(\d+) \[[^\]]*\] 用户：(.*)$", re.M)
 
 
 @pytest.fixture
-def store(tmp_path: Path):
-    value = Store(tmp_path / "data")
-    yield value
-    value.close()
+def store(tmp_path: Path) -> Store:
+    db = Store(tmp_path / "timeline.db")
+    yield db
+    db.close()
 
 
-class FakeProvider:
-    """模拟提供方计数，不用于真实 token 计数或任何生产路径。"""
+@pytest.fixture
+def copy_fixture(tmp_path: Path) -> Callable[[str], Path]:
+    def copy(name: str) -> Path:
+        target = tmp_path / "sessions" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(FIXTURES / name, target)
+        return target
 
-    provider = "test-service"
-    model = "test-model"
-    remote = False
+    return copy
 
-    def __init__(self, results: list[ModelResult] | None = None, count: int | None = None):
-        self.results = list(results or [])
-        self.calls = 0
-        self.count = count
-        self.counts = 0
 
-    def count_text(self, text: str) -> int:
-        self.counts += 1
-        return len(text.encode())
+class FakeModel:
+    """事件提取：每条用户消息生成一个“尝试”事件；归类：交给测试给定的函数。"""
 
-    def count_request(self, request: dict[str, Any]) -> int:
-        self.counts += 1
-        return self.count if self.count is not None else len(json.dumps(request).encode())
+    def __init__(
+        self,
+        place: Callable[[str], dict[str, Any]] | None = None,
+        review: Callable[[str], dict[str, Any]] | None = None,
+        consolidate: Callable[[str], dict[str, Any]] | None = None,
+    ):
+        self.place = place or (lambda user: {"placements": []})
+        self.review = review or (lambda user: {"milestones": [], "summary": "", "status": "active"})
+        self.consolidate = consolidate or (lambda user: {"groups": []})
+        self.calls: list[tuple[str, str]] = []
 
-    def request(
-        self, instructions: str, content: str, schema: dict[str, Any], output_budget: int = 4000
+    def __call__(
+        self,
+        system: str,
+        user: str,
+        schema: dict[str, Any],
+        max_tokens: int,
+        meter: Meter | None = None,
     ) -> dict[str, Any]:
-        return {
-            "instructions": instructions,
-            "input": content,
-            "schema": schema,
-            "max_tokens": output_budget,
-        }
+        kind = {
+            EVENT_SYSTEM: "events",
+            REVIEW_SYSTEM: "review",
+            CONSOLIDATE_SYSTEM: "consolidate",
+        }.get(system, "threads")
+        self.calls.append((kind, user))
+        if meter is not None:
+            meter(Usage("fake", len(user), 10, cache_read_tokens=5))
+        if kind == "events":
+            return {
+                "events": [
+                    {"kind": "attempt", "title": text[:10], "summary": text, "refs": [int(idx)]}
+                    for idx, text in LINE.findall(user)
+                ]
+            }
+        if kind == "review":
+            return self.review(user)
+        if kind == "consolidate":
+            return self.consolidate(user)
+        return self.place(user)
 
-    def generate(self, request: dict[str, Any]) -> ModelResult:
-        self.calls += 1
-        if not self.results:
-            raise RuntimeError("模拟结果耗尽")
-        return self.results.pop(0)
+    def count(self, kind: str) -> int:
+        return sum(1 for k, _ in self.calls if k == kind)

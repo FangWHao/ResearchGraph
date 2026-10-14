@@ -1,58 +1,134 @@
-export class ApiError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+import type {
+  AppState,
+  AutoSettings,
+  HiddenEvent,
+  ModelInfo,
+  Stage,
+  StageModel,
+  Importance,
+  Kind,
+  Message,
+  Outcome,
+  Pending,
+  ProjectData,
+  ProjectSummary,
+  SearchResult,
+  SessionInfo,
+  Status,
+  ThreadStatus,
+  UsageReport,
+  Workspace,
+} from './types';
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = { 'X-RG': '1' };
+  let payload: BodyInit | undefined;
+  if (body instanceof Blob) {
+    payload = body;
+  } else if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    payload = JSON.stringify(body);
+  }
+  const response = await fetch(path, { method, headers, body: payload });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((data as { error?: string }).error ?? `请求失败（${response.status}）`);
+  }
+  return data as T;
 }
 
-let token = '';
-export function readToken(): string {
-  const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-  const supplied = params.get('token');
-  if (supplied) {
-    sessionStorage.setItem('rg_token', supplied);
-    window.history.replaceState(null, '', window.location.pathname + window.location.search);
-  }
-  token = supplied ?? sessionStorage.getItem('rg_token') ?? '';
-  return token;
+export interface SettingsInput {
+  sources?: string[];
+  api_key?: string;
+  base_url?: string;
+  model?: string;
+  models?: Partial<Record<Stage, StageModel>>;
+  auto?: Partial<AutoSettings>;
 }
-export function setToken(value: string): void {
-  token = value.trim();
-  sessionStorage.setItem('rg_token', token);
+
+export interface CheckResult {
+  ok: boolean;
+  message: string;
+  results?: { model: string; ok: boolean; message: string }[];
 }
-function authenticatedFetch(path: string, body?: unknown, signal?: AbortSignal) {
-  return fetch(`/api${path}`, {
-    method: body ? 'POST' : 'GET',
-    headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-    cache: 'no-store', signal,
-  });
+
+export interface NewProjectInput {
+  name: string;
+  workspace?: string;
+  follow?: boolean;
+  sessions?: string[];
+  start?: boolean;
 }
-export async function api<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await authenticatedFetch(path, body, signal);
-  const result: unknown = await response.json();
-  if (!response.ok) {
-    const message = result && typeof result === 'object' && 'error' in result
-      ? String(result.error) : `本地服务返回 ${response.status}`;
-    throw new ApiError(response.status, message);
-  }
-  return result as T;
+
+export interface OrganizeOptions {
+  consent?: boolean;
+  full?: boolean;
+  auto?: boolean;
 }
-export async function apiArchive(body: unknown, signal?: AbortSignal): Promise<Blob> {
-  const response = await authenticatedFetch('/exports', body, signal);
-  if (!response.ok) {
-    let message = `本地服务返回 ${response.status}`;
-    try {
-      const value: unknown = await response.json();
-      if (value && typeof value === 'object' && 'error' in value) message = String(value.error);
-    } catch { /* 错误响应不是 JSON 时仍保留 HTTP 状态。 */ }
-    throw new ApiError(response.status, message);
-  }
-  if (response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/zip') throw new Error('导出返回的文件类型异常，未下载此响应。');
-  const blob = await response.blob();
-  const signature = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
-  if (signature.length !== 4 || signature[0] !== 0x50 || signature[1] !== 0x4b || signature[2] !== 0x03 || signature[3] !== 0x04) throw new Error('导出返回的压缩包格式异常，未下载此响应。');
-  return blob;
+
+export interface EventPatch {
+  title?: string;
+  summary?: string;
+  kind?: Kind;
+  outcome?: Outcome;
+  importance?: Importance;
+  branch_id?: number;
+  hidden?: boolean;
 }
-export function query(values: Record<string, string | number | null | undefined>): string {
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(values)) if (value != null && value !== '') params.set(key, String(value));
-  return params.toString();
-}
+
+export const api = {
+  state: () => request<AppState>('GET', '/api/state'),
+  saveSettings: (input: SettingsInput) => request<AppState>('POST', '/api/settings', input),
+  checkModel: (input: SettingsInput) => request<CheckResult>('POST', '/api/settings/check', input),
+  listModels: (input: { base_url?: string; api_key?: string }) =>
+    request<{ models: ModelInfo[]; error: string | null }>('POST', '/api/settings/models', input),
+  sessions: () => request<{ sessions: SessionInfo[]; workspaces: Workspace[] }>('GET', '/api/sessions'),
+  createProject: (input: NewProjectInput) => request<{ id: number }>('POST', '/api/projects', input),
+  upload: (projectId: number, file: File) =>
+    request<{ added: number; title: string | null }>(
+      'POST',
+      `/api/projects/${projectId}/upload?name=${encodeURIComponent(file.name)}`,
+      file,
+    ),
+  patchProject: (projectId: number, patch: { name?: string; follow?: boolean }) =>
+    request<ProjectSummary>('PATCH', `/api/projects/${projectId}`, patch),
+  addSessions: (projectId: number, paths: string[]) =>
+    request<{ added: number }>('POST', `/api/projects/${projectId}/sessions`, { paths }),
+  removeSession: (projectId: number, sessionId: number) =>
+    request<{ ok: boolean }>('DELETE', `/api/projects/${projectId}/sessions/${sessionId}`),
+  hidden: (projectId: number) => request<{ events: HiddenEvent[] }>('GET', `/api/projects/${projectId}/hidden`),
+  restoreEvent: (eventId: number) =>
+    request<{ ok: boolean; branch_id: number | null }>('POST', `/api/events/${eventId}/restore`),
+  deleteProject: (projectId: number) => request<{ ok: boolean }>('DELETE', `/api/projects/${projectId}`),
+  project: (projectId: number) => request<ProjectData>('GET', `/api/projects/${projectId}`),
+  status: (projectId: number) => request<Status>('GET', `/api/projects/${projectId}/status`),
+  pending: (projectId: number) => request<Pending>('GET', `/api/projects/${projectId}/pending`),
+  organize: (projectId: number, options: OrganizeOptions = {}) =>
+    request<Status>('POST', `/api/projects/${projectId}/organize`, options),
+  usage: () => request<UsageReport>('GET', '/api/usage'),
+  patchEvent: (eventId: number, patch: EventPatch) =>
+    request<{ ok: boolean }>('PATCH', `/api/events/${eventId}`, patch),
+  search: (projectId: number, q: string) =>
+    request<SearchResult>('GET', `/api/projects/${projectId}/search?q=${encodeURIComponent(q)}`),
+  messages: (eventId: number, context: number, focus?: number) =>
+    request<{ session: { id: number; title: string | null; tool: string; missing: number }; messages: Message[] }>(
+      'GET',
+      `/api/events/${eventId}/messages?context=${context}${focus === undefined ? '' : `&focus=${focus}`}`,
+    ),
+  patchThread: (threadId: number, patch: { title?: string; summary?: string; status?: ThreadStatus }) =>
+    request<{ ok: boolean }>('PATCH', `/api/threads/${threadId}`, patch),
+  createThread: (projectId: number, title: string) =>
+    request<{ thread_id: number; branch_id: number }>('POST', `/api/projects/${projectId}/threads`, { title }),
+  createBranch: (threadId: number, title: string, fromEvent: number | null) =>
+    request<{ branch_id: number }>('POST', `/api/threads/${threadId}/branches`, {
+      title,
+      from_event: fromEvent,
+    }),
+  mergeThread: (threadId: number, into: number) =>
+    request<{ ok: boolean }>('POST', `/api/threads/${threadId}/merge`, { into }),
+  deleteBranch: (branchId: number) => request<{ ok: boolean }>('DELETE', `/api/branches/${branchId}`),
+  patchBranch: (
+    branchId: number,
+    patch: { title?: string; from_event?: number | null; into_event?: number | null },
+  ) => request<{ ok: boolean }>('PATCH', `/api/branches/${branchId}`, patch),
+};

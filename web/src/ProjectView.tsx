@@ -1,0 +1,799 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { api, type OrganizeOptions } from './api';
+import { autoState, describePending, hasNew, POLL_MS, type AutoState } from './auto';
+import { Segmented } from './Controls';
+import { fmtChars, fmtTime, fmtWan } from './format';
+import { Icon, KindGlyph, Logo } from './Icons';
+import { defaultZoom, filterDetail, rowNeighbors, ZOOM_LEVELS, type Align, type Detail, type ViewMode } from './layout';
+import { EventPanel, LanePanel, OverviewPanel } from './Panel';
+import { SearchBox } from './Search';
+import { Timeline, type Selection } from './Timeline';
+import type { AppState, Pending, ProjectData, ProjectSummary, Stage, Status } from './types';
+import { KIND_LABEL, KINDS, THINKING_LABEL } from './types';
+
+// 这次打开页面期间点过“稍后”的项目：切到别的项目或设置再回来，不再追着问
+const dismissed = new Set<number>();
+const NO_EVENTS = new Set<number>();
+
+function describeModel(item: { model: string; thinking: keyof typeof THINKING_LABEL }): string {
+  return item.thinking === 'off' ? item.model : `${item.model}（思考：${THINKING_LABEL[item.thinking]}）`;
+}
+
+// 每个阶段用的是哪一类任务的模型
+const PHASE_STAGE: Partial<Record<Status['phase'], Stage>> = {
+  extract: 'extract',
+  threads: 'threads',
+  consolidate: 'threads',
+  review: 'review',
+};
+
+const PHASE: Record<Status['phase'], string> = {
+  idle: '',
+  sync: '读取会话',
+  consent: '等待确认',
+  confirm: '等你确认',
+  extract: '提取关键步骤',
+  threads: '整理研究线',
+  consolidate: '合并研究线',
+  review: '复审研究线',
+  done: '整理完成',
+  error: '整理出错',
+};
+
+function remembered<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+  try {
+    const value = localStorage.getItem(key) as T | null;
+    return value && allowed.includes(value) ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function remember(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // 浏览器不允许存储时只是不记住
+  }
+}
+
+function zoomLabel(pxPerHour: number): string {
+  if (pxPerHour >= 64) return '刻度 1 小时';
+  if (pxPerHour >= 32) return '刻度 2 小时';
+  if (pxPerHour >= 16) return '刻度 3 小时';
+  if (pxPerHour >= 8) return '刻度 6 小时';
+  return '刻度 1 天';
+}
+
+interface Props {
+  project: ProjectSummary;
+  state: AppState;
+  onSwitch: (projectId: number) => void;
+  onNew: () => void;
+  onSettings: () => void;
+  onProjectSettings: () => void;
+  onDeleted: () => void;
+}
+
+export function ProjectView({ project, state, onSwitch, onNew, onSettings, onProjectSettings, onDeleted }: Props) {
+  const [data, setData] = useState<ProjectData | null>(null);
+  const [status, setStatus] = useState<Status | null>(null);
+  const [view, setView] = useState<ViewMode>(() => remembered('rg.view', ['threads', 'sessions'], 'threads'));
+  const [align, setAlign] = useState<Align>(() => remembered('rg.align', ['compact', 'time'], 'compact'));
+  const [detail, setDetail] = useState<Detail>(() => remembered('rg.detail', ['milestone', 'key', 'all'], 'milestone'));
+  const [zoom, setZoom] = useState<number | null>(null);
+  const [selection, setSelection] = useState<Selection>(null);
+  const [jump, setJump] = useState({ n: 0, latest: false });
+  const [error, setError] = useState('');
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [paused, setPaused] = useState(() => dismissed.has(project.id));
+  const [fresh, setFresh] = useState<Set<number>>(NO_EVENTS);
+  const [notice, setNotice] = useState<{ added: number[]; auto: boolean } | null>(null);
+  const [matches, setMatches] = useState<Set<number> | null>(null); // 搜索结果里的事件
+  const [focus, setFocus] = useState<{ event: number; idx?: number; terms: string[] } | null>(null);
+  const known = useRef<Set<number> | null>(null); // 上次加载时已有的事件
+  const markNew = useRef(false); // 这次整理结束后要标出新增的事件
+
+  const load = useCallback(async () => {
+    try {
+      const next = await api.project(project.id);
+      const before = known.current;
+      known.current = new Set(next.events.map((e) => e.id));
+      if (markNew.current && !next.status.running) {
+        markNew.current = false;
+        // 第一次整理时全部都是新的，不用标
+        const added = before && before.size ? next.events.filter((e) => !before.has(e.id)).map((e) => e.id) : [];
+        if (added.length) {
+          setFresh(new Set(added));
+          setNotice({ added, auto: next.status.auto });
+        }
+      }
+      setData(next);
+      setStatus(next.status);
+      setError('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [project.id]);
+
+  const checkPending = useCallback(async () => {
+    try {
+      const next = await api.pending(project.id);
+      setPending(next);
+      return next;
+    } catch {
+      return null; // 下一次再看
+    }
+  }, [project.id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    if (!status?.running) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const next = await api.status(project.id);
+        setStatus(next);
+        if (!next.running) {
+          void load();
+          void checkPending();
+        }
+      } catch {
+        // 下一次轮询再试
+      }
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [status?.running, project.id, load, checkPending]);
+
+  const organize = async (options: OrganizeOptions = {}) => {
+    if (!options.auto) {
+      // 用户自己点了更新：之前的“稍后”作废，自动更新恢复
+      dismissed.delete(project.id);
+      setPaused(false);
+      setAsking(false);
+    }
+    markNew.current = !options.full;
+    try {
+      const next = await api.organize(project.id, options);
+      setStatus(next);
+      if (!next.running) {
+        // 任务在请求返回前就做完了（比如没有新消息），轮询不会启动，这里直接刷新
+        void load();
+        void checkPending();
+      }
+    } catch (e) {
+      markNew.current = false;
+      // 自动更新失败（比如另一个窗口已经在整理）不打断用户，下一轮再看
+      if (!options.auto) setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const later = () => {
+    dismissed.add(project.id);
+    setPaused(true);
+    setAsking(false);
+  };
+
+  const allowed = !!data?.project.model_allowed;
+  const auto: AutoState = autoState({
+    settings: state.auto,
+    allowed,
+    hasKey: state.model.has_key,
+    paused,
+    asking,
+    status,
+    pending,
+  });
+
+  // 进入项目时：离开期间有新内容，按设置先问或直接更新
+  const entered = useRef(false);
+  useEffect(() => {
+    if (!data || entered.current) return;
+    entered.current = true;
+    void (async () => {
+      const found = await checkPending();
+      const hold = data.status.running || ['consent', 'confirm', 'error'].includes(data.status.phase);
+      if (!found || !hasNew(found) || !data.project.model_allowed || hold || dismissed.has(project.id)) return;
+      if (state.auto.on_open === 'auto' && state.model.has_key) void organize({ auto: true });
+      else setAsking(true);
+    })();
+  }, [data]);
+
+  // 打开期间：定时看有没有新内容，会话安静够久就自动更新
+  const tick = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => {
+    tick.current = async () => {
+      if (!entered.current || status?.running) return;
+      const found = await checkPending();
+      const next = autoState({
+        settings: state.auto,
+        allowed,
+        hasKey: state.model.has_key,
+        paused,
+        asking,
+        status,
+        pending: found,
+      });
+      if (next.kind === 'go') await organize({ auto: true });
+    };
+  });
+  useEffect(() => {
+    const timer = window.setInterval(() => void tick.current(), POLL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void tick.current();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
+
+  // 打开项目、切换视图或对齐方式时：紧凑模式回到起点，真实时间模式滚到最新
+  useEffect(() => {
+    setJump((j) => ({ n: j.n + 1, latest: align === 'time' }));
+  }, [project.id, view, align, data !== null]);
+
+  const pxPerHour = useMemo(() => zoom ?? defaultZoom(data?.events ?? []), [zoom, data?.events]);
+  const stepZoom = useCallback(
+    (direction: 1 | -1) => {
+      const i = ZOOM_LEVELS.indexOf(pxPerHour);
+      const next = ZOOM_LEVELS[Math.max(0, Math.min(ZOOM_LEVELS.length - 1, i + direction))];
+      setZoom(next);
+    },
+    [pxPerHour],
+  );
+
+  const [expanded, setExpanded] = useState<Set<number>>(() => new Set()); // 在时间线上展开了哪些卡片
+  const changeView = (next: ViewMode) => {
+    setView(next);
+    setSelection(null);
+    setExpanded(new Set());
+    remember('rg.view', next);
+  };
+  const changeAlign = (next: Align) => {
+    setAlign(next);
+    remember('rg.align', next);
+  };
+  const changeDetail = (next: Detail) => {
+    setDetail(next);
+    setExpanded(new Set());
+    remember('rg.detail', next);
+  };
+  // 详略只影响时间线上画哪些事件；面板、搜索、前后关系仍然用全部事件
+  const shown = useMemo(() => (data ? filterDetail(data, detail, view, expanded) : null), [data, detail, view, expanded]);
+  // 不展开时每张卡片代表的那一段，面板里“这一段的经过”用
+  const plain = useMemo(() => (data ? filterDetail(data, detail, view) : null), [data, detail, view]);
+  const toggle = useCallback((id: number) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  // 让一个被藏着的事件出现在时间线上：一层层展开它所在的那一段
+  const reveal = (id: number) => {
+    if (!data) return;
+    const next = new Set(expanded);
+    for (let i = 0; i < 4; i++) {
+      const f = filterDetail(data, detail, view, next);
+      if (f.input.events.some((e) => e.id === id)) break;
+      const owner = [...f.segments].find(([, ids]) => ids.includes(id))?.[0];
+      if (owner === undefined) break;
+      next.add(owner);
+    }
+    setExpanded(next);
+  };
+
+  // 键盘：Esc 关闭，←/→ 同一行的前后事件，+/− 缩放
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      if (e.key === 'Escape') setSelection(null);
+      if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && selection?.type === 'event' && data) {
+        // 在当前详略下可见的事件里前后移动；选中的事件被藏着时（比如从搜索点进来）就在全部事件里移动
+        const pool = shown && shown.input.events.some((e) => e.id === selection.id) ? shown.input.events : data.events;
+        const { prev, next } = rowNeighbors(pool, view, selection.id);
+        const to = e.key === 'ArrowLeft' ? prev : next;
+        if (to) {
+          e.preventDefault();
+          setSelection({ type: 'event', id: to.id });
+        }
+      }
+      if (align === 'time' && (e.key === '+' || e.key === '=')) stepZoom(1);
+      if (align === 'time' && e.key === '-') stepZoom(-1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selection, data, shown, view, align, stepZoom]);
+
+  const remove = async () => {
+    if (!window.confirm(`删除项目「${project.name}」？只删除整理结果，不会动原始会话文件。`)) return;
+    try {
+      await api.deleteProject(project.id);
+      onDeleted();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const running = status?.running ?? false;
+  const selectedEvent = selection?.type === 'event' ? data?.events.find((e) => e.id === selection.id) ?? null : null;
+  const selectEvent = (id: number) => setSelection({ type: 'event', id });
+  const progress = running && status?.total ? Math.round((status.done / status.total) * 100) : null;
+  const showFresh = () => {
+    if (!notice || !data) return;
+    const added = new Set(notice.added);
+    const newest = data.events.filter((e) => added.has(e.id)).sort((a, b) => (a.ts ?? '').localeCompare(b.ts ?? '')).at(-1);
+    if (newest) selectEvent(newest.id);
+    setNotice(null); // 新事件上还留着“新”字标记
+  };
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <div className="brand">
+          <Logo />
+          <span>ResearchGraph</span>
+        </div>
+        <select className="select project-switch" value={project.id} aria-label="切换项目" onChange={(e) => onSwitch(Number(e.target.value))}>
+          {state.projects.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        <button type="button" className="icon-btn" title="新建项目" aria-label="新建项目" onClick={onNew}>
+          <Icon name="plus" />
+        </button>
+        <span className="divider" />
+        <Segmented
+          label="泳道"
+          value={view}
+          options={[
+            ['threads', '研究线'],
+            ['sessions', '会话'],
+          ]}
+          onChange={changeView}
+        />
+        <Segmented
+          label="详略"
+          value={detail}
+          options={[
+            ['milestone', '里程碑'],
+            ['key', '关键'],
+            ['all', '全部'],
+          ]}
+          onChange={changeDetail}
+        />
+        <Segmented
+          label="横轴"
+          value={align}
+          options={[
+            ['compact', '紧凑'],
+            ['time', '真实时间'],
+          ]}
+          onChange={changeAlign}
+        />
+        {align === 'time' ? (
+          <div className="zoom" role="group" aria-label="缩放">
+            <button type="button" className="icon-btn" title={`缩小（−），现在${zoomLabel(pxPerHour)}`} aria-label="缩小" disabled={pxPerHour === ZOOM_LEVELS[0]} onClick={() => stepZoom(-1)}>
+              <Icon name="minus" size={14} />
+            </button>
+            <span className="zoom-label">{zoomLabel(pxPerHour)}</span>
+            <button type="button" className="icon-btn" title="放大（+）" aria-label="放大" disabled={pxPerHour === ZOOM_LEVELS.at(-1)} onClick={() => stepZoom(1)}>
+              <Icon name="plus" size={14} />
+            </button>
+          </div>
+        ) : null}
+        <span className="spacer" />
+        {data && data.events.length ? (
+          <SearchBox
+            data={data}
+            onMatches={setMatches}
+            onPick={(id, idx, terms) => {
+              // 搜到的事件在当前详略下被藏着，就临时切到“全部”，好在时间线上看到它
+              reveal(id);
+              setSelection({ type: 'event', id });
+              setFocus({ event: id, idx, terms });
+            }}
+          />
+        ) : null}
+        <StatusPill status={status} data={data} pending={pending} auto={auto} quiet={state.auto.quiet} models={state.model.models} />
+        <button type="button" className="btn primary" disabled={running} onClick={() => organize()}>
+          <Icon name="refresh" size={15} />
+          {running ? '整理中' : '更新'}
+        </button>
+        <Menu
+          items={[
+            {
+              label: '重新整理',
+              hint: '保留手动改过的内容',
+              disabled: running,
+              onClick: () =>
+                window.confirm(
+                  `清掉自动生成的研究线和事件，从头整理？你手动改过和删掉的内容会保留。\n\n会重新调用模型：提取用 ${describeModel(state.model.models.extract)}，归类和复审用 ${describeModel(state.model.models.threads)}。模型可以在设置里换。`,
+                ) &&
+                organize({ full: true }),
+            },
+            { label: '项目设置', hint: '改名、增减会话、恢复删除的事件', onClick: onProjectSettings },
+            { label: '设置', hint: '会话目录、模型、自动更新、用量', onClick: onSettings },
+            { label: '删除项目', danger: true, onClick: remove },
+          ]}
+        />
+      </header>
+      <div className="progress-line" aria-hidden="true">
+        {progress !== null ? <div style={{ width: `${Math.max(progress, 3)}%` }} /> : running ? <div className="indeterminate" /> : null}
+      </div>
+
+      <Banner
+        status={status}
+        model={state.model}
+        pending={asking ? pending : null}
+        limit={state.auto.limit}
+        paused={paused}
+        onConsent={() => organize({ consent: true })}
+        onRetry={() => organize()}
+        onLater={later}
+        onSettings={onSettings}
+      />
+
+      <main className="workspace">
+        {error ? <div className="empty error">{error}</div> : null}
+        {!error && data === null ? <div className="empty muted">加载中…</div> : null}
+        {!error && data && data.events.length === 0 ? (
+          <div className="empty">
+            {running ? (
+              <>
+                <h2>正在整理</h2>
+                <p className="muted">完成后这里会出现时间线。</p>
+              </>
+            ) : status?.phase === 'consent' ? (
+              <>
+                <h2>确认后开始整理</h2>
+                <p className="muted">上面列出了要发送给模型的内容量。</p>
+              </>
+            ) : (
+              <>
+                <h2>还没有事件</h2>
+                <p className="muted">点“更新”读取新会话并整理。会话很短或只是闲聊时，可能没有值得记录的步骤。</p>
+              </>
+            )}
+          </div>
+        ) : null}
+        {!error && data && data.events.length > 0 ? (
+          <>
+            <Timeline
+              data={{ ...data, ...shown!.input }}
+              view={view}
+              align={align}
+              pxPerHour={pxPerHour}
+              selection={selection}
+              onSelect={setSelection}
+              jump={jump}
+              fresh={fresh}
+              matches={matches}
+              hidden={shown!.hidden}
+              opened={shown!.opened}
+              revealed={shown!.revealed}
+              onToggle={toggle}
+            />
+            {selectedEvent ? (
+              <EventPanel
+                data={data}
+                event={selectedEvent}
+                focus={focus?.event === selectedEvent.id ? focus.idx : undefined}
+                terms={focus?.event === selectedEvent.id ? focus.terms : undefined}
+                segment={(shown!.segments.get(selectedEvent.id) ?? plain!.segments.get(selectedEvent.id) ?? [])
+                  .map((id) => data.events.find((e) => e.id === id)!)
+                  .filter(Boolean)}
+                opened={shown!.opened.has(selectedEvent.id)}
+                onToggle={() => toggle(selectedEvent.id)}
+                onReveal={(id) => {
+                  reveal(id);
+                  selectEvent(id);
+                }}
+                onChanged={load}
+                onClose={() => setSelection(null)}
+                onSelectEvent={selectEvent}
+              />
+            ) : null}
+            {selection?.type === 'lane' ? (
+              <LanePanel data={data} lane={selection.lane} onChanged={load} onClose={() => setSelection(null)} onSelectEvent={selectEvent} />
+            ) : null}
+            {selection?.type === 'overview' ? (
+              <OverviewPanel data={data} onChanged={load} onClose={() => setSelection(null)} onSelectEvent={selectEvent} />
+            ) : null}
+          </>
+        ) : null}
+      </main>
+
+      {notice ? (
+        <div className="toast" role="status">
+          <Icon name="check" size={15} />
+          <span>
+            {notice.auto ? '自动更新' : '更新'}完成，新增 {notice.added.length} 个事件
+          </span>
+          <button type="button" className="btn small" onClick={showFresh}>
+            查看
+          </button>
+          <button type="button" className="icon-btn" aria-label="关闭" onClick={() => setNotice(null)}>
+            <Icon name="close" size={14} />
+          </button>
+        </div>
+      ) : null}
+
+      <footer className="footbar">
+        <div className="legend" aria-label="图例">
+          {KINDS.map((k) => (
+            <span key={k}>
+              <KindGlyph kind={k} />
+              {KIND_LABEL[k]}
+            </span>
+          ))}
+          <span>
+            <span className="legend-card milestone" />
+            里程碑
+          </span>
+          <span>
+            <span className="legend-card" />
+            关键
+          </span>
+          <span>
+            <span className="legend-card failed" />
+            <KindGlyph kind="attempt" outcome="failed" />
+            失败的尝试
+          </span>
+        </div>
+        {data ? (
+          <span className="muted">
+            {data.sessions.length} 个会话 · {detail === 'all' ? '' : `显示 ${shown!.input.events.length} / `}
+            {data.events.length} 个事件
+          </span>
+        ) : null}
+        <span className="spacer" />
+        <span className="muted hide-narrow">←/→ 切换事件 · Esc 关闭</span>
+        <button type="button" className="btn small ghost" onClick={() => setJump((j) => ({ n: j.n + 1, latest: true }))}>
+          最新
+          <Icon name="toEnd" size={14} />
+        </button>
+      </footer>
+    </div>
+  );
+}
+
+interface MenuItem {
+  label: string;
+  hint?: string;
+  danger?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}
+
+function Menu({ items }: { items: MenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => {
+      if (!root.current?.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener('pointerdown', close);
+    return () => window.removeEventListener('pointerdown', close);
+  }, [open]);
+  return (
+    <div className="menu" ref={root}>
+      <button type="button" className="icon-btn" aria-label="更多" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Icon name="more" />
+      </button>
+      {open ? (
+        <div className="menu-list" role="menu">
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              disabled={item.disabled}
+              className={item.danger ? 'danger' : ''}
+              onClick={() => {
+                setOpen(false);
+                item.onClick();
+              }}
+            >
+              <span>{item.label}</span>
+              {item.hint ? <span className="muted small">{item.hint}</span> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function StatusPill({
+  status,
+  data,
+  pending,
+  auto,
+  quiet,
+  models,
+}: {
+  status: Status | null;
+  data: ProjectData | null;
+  pending: Pending | null;
+  auto: AutoState;
+  quiet: number;
+  models: AppState['model']['models'];
+}) {
+  if (!status || !data) return null;
+  if (status.running) {
+    const stage = PHASE_STAGE[status.phase];
+    const used = stage ? models[stage] : null;
+    return (
+      <span className="pill" title={used ? `这一步用 ${used.model}${used.thinking !== 'off' ? `，思考：${THINKING_LABEL[used.thinking]}` : ''}` : ''}>
+        <span className="spinner" />
+        {status.auto ? '自动更新 · ' : ''}
+        {PHASE[status.phase]}
+        {status.total ? <span className="muted"> {status.done}/{status.total}</span> : null}
+        {used ? <span className="muted hide-narrow"> · {used.model}</span> : null}
+      </span>
+    );
+  }
+  if (status.phase === 'error') {
+    return (
+      <span className="pill warn">
+        <Icon name="alert" size={13} />
+        整理出错
+      </span>
+    );
+  }
+  const paused = auto.kind === 'blocked' && auto.why === 'paused';
+  if (status.phase === 'consent' || (status.phase === 'confirm' && !paused)) return <span className="pill">等待确认</span>;
+  const leftover = !!(status.estimate && status.estimate.calls > 0 && data.project.model_allowed);
+  if (hasNew(pending) || leftover) {
+    let note = '';
+    let title = '点“更新”整理新增的部分';
+    if (auto.kind === 'waiting') {
+      note = ` · 约 ${Math.max(1, Math.ceil(auto.seconds / 60))} 分钟后自动更新`;
+      title = `会话还在进行，安静 ${quiet} 分钟后自动整理`;
+    } else if (auto.kind === 'go') {
+      note = ' · 马上自动更新';
+    } else if (paused) {
+      note = ' · 自动更新已暂停';
+      title = '点“更新”整理新内容，并恢复自动更新';
+    }
+    return (
+      <span className="pill" title={title}>
+        <span className="dot-new" />
+        有新内容{note}
+      </span>
+    );
+  }
+  const autoNote = auto.kind === 'off' ? '自动更新已关闭' : '自动更新已开启';
+  return (
+    <span
+      className="pill"
+      title={`${data.project.organized_at ? `上次整理 ${fmtTime(data.project.organized_at)} · ` : ''}${autoNote}`}
+    >
+      <Icon name="check" size={13} />
+      {data.project.organized_at ? (
+        <>
+          已整理<span className="pill-time"> {fmtTime(data.project.organized_at)}</span>
+        </>
+      ) : (
+        '还没有整理过'
+      )}
+    </span>
+  );
+}
+
+function Banner({
+  status,
+  model,
+  pending,
+  limit,
+  paused,
+  onConsent,
+  onRetry,
+  onLater,
+  onSettings,
+}: {
+  status: Status | null;
+  model: AppState['model'];
+  pending: Pending | null; // 进入项目时发现的新内容；没有要问的就是 null
+  limit: number | null;
+  paused: boolean;
+  onConsent: () => void;
+  onRetry: () => void;
+  onLater: () => void;
+  onSettings: () => void;
+}) {
+  if (!status || status.running) return null;
+  const estimate = status.estimate;
+  if (status.phase === 'consent' && estimate) {
+    return (
+      <div className="banner">
+        <div className="banner-text">
+          <strong>第一次整理这个项目</strong>
+          <span>
+            会把 {estimate.sessions} 个会话中{fmtChars(estimate.chars)}的文字发送给 {model.models.extract.model}
+            提取关键步骤（大约 {Math.max(estimate.calls - 1, 1)} 次调用），再用 {model.models.threads.model}{' '}
+            整理研究线。之后只发送新增的内容。模型可以在设置里换。
+          </span>
+        </div>
+        {model.has_key ? (
+          <button type="button" className="btn primary" onClick={onConsent}>
+            同意并开始整理
+          </button>
+        ) : (
+          <button type="button" className="btn primary" onClick={onSettings}>
+            先填写 API Key
+          </button>
+        )}
+      </div>
+    );
+  }
+  if (status.phase === 'error') {
+    return (
+      <div className="banner warn">
+        <Icon name="alert" size={18} />
+        <div className="banner-text">
+          <strong>整理没有完成</strong>
+          {status.errors.length ? (
+            status.errors.map((line) => <span key={line}>{line}</span>)
+          ) : (
+            <span>整理出错，可以重试。</span>
+          )}
+        </div>
+        <button type="button" className="btn" onClick={onSettings}>
+          设置
+        </button>
+        <button type="button" className="btn primary" onClick={onRetry}>
+          重试
+        </button>
+      </div>
+    );
+  }
+  if (status.phase === 'confirm' && estimate && !paused) {
+    return (
+      <div className="banner">
+        <div className="banner-text">
+          <strong>新内容比较多，先问一下</strong>
+          <span>
+            这次要把{fmtChars(estimate.chars)}发送给 {model.model}，超过了自动更新的单次上限
+            {limit ? `（${fmtWan(limit)}）` : ''}。上限可以在设置里改。
+          </span>
+        </div>
+        <button type="button" className="btn" onClick={onLater}>
+          稍后
+        </button>
+        <button type="button" className="btn primary" onClick={onRetry}>
+          现在更新
+        </button>
+      </div>
+    );
+  }
+  if (pending) {
+    return (
+      <div className="banner">
+        <span className="dot-new" />
+        <div className="banner-text">
+          <strong>离开期间有新内容</strong>
+          <span>{describePending(pending)}。要现在整理吗？只发送新增的部分。</span>
+        </div>
+        <button type="button" className="btn" onClick={onLater}>
+          稍后
+        </button>
+        <button type="button" className="btn primary" onClick={onRetry}>
+          更新
+        </button>
+      </div>
+    );
+  }
+  return null;
+}

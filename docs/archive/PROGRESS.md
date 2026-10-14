@@ -1,0 +1,1276 @@
+# 开发进度（只追加）
+
+## 2026-10-09 · 初始核对
+
+- 目录原有执行规格、Agent 说明、设计书和体量统计脚本；无实现、测试、Git 仓库或历史进度记录。
+- 本次范围：先建立后端基础和 M1 提取流水线的可测试实现；遵守 §12，真实提取效果通过之前不开发界面。
+- 用户指定 Atlas 为试点、OpenAI 兼容接口为模型接口。已验证试点路径 `/mnt/d/Documents/Atlas` 存在；该项目文件只读。
+- 人工参考决定、参考问题、真实试点模型计数和效果指标尚未完成，不能宣称 M0/M1 验收通过。
+
+## 2026-10-09 · 后端基础与有界提取流水线的阶段交付
+
+- 任务：从规格起步建立可运行、可验证的后端基础；使用合成会话验收真实 DeepSeek 接口，并为用户指定的 Atlas 试点准备本地人工核对材料。完整 M0–M4 目标尚未完成。
+- 改动的工程文件：`.gitignore`、`CLAUDE.md`、`pyproject.toml`、`uv.lock`；新建 Git 仓库、Python 3.12 环境，独立 uv 位于被忽略的 `.tools/bin/uv`。
+- 改动的存储文件：`rg/store/schema.sql`、`database.py`、`objects.py`、`backup.py`；L0/候选/复核追加约束、事务建库、zstd 原文对象、FTS 字面量检索、范围状态保护、SQLite backup API。
+- 改动的导入文件：`rg/ingest/common.py`、`claude.py`、`codex.py`、`scanner.py`、`spans.py`；多内容块、游标与残片、源实例轮换、去重、压缩与注入排除、原文 UTF-8 位置。
+- 改动的提取文件：`rg/slim/tokens.py`、`slimmer.py`；`rg/extract/provider.py`、`redact.py`、`schemas.py`、`segmenter.py`、`working_set.py`、`validate.py`、`worker.py`、`report.py`、`prompts/pass1.txt`、`prompts/pass2.txt`；`rg/cli/main.py` 及各包入口。
+- 改动的样本与测试：`fixtures/transcripts/claude/2.1-synthetic.jsonl`、`fixtures/transcripts/codex/2026-synthetic.jsonl`、`tests/conftest.py`、`tests/golden/` 与 provider/worker/组件预算/范围/原子建库/试点统计测试。样本全部合成，不含真实会话或真实密钥。
+- 改动的脚本：新增 `scripts/measure_atlas.py`、`prepare_atlas_pilot.py`、`smoke_deepseek.py`。原有 `scripts/measure_transcripts.py` 未改动。
+- 改动的文档：`README.md`、`docs/ResearchGraph_执行版_v2.md`（与原始规格字节一致的规范入口副本）、`REQUIREMENTS_STATUS.md`、`DECISIONS.md`、`PROGRESS.md`、`docs/acceptance/`。原始规格、设计书、AGENTS.md 与 Atlas 项目文件未修改。
+- 验收环境：将 `.tools/bin` 加入 PATH，`UV_CACHE_DIR` 指向项目 `.cache/uv`。
+- `uv sync`：`Resolved 23 packages in 12ms`；`Checked 22 packages in 42ms`。
+- `uv run pytest -q`：`47 passed in 6.84s`。
+- `uv run pytest tests/golden -q`：`36 passed in 5.85s`；仅代表当前已实现的固定案例，完整 §15 覆盖尚未完成。
+- `uv run ruff check rg tests scripts/measure_atlas.py scripts/prepare_atlas_pilot.py scripts/smoke_deepseek.py`：`All checks passed!`。
+- `uv run pyright rg`：`0 errors, 0 warnings, 0 informations`。
+- `uv run rg --help`：退出码 0，输出 init/project/import/health/search/evidence/preview/extract/review/backup 命令帮助。
+- `uv run python scripts/smoke_deepseek.py --key-file api_key`：真实接口使用合成中文会话；2 个片段、5 条候选、0 个失败人工片段、0 个覆盖缺口、缓存通过，全部保持 candidate。发送前实测输入分别为 481/2886/481/2941 token；实际全输入为 461/2866/461/2921，输出为 48/361/48/482。严格引用校验通过。
+- `python -I scripts/measure_atlas.py --manifest private/atlas_sessions_verified.json`：505 个文件（Claude 203、Codex 302），3,781,566,087 字节、307,061 条记录、431 个压缩点；只输出数字。修正路径前缀边界后文件集合一致。
+- `uv run python scripts/prepare_atlas_pilot.py --manifest private/atlas_sessions.json --output /tmp/researchgraph-atlas-pilot-20261009`：选出 10 段，48 条候选，人工确认参考仍为 0、正式问题仍为 0。
+- 密钥验证：API 凭据可用、指定模型可用；待纳入仓库文件的实际密钥匹配数 0，凭据与私有清单已被忽略。未发送任何真实 Atlas 会话到模型接口。
+- 完整命令输出入口：`docs/acceptance/后端阶段验收_20261009.md`；需求与未完成项入口：`docs/REQUIREMENTS_STATUS.md`。
+- 保存位置限制：复制人工核对材料到 `/mnt/d/ResearchGraphPilot/20261009` 被自动审批拒绝，理由是预览可能含敏感信息、具体目的地及转移未获明确授权。已向用户请求该目的地确认；未绕过，三份材料仍在 `/tmp/researchgraph-atlas-pilot-20261009`。
+- 下一步：新会话先读本文件末尾、§2/§12/§13/§15 与决定记录；确认真实材料保存位置，完成至少 25 条人工参考和 5 个正式问题，补齐 M0 的保留设置/独立备份和 M1 尚缺的工作集/重叠逻辑，再进行真实效果验收。M1 达标前不进入界面开发，未达标按 §16 决定降级路线。HTTP/MCP、钩子、spool、快照、完整图等仍未完成；Web 验收尚不适用。
+
+## 2026-10-09 · 保存 Atlas 人工核对材料
+
+- 任务：按用户明确授权，将三份试点材料持久保存到 `/mnt/d/ResearchGraphPilot/20261009`。
+- 改动的文件：仓库外三份材料；`README.md`、`docs/DECISIONS.md`、`docs/PROGRESS.md` 的入口与授权记录。
+- 验收：本地复制脚本逐份读取并比对 SHA-256；已有同名文件内容不同时拒绝覆盖。退出码 0，输出 `{"destination":"/mnt/d/ResearchGraphPilot/20261009","files_verified":3,"candidate_references":48,"human_reference_count":0}`。真实原话未输出到开发上下文，未外发。
+- 下一步：继续完成 M1 后端缺项，并由人工核对至少 25 条参考决定及 5 个问题。持久目录已获授权，先前保存阻塞已解除。
+
+## 2026-10-09 · M1 可调预算、重叠与工作集
+
+- 任务：按用户明确选择将完整输入预算改为默认 128000 token，允许调高；实现相邻回合/延续窗口重叠、证据归属、工作集优先级与显式范围校验。
+- 改动的文件：新增 `rg/extract/budgets.py`、`paths.py`；修改 `provider.py`、`segmenter.py`、`worker.py`、`working_set.py`、`validate.py`、`prompts/pass1.txt`、`prompts/pass2.txt`、`rg/cli/main.py`、`scripts/smoke_deepseek.py`。新增 `tests/golden/test_overlap.py`、`test_working_selection.py`、`tests/test_budget_configuration.py`；调整 worker 与预算测试。更新 `README.md`、`docs/DECISIONS.md`、`REQUIREMENTS_STATUS.md` 及本文件；新增 `docs/acceptance/M1预算与重叠验收_20261009.md` 和 `deepseek_128k_smoke` 的 JSON、中文报告与合成模型输出。
+- 预算：用户确认覆盖原规格 §7.2 的 24k 数值。输入默认 128000；内容分配 120000，工作集与指令/schema 各 3000，封装余量 2000，输出仍 4000。DeepSeek `/models` 实测窗口 1048576；预算加输出不得超窗。元数据缺失或计数失败不生成。
+- 重叠：普通片段携带完整上一回合；超长回合内的延续/重试窗口保留最近不可拆组并记录遗漏位置。重叠不算新覆盖，每条候选必须有当前窗口证据。完整上一回合放不下时不静默截断，失败转人工并保留 pending。
+- 工作集：直接 ID、字面量 FTS、同文件路径、本会话前序候选按序装填；长正文同一事件内按字节边界区分先前与后续。`--scope 字段=值` 可重复，完整范围相等筛选，模型增删字段时拒绝；未指定范围仍只能当带范围的检索线索，不能声称同范围选择已完成。
+- `uv sync`：`Resolved 23 packages in 12ms`；`Checked 22 packages in 40ms`。
+- `uv run pytest -q`：`66 passed in 25.25s`。
+- `uv run pytest tests/golden -q`：`47 passed in 7.57s`；完整 §15 尚未覆盖。
+- `uv run ruff check rg tests scripts/measure_atlas.py scripts/prepare_atlas_pilot.py scripts/smoke_deepseek.py`：`All checks passed!`。
+- `uv run pyright rg`：`0 errors, 0 warnings, 0 informations`。
+- `uv run rg --help` 与 `uv run rg extract --help`：退出码 0；新增 `--input-budget`（128000 默认）与重复 `--scope`。
+- `uv run python scripts/smoke_deepseek.py --key-file api_key --output docs/acceptance/deepseek_128k_smoke.json`：合成会话 2 片段、5 候选、0 人工失败、0 覆盖缺口，scope 一致、全部 candidate、缓存通过。前置实测输入 512/3069/556/3210；实际全输入 492/3049/536/3190，输出 48/338/48/557。本次没有测满 128k 的提取质量，未发送 Atlas 真实材料。
+- 完整输出见 `docs/acceptance/M1预算与重叠验收_20261009.md`。原规格与入口副本仍字节一致，凭据和私有材料继续被忽略。
+- 本地真实凭据检查：当时 70 个待纳入文件中实际密钥匹配为 0，仅输出数字。
+- 下一步：下个任务先读本文件末尾、§2/§7.5/§7.7/§12/§13/§15 与决定记录；补齐 pass1 精确字节候选定位、范围选择、跨会话链接等 M1 后端缺项。人工核对持久目录的至少 25 条参考决定和 5 个问题后，再进行真实效果验收；真实 M1 达标前不开发界面。完整目标仍未完成。
+
+## 2026-10-09 · M1 候选定位、链接、概览与 GitHub 初始维护
+
+- 任务：落实 §7.5 精确字节位置、§7.8 逐对跨会话链接、§7.9 claims 概览；按用户提供的 GitHub 仓库开始维护。
+- 改动的文件：新增 `rg/extract/locator.py`、`linker.py`、`overview.py`、链接/概览提示、`rg/store/migrations.py`、`tests/golden/test_locations.py`、`test_links_overview.py`、`tests/test_migrations.py`、`scripts/smoke_derived.py` 和 `.github/workflows/ci.yml`。修改 JSON 位置映射、瘦身、遮盖、schema、worker、数据库入口、CLI、试点定位脚本、worker 模拟测试；格式化统计脚本。更新 README、需求落实、决定与本文件；新增本轮验收文档及合成接口记录。
+- 备份：工作区允许清单备份到仓库外临时 tar.gz，逐文件摘要比对，77 个文件一致；未复制凭据或真实试点材料。
+- 定位：程序给出源 JSON 的字节范围，模型不能发明偏移；规则和模型来源分别持久化。处理重复块、转义、工具输出尾部和遮盖区域。版本 1 数据库事务升级到 2，失败回滚，L0 保留。
+- 链接：跨会话、同完整范围，加标签 FTS 或同文件版本作为检索线索；每对只有两张卡片和一侧原文。输入 ≤3000、输出 ≤1000，总量 ≤4000。合法结果为 candidate；独立 attempt 合并和非法方向拒绝；不确定可返回 none。
+- 概览：直接从 claims 分页，不读 L0 或旧摘要。记录输入与引用 ID，防回流标记保护，全部成功后原子发布。人工复核改变状态后重新计算缓存。
+- `uv sync --locked`：`Resolved 23 packages in 10ms`；`Checked 22 packages in 26ms`。
+- `uv run pytest -q`：`94 passed in 13.42s`。
+- `uv run pytest tests/golden -q`：`72 passed in 12.14s`；仍不代表完整 §15 通过。
+- `uv run ruff check rg tests scripts`：`All checks passed!`。
+- `uv run pyright rg`：`0 errors, 0 warnings, 0 informations`。
+- `uv run rg --help`、`rg link --help`、`rg overview --help`：退出码均为 0，link/overview CLI 可用。
+- `uv run python scripts/smoke_deepseek.py --key-file api_key --output docs/acceptance/deepseek_locations_smoke.json`：2 片段、5 候选、0 人工失败、0 覆盖缺口、全部 candidate、scope 与缓存通过。实测输入 598/3071/675/3266，实际全输入 578/3051/655/3246，输出 58/354/82/530；仅合成会话。
+- `uv run python scripts/smoke_derived.py --key-file api_key`：直接构造 2 条合成候选；1 对链接返回 none、0 失败、缓存通过；概览 1 页。链接实测输入 748、实际 728、输出 238；概览实测 695、实际 675、输出 353。不是实际提取效果验收。
+- GitHub：远端初始仅 LICENSE，已连接 origin 并从初始提交建立 `codex/m1-backend-20261009`。代码、公开中文文档、合成 fixtures 和离线 CI 准备提交；远端 PR 及验收结果完成后追加记录。
+- 完整输出：`docs/acceptance/M1定位链接与仓库验收_20261009.md`。
+- 打包与入库检查：`uv build --wheel` 成功；wheel 41 个文件，6 个必要的 schema/迁移/提示入口均存在，实际密钥匹配 0。88 个待提交文件实际密钥匹配 0，原规格副本字节一致；凭据、私有清单、工具和 Word 归档均被忽略。
+- 下一步：完成本轮远端提交与 CI 检查后结束任务。下个任务读本文件末尾、§2 与相关章节，继续范围选择/链接调度等 M1 缺项；由人工核对至少 25 条参考和 5 个问题后进行真实效果验收，达标前不开发界面。原始规格保持不变，真实材料和凭据不外发、不入库。
+
+## 2026-10-09 · GitHub 写入受限与本地交付
+
+- 任务：完成可审阅的维护提交；记录真实远端写入结果。
+- 改动的文件：新增 `docs/PR草稿.md`，补充本轮验收与本文件；维护成果保存于本地开发分支，公开代码 bundle 存放在忽略的 `.cache/researchgraph-backend-20261009.bundle`。
+- 远端结果：GitHub 连接器创建 tree 与分支均返回 `403 Resource not accessible by integration`；本机 HTTPS 无可用登录，SSH 返回 `Permission denied (publickey)`。远端仍只有原始 LICENSE，未创建 PR；GitHub CI 未执行。full access 不提供 GitHub 服务的写入认证。
+- 本地结果：代码与必要的中文文档已可审阅，94 个测试、72 个固定案例及 ruff/pyright 通过；以上命令输出见本轮验收。后续提交和 bundle 完整性验证追加在交付结果中。
+- 下一步：恢复 GitHub 连接器写入权限或本机 Git 认证后，推送 `codex/m1-backend-20261009` 并创建草稿 PR，再检查远端 CI。下个开发任务读本文件末尾及 §2/相关章节，继续 M1 缺项；真实效果门槛仍待至少 25 条人工参考和 5 个正式问题。
+- 交付检查：实现提交 `d982ceb`，89 个新增文件实际密钥匹配 0；`git diff --cached --check` 无输出、退出码 0。`git bundle verify` 通过，独立临时目录恢复 bundle 后，90 个已跟踪文件与工作区逐份字节一致，实际密钥匹配 0；包含原有 LICENSE。bundle 同时保留 HEAD 与开发分支引用，默认克隆可恢复。取消该开发分支对 origin/main 的临时跟踪，避免后续推送目标含糊。
+
+## 2026-10-09 · M1 链接调度、额度暂停与标识符遮盖
+
+- 任务：补齐 §7.8 跨页链接调度，并落实 §7.10 每日上限的暂停恢复。开始时读取本文件末尾、§2、§7.7–§7.10 与决定记录。
+- 改动的文件：`rg/extract/linker.py`、`worker.py`、`redact.py`、`prompts/link.txt`、`rg/slim/tokens.py`、`rg/store/migrations.py`、`rg/cli/main.py`；新增 `rg/store/locking.py`、`tests/golden/test_link_scheduling.py`、`test_input_identifiers.py`，更新链接与迁移测试。更新 README、需求落实、决定、PR 草稿和本文件；新增本轮验收与合成接口成功/失败记录。
+- 链接：版本 3 进度表记录 pending/done/failed；首次 50 对后可继续余下候选，已完成项不计数/生成。失败默认跳过，显式重试复用人工任务。系统进程锁限制同项目并发，导入仍可写库；进程终止释放锁。成功关系提交后的中断可以恢复进度，不重复候选。
+- 暂停：每日额度不足保留当前项与覆盖缺口，不拆片或新增人工失败；接口不可用保留链接 pending。成功重试清除运行和暂停通知的旧错误。
+- 遮盖：修复摘要数字被手机号规则误遮盖而使 pair ID 失配；只在规定的程序标识符路径保留原值，自由文本保持遮盖。none 输出端点必须为 JSON null；模型的错误端点结果作废，失败材料保留。
+- `uv sync --locked`：`Resolved 23 packages in 12ms`；`Checked 22 packages in 111ms`。
+- `uv run pytest -q`：`111 passed in 22.96s`。
+- `uv run pytest tests/golden -q`：`88 passed in 21.88s`；仍不代表完整 §15 通过。
+- `uv run ruff check rg tests scripts`：`All checks passed!`。
+- `uv run pyright rg`：`0 errors, 0 warnings, 0 informations`。
+- `uv run rg --help` 和 `uv run rg link --help`：退出码 0；新增 `--retry-failed`，`--limit` 说明为新任务/重试上限。
+- `uv build --wheel`：成功；打开 wheel 检查 `wheel_files=42 required_missing=0 actual_secret_matches=0`。原规格副本字节一致；已批准的试点目录三份材料仍存在，仅输出数字。
+- 中断前的 DeepSeek 合成链接/概览测试已落盘：1 对返回 none、0 失败、缓存通过、概览 1 页、全部 candidate。链接发送前实测 911、实际全输入 891、输出 214；概览实测 695、实际 675、输出 406。原句柄中断后丢失且未发现活进程，没有重新调用以补造退出码；独立核验输出 schema 和结果，`synthetic_artifact_check=passed model_outputs=2 invalid_links=0 link_cache_ok=true`。
+- GitHub 状态仍未改变：之前连接器写入 403，本机 Git 缺可用认证；未推送、无 PR、远端 CI 未执行。继续完成本地维护和公开代码恢复包，不重复尝试未改变认证条件的写入。
+- 完整输出：`docs/acceptance/M1链接调度验收_20261009.md`。所有接口材料仅为合成输入，未发送 Atlas 真实材料。
+- 提交前检查：`git diff --cached --check` 无输出、退出码 0。100 个已跟踪文件、24 个本轮暂存文件，实际密钥匹配 0，禁止入库的私有/环境文件 0。
+- 下一步：结束本任务，下个会话读取本文件末尾、§2 与相关章节，继续 M1 的未指定范围工作集选择或监控缺项；真实效果仍待至少 25 条人工参考和 5 个正式问题，达标前不开发界面。GitHub 认证恢复后再推送本地分支并检查远端 CI；完整开发目标保持进行中。
+
+
+## 2026-10-09 · GitHub 认证只读诊断
+
+- 任务：检查 GitHub 认证与连接情况；未实际推送、创建远端对象或修改认证配置。
+- 改动的文件：仅在 `docs/PROGRESS.md` 追加本次诊断；已有代码和文档改动保留。
+- 验收命令与结果：公开 GitHub API 和 ResearchGraph 元数据均返回 `HTTP 200`；`git ls-remote origin HEAD` 退出码 0，返回 `2e6feaa3781e1a894005275acd56fd481d878d19 HEAD`。
+- 本机写入预检：设置 `GIT_TERMINAL_PROMPT=0`、`GCM_INTERACTIVE=Never` 后运行 `git push --dry-run origin HEAD:refs/heads/codex/m1-backend-20261009`，退出码 128，输出 `fatal: could not read Username for 'https://github.com': terminal prompts disabled`。`gh` 未安装，`GH_TOKEN` 和 `GITHUB_TOKEN` 均未设置；存在 credential helper 配置，但本次未能提供可用凭据。
+- 连接器验收：`get_profile` 成功识别 `FangWHao`；`get_repo` 成功读取仓库，并返回账号 `admin=true`、`push=true`；`list_installed_accounts` 返回 `accounts=[]`。账号权限不能证明集成拥有写入权限；本次没有复测连接器写操作，此前记录的 403 不能写成已恢复。
+- 结论：网络与连接器账号认证有效；本机 HTTPS 推送缺少凭据，连接器 App 安装/仓库授权需要检查。
+- 下一步：配置本机 GitHub 凭据或恢复连接器仓库写入授权，再按既有维护授权推送并检查 CI。本次诊断结束，不继续开发。
+
+
+## 2026-10-09 · 准备本机 GitHub 浏览器登录
+
+- 任务：按用户要求处理认证问题，准备本机 Git 登录。
+- 改动的文件：安装官方 GitHub CLI 到仓库外 `/home/fanghao/.local/bin/gh`；追加本文件和决定记录。未修改项目代码、推送提交或写入远端。
+- 验收：官方 GitHub CLI 发布资产 SHA256 与官方 API 提供的摘要一致；`/home/fanghao/.local/bin/gh --version` 输出 `gh version 2.102.0 (2026-09-30)`，退出码 0。
+- 登录：已运行 `gh auth login --hostname github.com --git-protocol https --web --scopes workflow`，选择为 Git 使用同一凭据。生成浏览器设备授权码，等待账号持有人在 GitHub 完成授权；未将授权码或凭据写入文档。
+- 下一步：用户完成浏览器授权后，检查账号为 `FangWHao`、配置 Git helper 并重复推送 dry-run。当前不能声称认证已恢复；等待用户完成必要的账号授权。
+
+
+## 2026-10-09 · 本机 GitHub 认证恢复并验收
+
+- 任务：用户完成浏览器授权后，验证本机登录与仓库推送权限。
+- 改动的文件：仓库外 GitHub CLI 登录配置和 Git credential helper；凭据文件权限设置为 0600。仓库内仅追加 `docs/PROGRESS.md`；未实际推送或创建 PR。
+- 备份：修改 Git helper 前备份 `/home/fanghao/.gitconfig` 到 `/tmp/researchgraph-git-auth-backup-gi0kqtcl/gitconfig`，逐字节校验通过，备份权限 0600。
+- 验收：登录进程退出码 0，输出 `Authentication complete`、`Logged in as FangWHao`；`gh auth status --hostname github.com` 退出码 0，活动账号为 FangWHao，HTTPS 协议，授权范围包含 repo 和 workflow。
+- `gh auth setup-git --hostname github.com`：退出码 0，Git 已使用 GitHub CLI 凭据。
+- `gh api user --jq .login`：退出码 0，输出 `FangWHao`。
+- `gh repo view FangWHao/ResearchGraph --json nameWithOwner,viewerPermission`：退出码 0，输出 `{"nameWithOwner":"FangWHao/ResearchGraph","viewerPermission":"ADMIN"}`。
+- 非交互验收 `git push --dry-run origin HEAD:refs/heads/codex/m1-backend-20261009`：退出码 0，输出 `To https://github.com/FangWHao/ResearchGraph.git` 和 `* [new branch] HEAD -> codex/m1-backend-20261009`。仅预检，远端分支未创建；真实推送的服务器校验与 CI 尚未验证。
+- 限制：当前环境没有可用系统密钥环，GitHub CLI 使用本机配置文件保存凭据，已限制文件访问权限；未读取或输出凭据明文。连接器写入权限未复测，本机认证恢复不能代表连接器 403 已修复。
+- 下一步：本机 GitHub 认证任务结束；后续仓库维护可通过本机 Git/gh 完成，推送后再验证远端 CI。
+
+## 2026-10-09 · 接续 GitHub 维护与本机认证复核
+
+- 任务：链接调度实现已提交 `525b956` 后，恢复包比对发现另一项认证任务刚追加了本文件；保留协作记录，按原仓库维护授权接续发布。
+- 证据：临时恢复的 100 个文件中只有本文件与工作区不同，恢复版与已提交 Git 对象一致；实际密钥匹配 0。差异为认证任务追加记录，没有覆盖或回退它，旧已验证 bundle 仍保留，待最终提交后刷新。
+- 本轮只读复核：`gh --version` 为 2.102.0；`gh api user --jq .login` 输出 FangWHao；仓库 `viewerPermission=ADMIN`，origin 为 `https://github.com/FangWHao/ResearchGraph.git`。`git ls-remote --heads origin` 仅返回初始 main，`gh pr list --head codex/m1-backend-20261009` 返回空列表；以上命令退出码均为 0。
+- 改动的文件：保留本文件新增的认证记录，更新 PR 草稿和链接调度验收中的当前认证状态。实现与测试结果不变。
+- 下一步：提交文档，推送维护分支，建立草稿 PR，验证远端 CI；完成后刷新并独立恢复 bundle。完整开发目标仍未完成，主分支由评审合并。
+
+## 2026-10-09 · GitHub 草稿 PR 与首次远端验收
+
+- 任务：按已有维护授权完成推送、建立草稿 PR，检查真实远端 CI；保持完整开发目标进行中。
+- 改动的文件：本轮发布记录更新 `docs/PR草稿.md`、链接调度验收和本文件，实现仍为 `525b956`，认证协作记录提交为 `3966eac`。
+- `git push -u origin codex/m1-backend-20261009`：退出码 0，输出 `[new branch] codex/m1-backend-20261009 -> codex/m1-backend-20261009`，已设置同名上游；没有修改 main。
+- `gh pr create --base main --head codex/m1-backend-20261009 --draft --body-file .cache/pr-body.md`：退出码 0，返回 `https://github.com/FangWHao/ResearchGraph/pull/1`。复核为 OPEN、isDraft=true，base=main，head 为维护分支。临时正文为中文，未包含推送准备段和凭据。
+- 首次 push 运行 `37890513400` 与 PR 运行 `37890556219` 均 completed/success，验证 HEAD 为 `3966eac`。PR 远端日志：`111 passed in 4.97s`、`88 passed in 4.32s`、`All checks passed!`、`0 errors, 0 warnings, 0 informations`。
+- `gh run watch 37890556219 --exit-status --interval 10`：退出码 0，`✓ backend in 21s`，全部步骤通过。查看进程/运行均按实际句柄与状态完成，没有因观察超时重启工作。
+- 下一步：提交并推送这些发布记录，检查新 HEAD 的远端结果，刷新本地 bundle 并独立恢复比对后结束本任务。下个会话继续 M1 缺项；真实效果门槛仍需人工材料，M0–M4 未完成，草稿 PR 也不能替代完整产品验收。
+
+## 2026-10-09 · M1 提取监控与逐次用量历史
+
+- 任务：落实 §7.10 的利用率、校验拒绝、覆盖缺口和每日用量监控。开始读取本文件末尾、§2、§7.6–§7.10、§10 与决定记录；前任务已推送并通过远端验收，恢复包已独立核对 100 份文件。
+- 改动的文件：新增 `rg/extract/monitor.py`、`tests/golden/test_monitor.py`；修改 worker、validator、linker、overview、数据库入口、版本 4 迁移、CLI、迁移测试和合成接口脚本。更新 README、需求落实、决定、PR 草稿和本文件；新增监控验收及初次/最终合成接口记录。
+- 行为：每次尝试保留实测、实际用量、结束原因和失败；缓存不新增尝试。显式尝试 ID 避免两个 worker 交错时状态串线。片段占比按项目与片段去重，重试不放大占比；校验拒绝和引用失败分开。日额度暂停不冒充输入超长；未知实际用量保留预留。跨午夜按 UTC 预留日归属，旧历史不补造，缺口按事件阶段分页并附可查证的事件 ID。
+- `uv run pytest -q`：`129 passed in 29.92s`。
+- `uv run pytest tests/golden -q`：`105 passed in 28.19s`；完整 §15 仍未通过。
+- `uv run ruff check rg tests scripts`：`All checks passed!`。
+- `uv run pyright rg`：`0 errors, 0 warnings, 0 informations`。
+- `uv run rg --help` 与 `uv run rg health --help`：退出码 0。独立合成临时库实际运行 health CLI：`health_cli=passed project_filter=true daily_budget=50000 empty_gaps=0`。
+- `uv run python scripts/smoke_derived.py --key-file api_key --output docs/acceptance/deepseek_monitor_final_smoke.json`：退出码 0，1 对链接返回 none、0 失败、缓存通过、概览 1 页、全部 candidate。两次尝试均 ok；输入 1566、输出 556、总量 2122，与每日计数一致，未结算为 0。6 个种子阶段缺口保留，因为脚本没有执行 slim/pass1/pass2；没有发送真实 Atlas 材料。
+- 原规格副本仍字节一致。完整输出见 `docs/acceptance/M1提取监控验收_20261009.md`；打包、暂存密钥与恢复包检查在交付收尾运行。本轮提交继续追加到现有草稿 PR #1；远端最新检查以相应提交为准。
+- `uv build --wheel`：成功；打开 wheel：`wheel_files=43 required_missing=0 actual_secret_matches=0 source_mismatches=0`，其中源码比对覆盖监控、worker 和迁移三个入口。恢复与提交检查只处理公开代码，不包含凭据或真实试点。
+- 提交前检查：`git diff --cached --check` 无输出，退出码 0；`tracked_files=109 staged_files=23 actual_secret_matches=0 forbidden_tracked_files=0`。未把 formatter 对无关 provider 的纯排版变化纳入本轮。
+- 下一步：完成本轮推送、远端检查和恢复包收尾后结束任务；下个会话继续 M1 的范围选择、规则确认或真实评估准备。M0–M4 的完整目标保持进行中，实际试点仍需人工参考与正式问题，达标前不开发界面。
+
+## 2026-10-09 · 同会话并发保护与响应缓存恢复
+
+- 任务：落实 §7.6 同会话顺序和 §7.10 重复处理；开始核对进度末尾、§2、§7.6–§7.10 与现有系统进程锁/尝试账本决定。前一监控提交 `03b0012` 已推送，PR 检查 37894266046 与推送检查均 success；恢复包仍保留前一已验证版本。
+- 改动的文件：worker、validator、overview 和通用锁；新增 `tests/golden/test_concurrency.py`，调整提取、监控和范围复核测试；更新 README、需求落实、决定、PR 草稿、本文件，新增中文并发验收记录。
+- 行为：同会话、同模型任务和同项目概览非阻塞互斥；项目进入任务缓存键。完整响应与尝试状态原子保存，重启可复用，仍严格验证原文；入库事务防重复，成功记录不被后续错误请求改成 invalid。忙不算失败，不拆片，不进人工失败队列，不关闭覆盖缺口。采集及不同会话可并行；服务离线仍能使用成功缓存。
+- `uv run pytest tests/golden/test_concurrency.py tests/test_review_scope.py tests/golden/test_extraction.py -q`：`29 passed in 5.70s`。实际线程和子进程验证：相同模型任务只生成 1 次，相同响应仅入库 1 批；终止后可取锁恢复，未知用量保留原预留，没有根据文件存在推断进程存活。
+- `uv run pytest -q`：`136 passed in 21.71s`。
+- `uv run pytest tests/golden -q`：`112 passed in 20.17s`；完整 §15 仍未通过。
+- `uv run ruff check rg tests scripts`：`All checks passed!`；`uv run pyright rg`：`0 errors, 0 warnings, 0 informations`。
+- `uv run rg --help`：退出码 0；`uv build --wheel`：成功。打开 wheel 输出 `wheel_files=43 required_missing=0 actual_secret_matches=0 source_mismatches=0`；原规格副本字节一致。
+- 首次完整回归为 127 项通过、2 项失败，原因是旧复核用例把不同结果写在同一个运行里；改为独立运行后通过。未放宽重复判定以绕过失败。并发测试使用合成提供方，没有新增远程模型调用。
+- 提交允许清单检查：`git diff --cached --check` 无输出、退出码 0；`tracked_files=111 staged_files=14 actual_secret_matches=0 forbidden_tracked_files=0`。未纳入凭据、真实材料、数据库、环境、缓存与本地 Word 归档；草稿 PR 正文为中文，由当前文件生成。
+- 下一步：完成允许清单提交、现有草稿 PR 推送与对应 HEAD 的远端验收，刷新恢复包并独立恢复比对后结束本任务。下个会话继续 M1 未指定范围的选择、自动确认规则或真实评估准备；人工参考门槛仍待满足，整个 M0–M4 未完成。
+
+## 2026-10-09 · 独立原话确认与前端本地复核工作区
+
+- 任务：§2、§5.3、§7.6–§7.7 原话规则确认，以及用户明确授权前端子 agent 后的 §9–§11 界面/本地 API。开始核对本文件末尾、相应章节与决定；基线 c91d3ea 已推送、远端验收和恢复包均通过。前端授权改变开发顺序，不改变真实 M1 门槛。
+- 改动的文件：新增 rg/extract/rules.py、differences.py、rg/api/{server,views,__init__}.py、tests/test_api.py、tests/frontend_server.py、tests/golden/test_rule_confirmation.py；修改 validator、worker、working_set、report、CLI、schema 注释。新增 web 的 React/TS 页面、图、样式、API 客户端、类型、语义/浏览器测试及 package/锁文件/Vite/Playwright 配置；更新 CI、README、需求落实、决定、PR 草稿、本文件，新增两个中文验收记录。
+- 原话规则：模型仍只插入 candidate；独立重读完整 L0 用户声明，核对身份、完整 scope、动作、理由、端口与字节，追加 rule:explicit-user-v1 审核证明。同名、未知范围、条件语句、工具/assistant、部分引用、自编理由均不自动确认；已有人工确认优先。规则与候选同事务回滚，自身规则动作不使完成缓存失效。
+- 人工复核：同对象/类型/范围的有效人工确认差异可查。批量复核先校验全部成员与 revision，原子追加；人工修改另存 confirmed 替换版，原行和证据保留。API/报告区分原提取来源与实际审核来源，人工修改版不会因没有第二次审核被标成未复核。
+- 前端：问题、方案、队列、完整事件时间线、健康、原文字面量检索和证据抽屉。严格分范围，同瞬间冲突和缺少发生时间显示待核对。图使用 React Flow/ELK；同范围汇合语义，多条记录不任意选择，候选过滤一致；partial/缺失端点/隐藏候选时拒绝折叠，保留组内部和边界证据。缺少传播、运行映射和产物 diff 如实显示。
+- 服务：127.0.0.1 同源服务，每次随机令牌，页面清除 hash；Host/Origin/Fetch-Site、静态目录/符号链接、请求体上限、人工身份和 409 均经真实 HTTP 验证。serve 默认首页，review --open 直接打开队列。wheel 不含静态资源，独立部署用 --web-dir。
+- uv sync --locked：Resolved 23 packages，Checked 22 packages；pnpm install --frozen-lockfile：Lockfile is up to date, resolution step is skipped，pnpm 12.10.1，退出码 0。
+- uv run pytest -q：189 passed in 37.04s。包含新增 16 项 HTTP/CLI 和 37 项规则用例。
+- uv run pytest tests/golden -q：149 passed in 23.16s；完整 §15 仍未通过。
+- uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations。
+- uv run rg --help、serve --help、review --help：退出码均为 0，包含服务构建目录与直接复核入口。
+- cd web && pnpm test：Tests 11 passed (11)；pnpm build：tsc --noEmit 和 Vite 构建通过。首页约 272 kB、图约 184 kB、ELK 约 1431 kB 懒加载；不把调高警告阈值当作缩小包体积。
+- pnpm test:browser：4 passed (6.8s)；211 条合成候选跨界面 50 条页和 API 200 条页全部确认，检查所有原行仍为 candidate、有效状态 confirmed、来源 human。另验 hash 清除、图原文、完整时间线、健康未知值、项目/筛选切换、另一窗口 409、刷新、人工修改和检索。桌面/手机截图已人工查看，390 像素无横向溢出；本机仅解压临时浏览器运行库，CI 安装正式浏览器依赖。
+- uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl。打开比对：wheel_files=48 required_missing=0 actual_secret_matches=0 source_mismatches=0 private_or_static_files=0。原规格 Git 差异为 0。
+- 验收修复：真实浏览器发现切项目时卸载队列会重置筛选，已保持独立加载；审查发现问题/图/汇合的跨范围回退与半行裁切，均已修正。新增汇合测试最初漏填 payload 必填类型字段，补齐后重新通过构建；没有放宽校验或用旧构建声称新源码通过。当前无新增真实会话读取或远程模型调用。
+- 维护入口：现有草稿 PR #1；远端成功必须按当前提交另行验证。提交只选公开源码、中文文档与合成测试；凭据、真实材料、环境、构建、缓存和截图保持忽略。恢复包在提交后更新并独立核对。
+- 提交前允许清单验证：git diff --cached --check 无输出、退出码 0；tracked_files=139 staged_files=40 actual_secret_matches=0 forbidden_tracked_files=0。wheel 对全部 43 份源码/SQL/提示资源核对，required_missing=0；中文 PR 正文从当前草稿生成，不含推送状态段和凭据。
+- 下一步：下个任务继续 M1 未指定范围的工作集选择、真实人工参考准备与追加事件的增量提取，再推进 M2 采集/钩子/快照、MCP 和完整 M4 图语义。正式人工参考与问题仍缺失，完整 M0–M4 目标保持进行中，不以本轮 UI 或固定案例代替质量验收。
+
+## 2026-10-09 · 追加事件增量提取与持久断点计划
+
+- 任务：§2、§7.2–§7.10 的增量处理与完整覆盖。开始读取进度末尾、相应章节及预算/重叠/缓存决定；上一提交 da69367 的后端、前端与浏览器 CI 已通过，现有恢复包已验证。前端子 agent 的基础工作区已完成，完整目标继续推进。
+- 改动的文件：新增 rg/extract/progress.py、tests/golden/test_incremental.py；修改 worker、validator、slimmer、CLI、版本 5 迁移及迁移测试；更新 README、需求落实、决定、PR 草稿、本文件，新增中文增量验收。
+- 行为：不可变片段计划持久化所有权、字节边界、原始上下文与状态。追加回复/工具结果只处理新事件；旧正文不重复提取，排除与镜像不影响真实回合边界。中断恢复已完成子片段和覆盖视图，按原始顺序继续；长正文任一窗口 pending 仍保留缺口。候选/无候选结果与完成计划原子提交。人工失败只在显式 extract --retry-failed 时重发，队列更新去重、成功关闭，历史尝试保留。
+- 旧库：事务升级至版本 5，保留 L0、定位和尝试历史；仅继承配置、完整前缀和项目证明精确匹配的旧完成缓存。预算/模型/范围/人工审核变化会重新核对，旧配置缺口不阻止新配置完成。元数据清单仍全量读取，不声称大库性能已验收。
+- uv run pytest tests/golden/test_incremental.py -q：15 passed in 6.27s。
+- uv run pytest -q：205 passed in 45.04s；uv run pytest tests/golden -q：164 passed in 32.24s。完整 §15 尚未通过。
+- uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations。
+- uv run rg --help、extract --help：退出码均为 0，新显式重试选项有效，输入默认仍为 128000。
+- cd web && pnpm test：Tests 11 passed (11)；pnpm build：TypeScript 与 Vite 通过；pnpm test:browser：4 passed (7.4s)，合成库真实 HTTP 与 Chromium 流程通过。本轮没有修改前端源码。
+- uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl。打开归档核对：wheel_files=49 source_resources=44 required_missing=0 source_mismatches=0 actual_secret_matches=0 private_or_static_files=0；缓存目录构建提示未形成实际打包泄露。
+- 初始回归复现追加回复重复旧决定；后续修复完整窗口覆盖汇总和排除事件的重叠边界。测试自身的两次失败为错误查询列和未触发多片段的合成预算，已修正测试条件并重跑。所有新增用例为合成材料，没有读取完整真实会话或远程模型调用。
+- 下一步：完成允许清单提交、现有草稿 PR 的新 HEAD 远端验收及恢复包独立还原后结束本任务。下个会话继续 M1 未指定范围的工作集选择，再推进 M2 采集与快照、MCP 和完整 M4；正式人工参考与问题仍待核对，完整 M0–M4 不标完成。
+- 提交前允许清单检查：git diff --cached --check 无输出、退出码 0；tracked_files=142 staged_files=14 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True。只包含公开源码、中文文档与合成测试；远端结果按本次提交核对。
+
+## 2026-10-09 · 扫描轮询与 spool 消费基础
+
+- 任务：§2、§6.1/§6.5/§6.6、§10 的轮询与提示消费。开始读进度末尾、相应章节、里程碑边界和已有决定；上一增量提交 302f24b 已推送，两项 CI 均成功，当前恢复包已验证。完整目标保持 M0–M4，没有把质量门槛改成代码测试。
+- 改动的文件：新增 rg/ingest/{sources,spool,watch}.py、tests/golden/test_spool_watch.py；修改 scanner、CLI、backup、health、版本 6 迁移与迁移测试；更新 README、需求落实、决定、PR 草稿、本文件，新增中文扫描/spool 验收。
+- 行为：显式来源持久登记，定时递归发现新日志并复扫既有 import 文件。project 不从 cwd 推断，未知进收件箱；归属歧义与越界符号链接拒绝读取。来源文件、扫描消费与持续轮询使用系统进程锁。扫描器独立补齐，采集不联网、不调模型、不执行历史命令。
+- spool：原始字节原子落盘，原件复制对象库后与不可变回执和 queued 任务事务登记；游标提交后确认。未知事件/坏 JSON 保留 failed，未归属/未出现/忙保留 queued；单轮最多 100 条按更新时间轮转，失败默认不重试。临时文件不消费，超 4 MiB 与符号链接提示保留并报告。确认前或确认后清理前退出均可恢复，已提交回执可不依赖队列文件重放；backup 包含全部回执原件。health.ingest 只统计，不把 running 当存活证明。
+- uv run pytest tests/golden/test_spool_watch.py tests/test_migrations.py -q：23 passed in 5.12s；uv run pytest -q：222 passed in 48.87s；uv run pytest tests/golden -q：180 passed in 35.67s。完整 §15 尚未通过。
+- uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations。uv run rg --help、scan --help 退出码均为 0。
+- 实际 CLI 子进程轮询合成 fixtures、Ctrl+C 退出再复扫：actual_cli_watch_exit=0 first_cycle_files=1 first_cycle_events=8 repeat_events=0 ctrl_c_stopped=True。真实 Linux 子进程在日志提交后 SIGKILL，恢复保留原回执与全部两条事件，重扫无新增；不是本机全部真实会话的 M2 验收。
+- uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl。归档核对：wheel_files=52 source_resources=47 required_missing=0 source_mismatches=0 actual_secret_matches=0 private_or_static_files=0。cd web && pnpm test:browser：4 passed (7.2s)；前端源码未改动，真实本地 HTTP 与 Chromium 仍通过。
+- 首次针对回归的 1 个失败是测试为两个项目使用同一唯一根目录，修正合成根目录后通过；没有放宽项目/解析器歧义检查。撤回 formatter 对无关 provider 的排版变化，并重建 wheel 比对当前源码。本轮不读取真实完整会话、不调用远程模型、不安装钩子、不改用户设置。
+- 下一步：完成允许清单提交、现有草稿 PR 的新 HEAD 检查和独立恢复包还原后结束本任务。下个会话继续实际钩子与影子快照、运行映射；未指定范围的工作集、MCP 和完整图语义仍需落实，真实参考与质量门槛仍待核对，整个 M0–M4 不标完成。
+- 提交前允许清单检查：git diff --cached --check 无输出、退出码 0；tracked_files=147 staged_files=16 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True。仅公开源码、中文文档与合成测试，凭据/数据库/队列/缓存不入库，远端以本次提交实际结果为准。
+
+## 2026-10-09 · 实际钩子与影子快照基础
+
+- 任务：§2、§6.8、§8.2、§11 的钩子、工作区快照与备份。开始读取进度末尾、相关章节和决定，上一扫描提交 8b40a68 已推送，两项 CI 成功，恢复包已验证。按 openai-docs 技能核对官方 Codex 钩子格式，保留 §14.8 开发会话禁用；完整目标仍是 M0–M4。
+- 改动的文件：新增 rg/hooks、rg/snapshot、tests/golden/test_snapshots_hooks.py；修改 CLI、spool、对象写入、backup、health、版本 7 迁移与迁移测试、pyproject；更新 README、需求落实、决定、PR 草稿与本文件，新增中文快照/钩子验收。
+- 行为：原始输入先原子保存，钩子异常静默 exit 0、不联网、不调模型、不读 transcript、不执行输入命令；明确根目录来自只读清单，init/hook-config 仅生成示例。独立裸仓库/index/暂存和目录句柄保存原始字节、执行位与链接目标，忽略规则有效，大文件/嵌套仓库明确遗漏，超时/忙/变化无有效提交。dirty 无法安全核定时显示未知，不由 Git status 重读遗漏文件。
+- 持久性：独立快照原件与不可变回执追加入库，原提示先确认也不影响快照；提交/树/blob 全部存在才固定引用。原目录删除、提交后退出、队列缺失均可恢复一次。版本 6→7 失败整体回滚，旧快照不补造元数据。backup 与写入共用影子锁、不跟随队列链接，检查备份自身引用后才写成功清单；health 统计 skipped/partial/async_race/旧元数据未知。
+- uv sync --locked：Resolved 23 packages，本项目重新安装；uv run rg --help、snapshot --help、hook-config --help 退出码均为 0。实际安装 rg-hook 子进程：installed_hook_exit=0 stdout_bytes=0 stderr_bytes=0 raw_unchanged=True sqlite_created=False。
+- uv run pytest -q：246 passed in 51.75s；uv run pytest tests/golden -q：203 passed in 37.90s。新增 23 项快照/钩子固定案例及版本 7 迁移回滚；完整 §15 尚未通过。
+- uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations。
+- cd web && pnpm test:browser：4 passed (7.8s)，现有本地 HTTP 与 Chromium 交互通过；前端源码未修改。uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl。归档核对 wheel_files=61 source_resources=56 required_missing=0 source_mismatches=0 actual_secret_matches=0 private_or_static_files=0，rg-hook 入口存在。
+- 本机公开源码最终 20 次引擎基准：p95_ms=1426 skipped=0 valid_new_snapshots=20 captured_unique_paths=157，user_index_unchanged=True forbidden_snapshot_paths=0 actual_secret_matches=0 hooks_installed=False。按超过 300 ms 的规则保存 async 模式和请求/采集时间；不是实际客户端整条调用链的验收。本机独立备份恢复 objects=64 events=0 valid_shadow_snapshots=42 integrity=ok，只有公开源码快照和缺口元数据。
+- 验收修复：第一次裸仓库初始化的 work-tree 参数冲突已修正；挂载盘暂存的 20 次超时如实记录，随后改进暂存、目录访问和元数据。坏 JSON 的异常类测试修正为 JSONDecodeError；错误参数测试已隔离 RG_DATA_DIR，并撤回本任务产生的 13 行类名日志，其他记录未删。补齐完整引用、原目录删除、备份锁与链接、大文件不重读等检查，没有放宽引用/预算校验或把失败当成成功。
+- 下一步：完成允许清单提交、现有草稿 PR 新 HEAD 的远端检查和恢复包独立还原后结束本任务。下个会话继续运行/编辑/产物映射、后台大文件摘要、未指定范围的工作集、MCP 和完整图语义；真实参考、正式钩子与质量门槛仍待落实，整个 M0–M4 不标完成。
+- 提交前允许清单检查：git diff --cached --check 无输出、退出码 0；tracked_files=158 staged_files=24 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True。仅公开源码、中文文档与合成测试，凭据/快照/数据库/队列/缓存不入库，远端结果按新提交核对。
+
+## 2026-10-09 · 前端健康统计续开发
+
+- 任务：用户明确要求前端子 agent 开发，本轮落实 §2、§9、§10 中已有后端接口支持的健康展示。开始读取进度末尾、相关规格和决定，工作树干净；基线 01f60a7 的 bundle 验证可用，子 agent 另存并核对前端源码副本。上一快照提交的推送与 PR 两项远端检查均成功，完整 M0–M4 仍未验收。
+- 改动的文件：前端子 agent 修改 web/src/{Views,types}，新增 HealthView、health 逻辑与样式、两份健康测试和中文续开发验收；父任务扩展 tests/frontend_server.py 的合成健康/模型账本种子，整合 README、需求落实、决定、PR 草稿和本文件。没有修改生产后端、原始规格或依赖锁。
+- 行为：健康页分别展示全库来源/提示回执与任务、当前项目的重叠快照缺口和 UTC 模型阶段观测。字段缺失与真实零值分开；未完成账本不代表进程存活，异步标记不证明竞态错误，缺口计数不推算成功数。非 401 读错局部告警与重试，恢复后清除旧错误；401 沿既有登录逻辑处理。手机标题和统计范围分别成行，表格支持聚焦及方向键横向滚动。
+- cd web && pnpm test：Test Files 2 passed (2)，Tests 15 passed (15)，Duration 483ms；pnpm build：TypeScript 通过，181 modules transformed，built in 925ms；pnpm test:browser：8 passed (8.2s)。包含原四项完整交互与新增四项健康统计、项目切换、旧对象缺失、503 恢复、401 及手机访问验收。
+- uv run pytest -q：246 passed in 72.78s；uv run pytest tests/golden -q：203 passed in 60.71s；uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；uv run rg --help 退出码 0。全量与固定案例并行运行，耗时不作为性能基准；完整 §15 仍未通过。
+- 合成 HTTP 种子实测：registered_sources=2、known_source_paths=2、spool_receipts=3、spool_unfinished=2（queued/running 各一条）、spool_failed=1；主项目快照 4/1/2/2/1，空项目 1/1/0/0/0，批量项目全部为 0。pass1 输入占比未知、未发送；pass2 真实统计为 0%、一个引用拒绝样本。模型账本和快照行明确是合成统计边界，实际远程调用为 0，不作为拍摄引擎或研究效果证明。
+- 主 agent 核对源代码、接口口径、故障恢复与截图。桌面 1440 宽、小屏 390 宽的原始数据均已加载；发现标题被长范围说明挤断后由子 agent 最小修正，再次构建/浏览器验收并重拍，页面无横向溢出。截图和备份留在忽略目录，不读完整真实会话、不安装钩子、不改用户设置。
+- 下一步：完成本轮允许清单提交、现有草稿 PR 新 HEAD 远端检查及恢复包独立还原后结束本任务；下个任务继续运行/编辑/产物映射、未指定范围工作集和 MCP。正式人工参考及真实 M1/M2 质量门槛仍需核对，不将界面提前实现视为整个目标完成。
+- 提交前允许清单检查：git diff --cached --check 无输出、退出码 0；tracked_files=164 staged_files=14 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True。仅公开源码、中文记录与合成测试，凭据、截图、数据库、私有材料和缓存不纳入提交；远端结果按本轮新 HEAD 核对。
+
+
+## 2026-10-09 · L1 运行、编辑与前端证据
+
+- 任务：落实 §2、§5.1–5.3、§6.1–6.4、§8.1–8.3、§9 的运行与编辑记录；按用户授权由前端子 agent 接入。开始读进度末尾、相关章节与决定；基线 7e2659b 的恢复包已验证。中断后核对实际工作树和进程，旧子 agent 不在 live 列表，新的前端子 agent 接续现有代码而非重写。完整 M0–M4 仍未验收。
+- 改动的文件：新增 rg/derive 的六个模块、tests/golden/test_l1.py；修改版本 8 迁移、scanner/codex/watch、slimmer、CLI、backup、health、API、迁移测试与合成浏览器种子。前端修改 App/Views/components/types、健康浏览器期望，新增 DateText、EventLocator、EvidenceRecords、l1 逻辑/样式和两份测试。更新 README、需求落实、决定、PR 草稿和本文件，新增中文运行/编辑与前端验收。
+- 行为：从已复制 L0 离线派生，只按同会话唯一调用/执行器句柄关联，不按命令或时间猜测。运行观察与编辑记录只追加，工作队列与事实同事务；无结果不是失败、退出码缺失未知、冲突保留事实并降为未知。stdout 与 is_error 不补运行结果，开始时间无记录则为空。结果元数据变化不因正文相同被去重；非字符串 cwd 不会中止摄取。
+- 版本：Claude 完整报告与核对补丁生成候选文本，摘要明确 sha256:tool-utf8；Codex 更新/删除只有补丁，新增前版本也未知。不读当前文件补旧 preimage，不绑定最近快照作运行 I/O。缺口、用户同时修改、换行边界、超限和请求不一致明确保存；backup 保留候选内容/补丁，原文件删除仍可恢复。版本 7→8 失败整体回滚、不捏造旧事实，旧瘦身缓存升级后撤销任意 stdout 退出码推断。
+- 前端：全库事件编号入口补齐正文搜索不包含工具事件的实际入口，编号明确跨项目；原文请求/结果/观测可导航，双时间、候选、仅补丁、等待/失败/排除及部分清单可核对。长命令最多 8000 UTF8 字节，有完整字节数和正文上方预览提示；280px 键盘滚动区域保留完整原文链接。差异每份及同事件合计最多 64000 字节、每份最多 2000 行，超限不冒充完整版本。运行输入/输出版本仍明确未记录。
+- uv sync --locked：Resolved 23 packages in 12ms，Checked 22 packages in 42ms；uv run rg --help、derive --help 退出码均为 0。实际已安装 CLI 删除合成源文件后三次 derive --limit 1，依次 done/remaining=1/1、1/0、0/0，最终 exited/code0，source_deleted=True、l0_unchanged=True。
+- uv run pytest tests/golden/test_l1.py -q：49 passed in 5.39s；uv run pytest -q：296 passed in 88.21s；uv run pytest tests/golden -q：252 passed in 75.41s。全部/固定案例并行运行，不作性能基准；49 项新 L1 案例和版本 8 回滚不替代完整 §15/M2。
+- uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；wheel_files=67 source_resources=62 required_missing=0 source_mismatches=0 actual_secret_matches=0 private_or_static_files=0，派生模块包含在包内。
+- cd web && pnpm test：3 files、21 tests passed，734ms；pnpm build：TypeScript 通过、186 modules、built in 1.41s；pnpm test:browser：13 passed (13.4s)。实际 HTTP/Chromium 核对运行、候选编辑、补丁、短命令和 404；独立合成响应核对旧字段、partial、超限预览与 401。真实后端超长命令另由固定案例验证，前端边界响应不作为该采集证明。
+- 验收修复：首轮前端新增三项因工具事件正文搜索未命中而超时，原八项通过；增加编号入口后最终十三项全部通过。后续补预览说明前置、键盘滚动、未知完整性和跨项目说明，并复验。父 agent 实看桌面完整编辑、小屏补丁及预览截图，页面/抽屉无横向溢出。前端冻结 13 个文件，副本、截图与构建产物均在忽略目录；不读真实完整会话、不调远程模型、不装钩子、不改个人设置。
+- 下一步：完成允许清单提交、现有草稿 PR 新 HEAD 的远端检查和恢复包独立还原后结束本任务。后续继续完整运行 I/O、后台大文件摘要、未指定范围工作集、显式记录与 MCP/完整图；真实人工参考、正式客户端及完整 M1/M2 门槛仍待核对，整个目标不标完成。
+- 提交前允许清单检查：git diff --cached --check 无输出、退出码 0；tracked_files=180 staged_files=37 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True。仅公开源码、中文记录和合成测试；密钥、真实会话、私有材料、截图、数据库、队列及缓存不入仓库，远端结果按本轮新 HEAD 核对。
+
+
+## 2026-10-09 · 人工问题入口与前端创建
+
+- 任务：§2、§5.1/5.4、§8.1、§9、§10 的人工 question 完整入口，前端继续由用户明确要求的子 agent 实现。开始读进度末尾、相关规格及决定，基线 7556835 工作树干净，已核对恢复包相同 HEAD。note 类型缺规格及决定，按 AGENTS.md 提问后留待答复；decide 歧义复核及客户端包装留后续任务。完整 M0–M4 仍未验收。
+- 改动的文件：新增 rg/record 的人工问题/schema 服务、tests/golden/test_manual_question.py；修改版本 9 迁移、CLI、API、物理来源筛选、健康统计、迁移测试及合成浏览器种子。前端修改 App/Views/types，新增 ManualQuestionDialog、manualQuestion 逻辑/样式及两份测试。更新 README、需求落实、决定、PR 草稿与本文件，新增中文后端/前端人工问题验收。
+- 行为：问题文字原样留存，手工来源 human/manual 直接 confirmed，确认问题不推导采用、证据成立或运行成功。未知范围保留 null，仅人工问题的独立 schema 与追加修改允许；漏交 scope 不清空范围，模型规则继续严格。L0 保留原回填时区，发生时间 UTC、入库时间独立；原件/引用/问题/回执同一事务，失败整体回滚。
+- 持久性：UUID 区分人工意图，已有内容重放返回原记录和当前图版本；不同项目/内容/身份/范围/时间冲突 409，新写入版本不一致不写入。两个连接并发只有一份原文/问题；旧重试不会撤销后续驳回。备份恢复保留原件和回执。虚拟 rg 输入不作为物理日志来源、不误报缺失、不再次提取。16000 字节正文、65536 字节原件、8000 字节引用窗口与 UTF8 边界有效。
+- uv sync --locked：Resolved 23 packages in 23ms，Checked 22 packages in 70ms；uv run rg --help、question --help 退出码 0。真实已安装 CLI 接收含命令替换/反引号/分号的合成文字，原样保存，第二次 UUID 重试 replayed=true；不执行输入文字。
+- uv run pytest tests/golden/test_manual_question.py tests/test_migrations.py -q：49 passed in 8.22s；uv run pytest -q：336 passed in 93.38s；uv run pytest tests/golden -q：291 passed in 80.06s。全量与固定案例并行，不作性能基准。39 项人工问题案例和版本 8→9 回滚不替代完整 M2/§15。
+- uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；wheel_files=70 source_resources=65 missing=0 mismatches=0 actual_secret_matches=0 private_or_static_files=0，人工记录模块包含在包内。
+- cd web && pnpm test：4 files、27 tests passed，627ms；pnpm build：TypeScript 通过、189 modules、1.31s；pnpm test:browser：19 passed (17.1s)。真实 HTTP 验证人工问题、JSON 原文窗口摘要、未知范围追加修改、成功后丢响应的同意图重放、真实 409 人工刷新、401、小屏和跨项目/迟到响应草稿保护；使用两个独立合成项目，原十三项用例均保留。
+- 验收修复：初次 CLI 测试选了无模块执行入口的路径，改用真实已安装 rg 后通过。前端首轮 17 项通过、1 项旧修改输入框定位超时，补稳定标签后全部通过；原文窗口按 JSON 转义字节核对，没有把解码文本冒充原文 hash。父审查发现旧请求晚到可能清掉新草稿，子 agent 修复意图核验并加真实 HTTP 延迟测试。父 agent 实看 1440 桌面与 390 小屏表单，无横向溢出；前端 9 文件冻结校验均 OK。
+- 边界：本轮只写合成材料，不读完整真实会话、不调远程模型、不装钩子、不改个人客户端设置。未保存草稿仅当前页面内存；本机操作/令牌是人工入口信任边界，human 字段不是操作系统身份认证，Agent MCP 候选入口尚待实现。
+- 下一步：完成允许清单提交、现有草稿 PR 新 HEAD 远端验收与恢复包独立还原后结束本任务。后续接续 decide 对象歧义复核、note 类型答复、客户端包装、MCP、完整运行 I/O、后台大文件摘要与全图语义；正式人工参考和真实 M1/M2 门槛仍待核对，整个目标不标完成。
+- 提交前允许清单检查：git diff --cached --check 无输出、退出码 0；tracked_files=191 staged_files=27 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True。只包含公开源码、中文文档及合成测试，前端冻结源码恒等；凭据、真实会话、私有材料、截图、数据库、缓存和构建产物不纳入提交。远端检查与独立恢复将按本轮新 HEAD 核对。
+
+
+## 2026-10-10 · 人工决定与对象歧义选择
+
+- 任务：落实 §2、§5.1–5.4、§8.1、§10 的 decide、全项目对象检索及歧义复核，前端按用户明确授权由子 agent 接续。10-09 开始、10-10 收尾；开始读进度末尾、相关章节及决定，基线 a8e2529 的恢复包 SHA256 与独立还原已核对。完整 M0–M4 仍未验收。
+- 改动的文件：新增 rg/record/{events,decide,targets,resolve}.py、rg/store/scopes.py、tests/golden/test_manual_decision.py；修改版本 10 迁移、Store、question 共用原件、规则/工作集、CLI/API、迁移测试和合成浏览器种子。前端六个既有文件，新增两个弹窗、意图逻辑、hook、样式及两份测试；新增中文前后端人工决定验收，更新 README、需求落实、决定、PR 草稿与本文件。
+- 行为：四人工动作按整个项目的有效版本、完整范围解析，精确 ID 优先、完整标签相等；唯一对象直接确认决定，不确认目标候选或证据。省略范围保留 null，含未知值的范围不判断当前采用。同名或未知对象保持 null 目标 candidate，只有项目载体、没有伪造方案版本；普通、批量确认和通用修改不能绕过对象歧义。
+- 选择：仅选同项目、原完整范围内的有效对象，不改动作/理由/范围；验证原文后追加人工确认替换、复核和选择原件，保留原发生时间、原记录及双原文。完整项目先判唯一再分页，图 2000 条上限外同名仍歧义；长标签 8000 UTF8 字节预览与完整搜索分开。
+- 持久性：问题/决定/选择 UUID 跨操作保护；同意图并发和丢响应只有一份事实，旧重放不撤销后来驳回。L0、引用、记录、审核及回执原子提交，版本 9→10 失败整体回滚、原问题仍可重放。备份删除原对象后仍能恢复决定、选择及回执。模型 schema 不变，人工原话独立校验；旧模型决定连续人工修改保留原 speaker/explicitness。
+- uv sync --locked：Resolved 23 packages in 23ms，Checked 22 packages in 65ms；uv run rg --help、decide --help、decision-targets --help、resolve-decision --help 退出码 0。真实已安装 CLI 用参数数组原样接收命令替换、反引号、分号，随后选择目标，不执行输入文字。
+- uv run pytest tests/golden/test_manual_decision.py tests/test_migrations.py -q：61 passed in 28.24s；uv run pytest -q：387 passed in 128.95s；uv run pytest tests/golden -q：341 passed in 116.14s。全量与固定案例并行，不作性能基准。50 项决定固定案例和 11 项迁移检查不替代完整 M2/§15。
+- uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；wheel_files=75 source_resources=70 missing=0 mismatches=0 actual_secret_matches=0 private_or_static_files=0，新增模块与四份提示词按源码字节匹配。
+- cd web && pnpm test：5 files、33 tests passed，751ms；pnpm build：TypeScript 通过、194 modules、1.08s；pnpm test:browser：30 passed (23.8s)，保留原 19 并新增 11 项。真实 HTTP 核对创建/选择、目标不被确认、全项目分页、空范围、400/409/401、并发点击、丢回包、跨项目实际写入及迟到响应；模拟响应仅核对预览显示边界。
+- 验收修复：父审查修复旧模型决定连续人工修改误套新人工原话 schema，并补回归；前端首次小屏范围筛选横向溢出已修。定位与分页等待同步修正后最终 30 项全部通过。父 agent 实看桌面/390 小屏创建和选择四张图，核对 14 文件冻结清单全部 OK；缓存、副本和截图留忽略目录。
+- 产品方向：用户提出理想日常体验零人工干预；自动采集、提取、关联和查询应为默认，人工入口是可选补记/纠错，不强迫逐条复核。候选和未知仍保留检索，现行原话规则确认要求继续执行。本轮不读完整真实会话、不调远程模型、不装钩子、不改个人客户端设置。
+- 下一步：本轮允许清单提交后按新 HEAD 检查现有草稿 PR 两种远端 CI、刷新并独立恢复代码包，实际证明记录在 PR 与忽略目录，随后结束本任务。下个任务优先继续自动处理链路、客户端包装、MCP、未指定范围工作集及后台摘要；note 类型待答复，正式参考和真实 M1/M2 质量门槛仍待核对，整个目标不标完成。
+- 提交前允许清单检查：git diff --cached --check 无输出、退出码 0；tracked_files=206 staged_files=37 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True。仅公开源码、中文文档和合成测试，前端冻结源码恒等；凭据、真实会话、私有材料、截图、数据库、缓存及构建产物不入提交，远端按本轮新 HEAD 核对。
+
+## 2026-10-10 · 持久自动队列与持续提取
+
+- 任务：落实 §2、§4、§7.2/7.6/7.7/7.10、§10/11、§12 M3 的持久队列和扫描→提取循环，响应用户日常零人工干预方向；前端按既有明确授权由子 agent 接续。开始读进度末尾、相关章节和决定，b75f62c 基线恢复包独立还原与 206 跟踪文件已核对；完整 M0–M4 仍未验收。
+- 改动的文件：新增 rg/extract/{queue,queue_health,estimate}.py、rg/slim/cached.py、tests/golden/test_auto_queue.py；修改 worker、版本 11 迁移、Store、CLI、迁移和合成浏览器种子。前端新增队列面板和浏览器测试，修改健康页、类型、逻辑、样式及单测；新增两份中文持续提取验收，更新 README、需求落实、决定、PR 草稿与本文件。
+- 行为：不指定会话则自动发现已归属且允许外发的 claude/codex 会话，虚拟人工来源排除；watch 接扫描/spool/L1/提取，项目仅筛选模型阶段，离线采集仍全库。任务固定最大事件和不可变输入；晚到内容进下一任务，跨截止窗口等待完整计划，不重复旧完成候选。审核变化本身不触发无新增内容重排，worker 原审核配置合同与人工优先仍保留。
+- 持久性：一个数据目录一个系统锁调度器，领取编号保护提交，网络期间不占 SQLite 写事务；取得系统互斥才接管遗留 running，并追加恢复依据。日额度等下个 UTC 日，原文追加和切回旧配置保留同配置等待；忙碌轮转，失败默认保留缺口，watch 显式重试仅首轮。完整响应先缓存后重新校验，原始分量实测缓存支持服务离线接续，新生成完整请求仍逐次实测/核验窗口。
+- uv sync --locked：Resolved 23 packages in 13ms，Checked 22 packages in 123ms；uv run rg --help、extract --help 退出码 0。真实已安装 CLI 对本机明确模拟计数/生成服务持续处理两次新增，events=2、claims=2、generation_calls=4、pending=0、done 两项，Ctrl+C 正常退出 0；不冒充真实远程计数。
+- uv run pytest tests/golden/test_auto_queue.py tests/test_migrations.py -q：47 passed in 14.83s；uv run pytest -q：423 passed in 144.75s；uv run pytest tests/golden -q：376 passed in 131.61s。全量与固定案例并行运行，不作性能基准；35 项新增队列案例与 12 项迁移验证实际进程强杀、未知用量、归属、额度、窗口、权限、备份和版本 10→11 回滚，不替代完整 M3/§15。
+- uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；wheel_files=79 source_resources=74 source_mismatches=0 actual_secret_matches=0 private_or_static_files=0，全部模块与提示按源码字节匹配。
+- cd web && pnpm test：5 files、36 tests passed，575ms；pnpm build：TypeScript 通过、195 modules、973ms；pnpm test:browser：33 passed (25.5s)，保留原 30 并新增 3 项。真实 HTTP 核对七状态、固定范围计数、53/1/0 项目与全库 54、首 50/末 3 共享分页、图版本/候选/缺口不变及无写请求，旧字段覆盖只验展示边界；父 agent 实看桌面与 390 小屏图，冻结八文件全部 OK，无横向溢出。
+- 合成实测：只向用户授权的 DeepSeek 接口发送脚本内一句合成会话，生成两次、新增两个 candidate、pending=0、重跑零生成。pass1 实测输入/已用输入/输出 598/578/58，pass2 3071/3051/352，均 ok。凭据与实测证明留忽略目录，不读真实完整会话、不发送真实材料、不装钩子、不改个人设置。
+- 验收修复：初次测试误设拆片调用次数，改用计数不可用验证零生成和显式恢复；子进程改用 Path。缓存恢复暴露提前窗口查询和重复分量计数，已修复并加中断位置回归；恢复取消配置不能清掉原额度等待，也加了固定案例。较早全量 422/固定 375 不作最终证明，最后源码对应 423/376。前端中途服务 503 不计作应用失败；专项通过后核对没有完整运行输出，补一次完整 33 项并保存 stdout。
+- 下一步：允许清单提交后核对现有草稿 PR 新 HEAD 的两种 CI、刷新并独立还原恢复包，再结束本任务。后续继续自动关联/问答、客户端包装与 MCP、完整运行 I/O、后台大文件摘要和全图语义；系统常驻服务未安装，note 类型待答复，正式参考与真实 M1–M4 门槛仍待核对，整个目标不标完成。
+- 提交前允许清单检查：tracked_files=215 staged_files=25 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True；实际暂存内容与凭据/私有路径核对通过，git diff --cached --check 退出码 0。前端锁文件安装跳过解析、245ms，原锁与八文件冻结清单保持一致；源码、中文记录和合成测试之外的材料不纳入提交，远端按新 HEAD 验收。
+
+## 2026-10-10 · 只读 MCP 与历史状态卡
+
+- 任务：落实 §2、§5.1/5.3/5.4、§6.5、§7.11、§10 与 M4 的只读 Agent 入口；开始读进度末尾、相关章节和决定，4f3ef5d 基线恢复包 SHA256、独立还原和 215 跟踪文件已核对。用户取消固定 1500 token MCP 上限，状态卡保留调用方预算和本地精确编码；完整 M0–M4 未验收。
+- 改动的文件：新增 rg/query/{reader,context,tokenizer}.py、两个包入口、rg/mcp/{server,tools}.py、两份公开压缩词表与来源/许可证、scripts/check_mcp_client.py、tests/golden/test_read_tools.py；修改 Store/ObjectStore 只读打开、CLI、HTTP GET、依赖锁和 CI；新增中文 MCP 验收，更新 README、需求落实、决定、PR 草稿与本文件。
+- 行为：固定项目的 search/node/evidence/history/context 只读工具与 context CLI；mode=ro/query_only/对象写禁用，不建库、不迁移、不补应用缓存。发生与已知双截止、历史审核与替换，完整范围与整个历史计算采用/证据，再分页；候选、未知范围/时间及同刻冲突保持明确，超过 20 个来源 ID 标记 partial。按版本引用取观察，按真实 UTF8 字节连续取已复制原文，不读当前文件补旧证据。
+- 状态卡：按优先级尝试详情，超额给引用，按实际保留项推进下一页；标记整体本地实测，默认 2000、可调高。正式 cl100k/o200k 词表随包校验，查询不联网，不冒充目标模型计数。文本及执行错误包 rg-context，源尖括号不能关闭外围标记；重新导入排除。MCP 新版逐请求元数据、discover、缓存字段与旧初始化共存，stdout 仅协议、通知无回包、坏帧恢复、EOF 退出。
+- uv sync --locked：Resolved 28 packages in 6ms，Checked 27 packages in 102ms；uv run rg --help、mcp --help、context --help 退出码均 0。
+- uv run pytest tests/golden/test_read_tools.py tests/test_api.py -q：66 passed in 20.23s；uv run pytest -q：473 passed in 155.39s；uv run pytest tests/golden -q：426 passed in 142.45s。全量与固定案例并行，不作性能基准；50 项新增案例与原 16 项 API 不替代真实 M4 找答案时间。
+- uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 退出码 0。uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；wheel_files=90 source_resources=85 source_mismatches=0 actual_secret_matches=0 private_or_static_files=0，两份词表与许可证存在。独立环境安装 wheel、隔离解释器及实际 CLI 两种编码分别 669/624 token，数据库逻辑不变。
+- PYTHONPATH=. uv run --no-sync --with 'mcp==2.3.0' python scripts/check_mcp_client.py：SDK 2.3.0，auto→2026-07-28、legacy→2025-11-25；各列出五个工具并完成五次查询，状态卡 636/640 token，逻辑库不变。仅临时合成项目，已加入 CI。初次官方客户端发现必需缓存字段缺失后修正；初次 wheel 测试受当前目录遮蔽，改隔离解释器核对，不计为安装包通过。
+- cd web && pnpm test:browser：33 passed (28.0s)。HTTP GET 改只读后原人工写入与界面仍通过；前端八文件冻结清单全部 OK。本轮未改前端源码、不调提取模型、不读真实完整会话、不装钩子、不改个人客户端设置；公开词表与私有材料分开。
+- 下一步：允许清单提交后更新现有草稿 PR，按新 HEAD 检查推送/PR 两种 CI并独立恢复代码包，再结束本任务。后续继续客户端包装、自动关联与有界问答、后台大文件摘要、完整运行 I/O 及全图语义；note/propose_note 类型待答复，大库性能/取消/吞吐仍待验收，正式参考和真实 M1–M4 门槛保留，整个目标不标完成。
+- 提交前允许清单检查：tracked_files=229 staged_files=26 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True；git diff --cached --check 退出码 0。仅公开源码、正式词表/许可证、中文文档和合成测试；前端冻结源码恒等。远端结果与独立恢复按本轮新 HEAD 验收，不用旧提交成功替代。
+
+## 2026-10-10 · 有界问答与本地检索后备
+
+- 任务：落实 §2、§7.2/7.7/7.10/7.11、§10/11 与 M4 的 ask；开始读进度末尾、相关章节和决定，de7b0ed 基线恢复包独立还原，229 跟踪文件与 SHA256 已核对。完整 M0–M4 尚未验收。
+- 改动的文件：新增 rg/query/retrieval.py、rg/extract/qa.py、rg/extract/prompts/qa.txt、tests/golden/test_qa.py、中文有界问答验收；修改 CLI、README、需求落实、决定、PR 草稿与本文件。前端源码未改。
+- 行为：默认最多 12 条校验原文、每窗口 4000 UTF8 字节，K 与窗口可调；有限字面量匹配记录/对象相关决定及无结构化记录的原件后备。完整范围、发生/已知截止、历史审核和完整状态计算继续保留。范围下不猜原件归属，缺失/损坏/达到上限明确列出；没有有效证据零调用并回答无法判断。
+- 生成：既有 qa 执行器实际完整请求计数、权限、128k/4k、日额度、锁和缓存；逐条来源 ID/逐字引文校验，遮盖状态由程序给出。截断、污染、超预算及坏回答作废，保留检索结果。模型解释仅缓存，不写研究 claims；标记防回流，引用有效不证明语义正确，生成中记录版本变化显式报告。
+- uv sync --locked：Resolved 28 packages in 14ms、Checked 27 packages in 49ms；uv run rg --help、ask --help 退出码均 0。真实已安装 CLI 的 retrieve-only 使用只读库，含命令替换、反引号和分号的参数不会执行，逻辑库不变。
+- uv run pytest tests/golden/test_qa.py tests/golden/test_read_tools.py tests/test_worker.py -q：84 passed in 15.38s；uv run pytest -q：504 passed in 161.63s；uv run pytest tests/golden -q：457 passed in 147.77s。全量与固定案例并行，不作性能基准；31 项新增案例不替代真实 M4 找答案时间。
+- uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；wheel_files=93 source_resources=88 missing=0 mismatches=0 actual_secret_matches=0 private_or_static_files=0，问答提示词已包含。隔离环境重新安装、真实 CLI 连明确本机模拟服务，计数 2/生成 1、重问复用、L0 不变、claims=0；不冒充提供方计数。
+- 合成 DeepSeek 最终实测：只发送脚本内一条合成消息，实测输入/报告输入/输出 1336/1316/428、状态 ok；生成 1、重问新增 0、同一 run、原件不变、claims=0。本轮两次独立实测共生成 2；首次附注误述遮盖后增加程序字段与提示，最终正确说明未遮盖。实际引文可核对，自由解释仍不宣称已证明正确。密钥、私有材料及证明留忽略目录。
+- 验收修复：测试 fixture 误走含隐私原文的模型入库路径、误用 Parsed/CLI 接口及未剥除输出末尾换行已改正；坏引用与压缩对象分别列缺口，不回显模型失败原件。最终输出按 84/504/457 核对，早期失败不当作通过。未读完整真实会话、不发送 Atlas 材料、不改个人设置。
+- 下一步：本轮允许清单提交、更新既有草稿 PR，按新 HEAD 核对两种远端 CI并独立还原代码包后结束本任务。后续继续问答界面、客户端包装、自动关联串联、完整运行 I/O、后台摘要和全图语义；note 类型待答复，正式参考与真实 M1–M4 门槛保留，整个目标仍未标完成。
+- 提交前允许清单检查：tracked_files=234 staged_files=11 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True；git diff --cached --check 退出码 0。前端八文件冻结清单全部 OK，源规格保留原文。仅公开源码、中文文档和合成测试提交；凭据、真实材料、截图、数据库、缓存和产物保留在忽略目录。
+
+
+## 2026-10-10 · 问答界面与项目外发许可
+
+- 任务：落实 §2、§7.2/7.10/7.11、§9/10/11 的问答 HTTP 与前端，响应日常零人工审核方向；按用户既有明确授权使用前端子 agent。开始核对进度末尾、相关章节和决定，d355626 基线恢复包独立还原，234 个跟踪文件字节一致；完整 M0–M4 未验收。
+- 改动的文件：新增 rg/api/qa.py、tests/golden/test_qa_api.py、tests/qa_browser.py、两份中文问答接口/前端验收；修改 server、CLI、provider、qa 输入准备和提示、合成浏览器服务及固定问答案例。前端新增 QaView、qa 类型/解析、工作区控制器、样式与单测/浏览器测试，修改 App 和健康种子预期；更新 README、需求落实、决定、PR 草稿与本文件。
+- 行为：界面先本地检索，可明确只读；服务配置模型后才生成。地址、密钥和输入预算由本机服务配置，HTTP 不接受浏览器覆盖，不返回服务地址/凭据。默认 128k/4k、提供方完整请求实测、日额度、互斥、缓存和作废合同不变；无来源零调用，模型故障仍保留来源，不创建研究 claims。
+- 权限：本地预览与生成共用实际遮盖输入；主动许可、来源、摘要和记录版本事务核对。摘要绑定资料与模型配置，新增原文即使 claims 版本不变也重验。沿用整个项目许可，明确包含远程计数、自动提取、问答及新增资料；撤回后缓存也先检查许可，不删除原件。页面停止等待只取消浏览器等待，已发出的请求可能继续处理。
+- 界面：项目草稿与结果分别保存在页面内存，请求序号、鉴权代次和完整问题意图匹配后才显示；改问题/范围/双截止后旧结果显式标旧，迟到不能覆盖新页面。封装 JSON 只作数据，原文 HTML 作为文字；引用定位同事件、对象内窗口与 hash，来源文件行位置另标。候选、确认、驳回、替换和采用/证据状态分别保留，无需先逐条人工确认。
+- uv sync --locked：Resolved 28 packages in 14ms、Checked 27 packages in 62ms；uv run rg --help、serve --help 退出码均 0。uv run pytest tests/golden/test_qa_api.py tests/golden/test_qa.py tests/test_api.py -q：71 passed in 29.53s；新增 23 项 HTTP 固定案例和 1 项元数据不能当原文引用的回归。
+- uv run pytest -q：528 passed in 177.04s；uv run pytest tests/golden -q：481 passed in 163.96s。全量与固定案例并行，不作性能基准。uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。
+- cd web && pnpm test：6 files、45 tests passed、692ms；pnpm build：199 modules、1.05s；pnpm test:browser：43 passed (33.7s)。父 agent 实看桌面/390 小屏四图，最终标签更新后再核对桌面及原尺寸手机预览；无横向溢出。13 项冻结清单全部 OK，摘要 573a36a0c958e8c7bf605d6bb9eaec1079dbd3751b5d6e4694e6ca036d72f84c。真实 HTTP 主链与外部模型协议模拟、界面异常拦截分别记录，不冒充真实模型质量。
+- uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；wheel_files=94 source_resources=89 missing=0 mismatches=0 actual_secret_matches=0 private_or_static_files=0，问答 API/提示和词表许可证包含。独立环境安装最终 wheel、隔离解释器及实际 CLI serve 与本机 TCP 模拟服务连通：检索/预览逻辑库不变，计数 2/生成 1、重问同 run、L0 不变、claims=0、SIGINT 退出 0。
+- 用户授权的最终合成 DeepSeek HTTP 实测：权限拒绝和预览阶段零提供方调用；授权后来源 1、陈述 3、实测输入 1400、报告输入/输出 1380/420、状态 ok，生成 1、重问新增网络 0。遮盖合成邮箱，服务地址/密钥不回传；L0 不变、claims=0。前两次未发布，不计为通过；留存诊断为错误引用 records 元数据，实测输入 1328、报告 1308/297，严格拒绝后补提示及回归，不放宽校验。未读完整真实会话、不发 Atlas 原文、不改个人设置。
+- 验收修复：项目回执误写会话编号、问题可为空类型、回答沿用 CLI 的地址元数据分别修正。前端初次专项两项失败为 API hash 路径/文字断言；完整回归的健康路径预期随两条合成来源从 5 改为 7，登记来源 2 和队列 54 保持真实口径。中间 527/480 通过后因追加防元数据引用案例再验最终 528/481，早期结果不替代最终源码。
+- 下一步：允许清单提交，更新既有草稿 PR，按本轮新 HEAD 核对推送/PR 两种 CI；刷新公开代码包、独立还原全部跟踪文件后结束本任务。后续继续客户端包装、自动关联串联、完整运行 I/O、后台大文件摘要和全图语义；note/propose_note 类型待答复，正式参考与真实 M1–M4 门槛保留，整个目标不标完成。
+- 提交前允许清单检查：tracked_files=245 staged_files=25 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True frontend_frozen_files_unchanged=True；git diff --cached --check 退出码 0。仅公开源码、中文记录与合成测试提交；凭据、实际研究材料、截图、数据库和缓存继续留忽略目录，原规格保留原文。
+
+
+## 2026-10-10 · Codex/Claude 项目客户端接入包
+
+- 任务：落实 §2、§8.1、§10/11/14 的 question/decide/context 包装；开始读进度末尾、相关章节和决定，c6c9e2a 基线包 SHA256 及独立恢复的 245 个跟踪文件已核对。采用 OpenAI Docs 与 skill-creator 核对当前原生格式；不创建后端子 agent。整个 M0–M4 仍未验收。
+- 改动的文件：新增 rg/clients/__init__.py、package.py、record.py、tests/golden/test_client_package.py、scripts/check_client_package.py 和中文客户端验收；修改 CLI、CI、README、需求落实、决定、PR 草稿与本文件。前端源码未改，13 项冻结摘要全部 OK。
+- 行为：client-pack 只读生成 19 文件、两套原生技能/stdio 配置和逐文件摘要，已有输出不覆盖、不改个人配置、不装钩子。固定项目及环境解释器，保留虚拟环境链接，-I 隔离工作区；上下文自动选用、人工写入仅明确调用。包内绝对路径仅适于本机环境，不复制研究原件或凭据。
+- 写入：client-record 接收有限 UTF8 JSON 文件或 stdin，固定 human:本机用户/项目，拒绝重复、未知字段、覆盖身份/项目及缺失 UUID。脚本 shell=False、用户原话不插入命令；复用 question/decide 的原话证据、完整范围、双时间、版本冲突、跨操作重试和歧义候选。技能策略不是操作系统身份认证，MCP 仍只读，note/propose_note 待约定。
+- uv sync --locked：Resolved 28 packages in 12ms，Checked 27 packages in 60ms；uv run rg --help、client-pack --help、client-record --help 退出码均 0。uv run pytest -q：544 passed in 184.63s；uv run pytest tests/golden -q：497 passed in 171.46s。两者并行，不作性能基准；16 项新增固定案例覆盖真实子进程与错误历史风险。
+- uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；97 文件/92 源码资源、缺失/差异/实际密钥/私有文件均 0。独立环境重新安装最终 wheel，模块来自安装目录；两种上下文脚本逻辑库不变、人工问题写入 1 次且重试同回执、raw_events=1/model_attempts=0。
+- PYTHONPATH=. uv run --no-sync --with 'mcp==2.3.0' python scripts/check_client_package.py：官方 SDK 2.3.0 从两种生成配置分别启动 2026-07-28 子进程，各列出五个工具并读取状态卡，逻辑库不变；新增 CI 步骤。本机 Codex 0.162.0 的 mcp get 显式覆盖解析通过，不宣称自动项目发现或真实模型触发验收。
+- skill-creator quick_validate 对三个 Codex 技能均输出 Skill is valid!；三个 Claude YAML 前置字段及明确调用策略另核对。无动态 shell 块，UI 字段/提示及策略通过；通用验证器不支持 Claude 专属字段，不冒充原生加载。开发仅合成项目，未读完整真实会话、未发 Atlas 原文、未调用提取/Agent 模型。
+- 验收修复：初次专项两项失败为测试误读详情中不存在的 project_id，改按实体表实际项目核对；旧专项 105 passed in 42.30s，随后追加的路径/缺库案例由最终 544/497 验证，早期结果不替代最终源码。
+- 下一步：允许清单提交，更新现有草稿 PR，按新 HEAD 核对推送/PR 两种 CI；刷新公开代码包、独立恢复全部跟踪文件后结束本任务。后续继续自动关联串联、完整运行 I/O、后台大文件摘要、全图语义与 export/隐私清除；真实客户端会话/钩子 p95、正式参考与真实 M1–M4 门槛保留，整个目标不标完成。
+- 提交前允许清单检查：tracked_files=251 staged_files=13 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True frontend_unchanged=True；git diff --check 退出码 0。仅公开源码、中文文档和合成测试；凭据、原件、生成的本机包、数据库、截图及缓存继续留忽略目录。
+
+
+## 2026-10-10 · 自动关联、概览与阶段健康
+
+- 任务：落实 §2、§7.2/7.7–7.10、§9/11 的自动后续阶段，沿用户日常零人工干预方向；按既有授权使用前端子 agent。开始核对进度末尾、相关章节和决定，04171d5 基线恢复包及 251 个跟踪文件已验证；整个 M0–M4 不标完成。
+- 改动的文件：新增 rg/extract/pipeline.py、tests/golden/test_auto_pipeline.py 及两份中文验收；修改 CLI、linker、overview、队列健康、Store、备份、版本 12 迁移及原队列诊断测试。前端新增 PipelineQueuePanel 与四个浏览器案例，修改 HealthView、health 类型/样式/单测、合成服务；更新 README、需求落实、决定、PR 草稿与本文件。
+- 行为：自动批处理/watch 串接提取、关联和项目/会话概览；持久不可变输入、归属提交、进程锁接管和只追加历史。关联不由新关系自循环触发，审核只刷新后续阶段。各阶段默认 20 项、关联每项目 50 个新尝试可调，extract-only 保留诊断；权限、候选、提供方完整实测与作废合同不变。
+- 等待：额度 UTC 次日、服务 30 秒、阶段忙碌 2 秒，新输入继承同配置等待；跨页失败每对一轮最多重试一次。关联仍在分页/等待时暂缓概览，partial 保留缺口并允许阅读已有记录，done 不代表全覆盖或审核。概览直接读取 claims，输入变化不覆盖旧文件；回执绑定本次发布字节，另一发布者替换可识别。备份含概览，移除原目录后恢复、文件缺失/修改均经核对缓存重建。
+- uv sync --locked：Resolved 28 packages in 11ms、Checked 27 packages in 54ms；rg --help、extract --help、health --help 退出码均 0，health 有独立 pipeline-offset。专项 uv run pytest tests/golden/test_auto_pipeline.py tests/golden/test_links_overview.py -q：35 passed in 13.36s；19 项新增固定案例包含最终全量。
+- uv run pytest -q：563 passed in 202.43s (0:03:22)；uv run pytest tests/golden -q：516 passed in 189.67s (0:03:09)。两者并行，不作性能基准。uv run ruff check rg tests scripts：All checks passed!；uv run pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 退出码 0。
+- 新阶段实际 SIGKILL：发送后未知用量预留 1010 保留，恢复 1 项、关联完成及三概览，已知用量另增 120；系统锁释放、旧执行器不能提交，重跑零生成。备份避开阶段/发布锁，目标忙时未创建目录。此合成案例不替代真实客户端或 Windows 验收。
+- cd web && pnpm test：6 files/47 passed/857ms；pnpm build：200 modules/1.03s；专项浏览器 11 passed/12.4s，完整浏览器 47 passed/34.1s。父 agent 实看桌面/390 手机/等待任务三图，无横向溢出，12 项冻结全部 OK；摘要 7a187eaf495e1077eca3a97eeb0a24513161c4e86f1f97f578c1f92b0704d9d6。两个队列独立分页、迟到隔离、目标矛盾与纯文本诊断保留；旧截图因合成重跑变化，旧问答源码未改。
+- uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；98 文件/93 源码资源，缺失/差异/实际密钥/私有文件均 0。独立环境安装最终包，仓库外真实 CLI watch 连明确本机 TCP 模拟服务：首轮 8/累计 14 次生成、45 次计数请求，逐次核对完整输入已计数；无变化轮次零网络、旧 L0 不变、模型仅候选、四份概览、SIGINT 退出 0。模拟不冒充提供方计数，本轮无真实模型调用、无 Atlas 外发或个人配置修改。
+- 验收修复：初次失败包含合成关系方向非法、测试日额度不足容纳输出、未带概览备份、未变会话不应重复概览、原队列测试需用诊断入口；缓存重建的分量计数改为复用实测缓存。另补 CLI 独立分页和发布回执竞争回归。前端首次兼容案例因未等待加载失败，补等待后重跑，不放宽生产行为。早期 562/515 不替代最终 563/516 验收。
+- 下一步：允许清单提交、维护已有草稿 PR，按新 HEAD 核对推送与 PR 两种 CI，刷新代码包并独立恢复全部跟踪文件后结束本任务。后续继续完整运行 I/O、后台大文件摘要、全图语义、export 与隐私清除；note 类型待答复，正式参考及真实 M1–M4/规模性能/实际客户端门槛继续保留。
+- 提交前允许清单检查：tracked_files=257 staged_files=26 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True frontend_frozen_files_unchanged=True；git diff --cached --check 退出码 0。仅公开源码、中文记录及合成测试；凭据、研究原件、数据库、截图、缓存及包留忽略目录，原规格不改。
+
+
+## 2026-10-10 · 物理文件版本与后台完整摘要
+
+- 任务：落实 §2、§8.2/8.3 与原设计 v1 §5；开始核对进度末尾、相关章节与既有 L1 决定，b5a9b78 基线包 SHA256 与独立还原的 257 个跟踪文件字节已验证。按用户既有授权由前端子 agent 做版本/健康页面，后端父 agent 独立完成；整个 M0–M4 不标完成。
+- 改动的文件：新增 rg/artifacts/ 的 files/worker/views/service 与包入口、tests/golden/test_artifacts.py 及中文验收；修改版本 13 迁移、Store 健康、scan/extract watch、CLI 和只读 HTTP。前端新增 VersionsView、ArtifactHealthPanel、来源/观察 helper 与样式、单测和浏览器案例；修改导航、类型、L1 元数据、health 样式及 tests/frontend_server.py 合成种子。更新 README、需求落实、决定、PR 草稿与本文件。
+- 行为：快照 Git 原对象入物理版本目录；大文件由遗漏清单发现、后台全文 SHA256，缓存元数据含 ctime，变化重读。current_file 与旧快照的 snapshot_id 留空，另存发现线索及实际读取窗口；缓存沿用原窗口，不复制大文件、不补 run_io。工具报告与物理字节分开，版本仍 candidate。
+- 恢复：只取得实际进程锁后接管 running，owner 原子提交、输入及观察只追加。慢读取不占写事务，读前/提交前复核根目录登记；根绝对路径祖先、文件父目录和文件都 nofollow。中途变化作废等五秒，缺失文件/对象留下失败，发现故障轮转避免阻塞后续快照。watch 持实际子进程句柄与管道，正常结束或父强杀的 EOF 后退出；钩子仍离线且未安装常驻服务。
+- uv sync --locked：Resolved 28 packages in 12ms、Checked 27 packages in 53ms；rg --help、hash-files --help、versions --help 退出码均 0。专项 uv run pytest tests/golden/test_artifacts.py -q：21 passed in 8.88s，含实际 SIGKILL、父进程管道断开、源目录丢失和备份恢复等历史风险。
+- uv run pytest -q：584 passed in 213.24s (0:03:33)；uv run pytest tests/golden -q：537 passed in 200.12s (0:03:20)。两者并行，不作性能基准；ruff check rg tests scripts：All checks passed!；pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。
+- uv build --wheel：Successfully built dist/researchgraph-0.1.0-py3-none-any.whl；103 文件/98 源码资源，缺失/字节差异/实际密钥/私有文件均 0。独立环境安装最终 wheel、仓库外真实 CLI scan --watch：小文件版本 1、大文件完整 SHA256 版本 2、六任务完成、缓存复用 1/读取窗口不变；没有正文副本/旧快照绑定/模型调用/推定 run_io；只读分页和备份恢复通过，SIGINT 退出 0。
+- 验收修复：最初五个专项失败来自测试误用 Store 上下文、合成静态目录缺文件，修正环境后通过。随后发现根目录的祖先链接也应提前拒绝，补 nofollow 遍历与新案例；早期 583/536 不替代最终 584/537。前端另收紧缺项目回包拒绝、观察条数/partial 矛盾及纳秒签名的浏览器整数精度，最终结果单独记录。
+- 前端最终 pnpm test：7 files/57 passed/656ms；pnpm build：204 modules/1.07s；pnpm test:browser：54 passed/37.2s。父 agent 实看最终五张桌面/390 手机/缓存窗口图，无横向溢出；18 项冻结全部 OK，摘要 9ece6869e130cefcfa49de3cd098924e57cf40c7ac4855b77d6d0db6fcf76d31。未知、矛盾、缺项目、迟到回包和纳秒舍入诊断保留；真实 HTTP 合成统计不冒充后台引擎或研究质量。
+- 下一步：允许清单提交并维护现有草稿 PR，按新 HEAD 核对推送/PR 两种 CI，刷新公开恢复包并独立还原全部跟踪文件后结束本任务。后续继续物理版本与研究对象/运行/MCP 双时间关联、全图语义、export、临床编号与隐私清除；note 类型、正式参考及真实 M0–M4/规模性能/实际客户端验收仍保留，整个目标不标完成。
+- 提交前允许清单检查：tracked_files=271 staged_files=32 actual_secret_matches=0 forbidden_tracked_files=0 original_spec_unchanged=True frontend_frozen_files_unchanged=True；git diff --cached --check 退出码 0。仅公开源码、中文记录与合成测试提交；凭据、原件、数据库、图片和缓存继续留忽略目录，原规格保留原文。
+
+
+## 2026-10-10 · 物理版本的 MCP 双时间读取
+
+- 任务：落实 §2、§7.11/8.2，验收修复另核对 §11。开始核对进度末尾、相关章节与决定；642469b 基线恢复包 SHA256 和独立恢复的 271 个跟踪文件字节通过。父 agent 独立后端，无新子 agent 工作，整个 M0–M4 不标完成。
+- 改动的文件：新增 rg/query/artifacts.py、tests/golden/test_version_queries.py 与中文验收；修改 reader/context、MCP 描述、版本 14 迁移、官方 SDK 检查、HTTP 服务及问答 API 固定案例；更新 README、需求落实、决定、PR 草稿与本文件。前端源码未改。
+- 行为：版本证据和状态卡共用不可变观察的双时间；捕获快照按明确 ID/项目/根目录核对，当前摘要采用完整读取窗口。必要快照晚入库时使用较晚已知时间，原观察时间另留；缓存保留原窗口，发现信息截止外不展示。条数和时间摘要只计算可见观察，首次插入时间不绕过截止，指定分析范围不猜文件归属，不读文件或补造 L0/run_io。
+- 修订：新增版本、观察和快照改变 revision；即使复用版本，新观察也拒绝旧 expected_revision 续页。已有数据升级失效旧修订，空库仍为零；迁移失败回滚，原件保留、重开不重复变更。
+- uv sync --locked：Resolved 28 packages in 14ms、Checked 27 packages in 67ms；rg --help 退出码 0。专项 uv run pytest tests/golden/test_version_queries.py -q：16 passed in 3.39s；HTTP 专项 tests/golden/test_qa_api.py tests/test_api.py：42 passed in 26.91s。
+- uv run pytest -q：603 passed in 221.99s (0:03:41)；uv run pytest tests/golden -q：556 passed in 208.21s (0:03:28)。两者并行，不作性能基准；ruff check rg tests scripts：All checks passed!；pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。
+- 验收修复：初次十二个新案例因合成种子误把整数 job_id 当文字 ID，修正后通过；另补可空类型检查。两次全量分别遇到超限 POST/鉴权拒绝的 TCP 重置，已补拒绝后的有限收尾，最多 0.2 秒/128 KiB、单块 8 KiB；三个分段请求回归不进库或模型，鉴权和 64 KiB 接收上限不变。旧收尾模拟三项亦通过，不冒充稳定复现；早期 551/600 和失败全量不替代最终 603/556。
+- 官方 MCP SDK 2.3.0：新版 2026-07-28/旧版 2025-11-25 各列五工具、七查询含两个物理版本，状态卡包含两者，逻辑库不变/run_io 为零；Codex/Claude 两种生成配置仍通过。本轮仅合成材料，未读完整真实会话或发 Atlas 原文、未调用模型。
+- uv build --wheel：104 文件/99 源码资源全部匹配，缺失/差异/实际密钥/私有文件均 0；独立环境重新安装最终包，模块来自安装目录。仓库外真实 scan --watch 形成三版本/六完成任务/一缓存，原窗口保留、SIGINT 退出 0；删除工作区后备份只读 MCP 的三版本/状态卡/旧截止通过，库不变、model_attempts/run_io 为零。安装目录 HTTP 分段 401/403/413 通过；首次验证受本机 SOCKS 环境缺包阻止，显式 trust_env=False 限定本机后通过，未改生产代理或外发资料。
+- cd web && pnpm test：7 files/57 passed/651ms；pnpm build：204 modules/1.10s；最终 pnpm test:browser：54 passed/40.2s。十三项前端源码与旧基线一致，截图因新增修订号/合成时间变化，父 agent 实看变更的桌面/390 手机图，最终健康桌面再次实看；无横向溢出。当前十八项冻结全部 OK，SHA256 91a4a1afabe21191467cf08b061028c5fa705a7c02af688969067212c0fd9a26。
+- 下一步：允许清单提交、维护现有草稿 PR，核对新 HEAD 的推送/PR 两种 CI，刷新公开包并独立恢复全部跟踪文件后结束本任务。后续继续版本与研究对象/实际运行 I/O 的直接关联、全图语义、export、临床编号与隐私清除；note 类型、正式参考、真实工具/性能/完整 M0–M4 验收继续保留。
+- 提交前允许清单：tracked_files=271 staged_files=15 actual_secret_matches=0 forbidden_tracked_files=0 spec_unchanged=True frontend_source_unchanged=True；git diff --cached --check 退出码 0。只提交公开源码、合成测试及中文记录，真实材料、凭据、数据库、截图和缓存仍忽略。
+
+
+## 2026-10-10 · 离线运行清单与双时间关联
+
+- 任务：继续 §2/5/7.11/8/9/10 的明确版本关联，原设计 v1 §5 已定义可选 run manifest。开始核对进度末尾、相关规格与决定；5164758 基线恢复包 SHA256 a50d7913f6bbb5c5d9dd485a7a1fe57e19b706d9fcdf709b94cf776d27dda1bd，独立恢复 274 文件均字节一致。按用户既有授权恢复前端子 agent，后端由父 agent 完成，完整 M0–M4 不标完成。
+- 改动的文件：新增 record/manifest.py、manifest_schema.py、query/runs.py、api/runs.py、tests/golden/test_run_manifests.py 及中文验收；修改版本 15 迁移、回执账本、health、reader、derive/views、MCP、CLI、HTTP 与官方 SDK 检查；前端新增运行清单组件、helper、分页 hook、样式、语义案例及合成浏览器验收；更新 README、需求落实、决定、PR 草稿和本文件。
+- 行为：本地 64 KiB 清单原件、报告、最多 256 项角色 I/O 及 UUID 回执原子追加，全部 candidate/direct_record。未报告和明确空列表分开；种子保存十进制字符串；原生执行、报告退出码、尝试和实际 I/O 完整性独立。只保存同项目明确 ID，未知运行/版本可以先报告、读取时解析晚到记录，不回写原观察；已知跨项目拒绝。入口不执行命令、打开声明文件或调用模型。
+- 读取：五个 MCP 增加 R: 运行引用；CLI/HTTP/MCP 共用双时间。原生状态从可见不可变观察重新计算后才分页，清单和来源分别过滤截止，scope 只约束报告。清单、原生运行与观察改变 revision，HTTP 409 拒绝旧修订续页。I/O 每份 100 项按 io_offset 续读、manifest_id 限定清单；版本和尝试反查先筛匹配清单再分页，较早报告不被无关首页遮蔽。
+- uv sync --locked：Resolved 28 packages in 22ms、Checked 27 packages in 76ms；rg --help 退出码 0。专项 uv run pytest tests/golden/test_run_manifests.py -q：41 passed in 7.93s；真实 HTTP 200/401/403/409、修订不变。
+- uv run pytest -q：644 passed in 269.03s (0:04:29)；uv run pytest tests/golden -q：597 passed in 280.79s (0:04:40)。两者并行，不作性能基准；ruff check rg tests scripts：All checks passed!；pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。
+- 验收修复：初次专项的四项失败是测试调用 helper/monkeypatch、缺人工请求修订及误用 Store 上下文协议；修正后通过。另两项分别是 attempt helper 调用错误与 HTTP 冲突落到通用 ValueError 的 400，后者已补 409 并实际网络回归。最终 41 与全量成功，不引用早期失败次数作为验收。
+- 官方 SDK 2.3.0：新版 2026-07-28 和旧版 2025-11-25 各五工具/八查询，含两物理版本、一候选清单/两项报告 I/O，逻辑库不变；Codex/Claude 生成接入包继续通过。MCP 固定 1500 上限已按用户取消；状态卡仍本地精确编码计预算，不为计数外发研究资料。
+- 独立 wheel：108 文件、103 源码资源字节全匹配，缺失/差异/实际密钥/私有路径均 0。仓库外安装模块来自 site-packages；写入提交前真实 SIGKILL 返回 -9，原件/清单/256 I/O 全回滚；同 UUID 重试及重放通过，CLI 精确读取最后 56 项、种子文本保留，报告退出 0 不改变原生 requested。删除工作区后的 SQLite 备份只读查询/MCP 通过，schema=15、完整性 ok、model_attempts=0。读取脚本最末换行拆解曾失败，修正脚本后通过，生产封装未改。
+- 边界：界面为已有原生运行显示清单；暂无原生运行者保留原文和 CLI/MCP/HTTP 读取，不制造执行卡。候选报告不证明系统调用实际 I/O、完整环境或研究结论，不替代 Atlas 正式参考/真实质量/规模性能/完整 M0–M4 验收。
+- 下一步：完成前端浏览器及截图冻结后允许清单提交，维护现有草稿 PR，按新 HEAD 核对推送/PR 两种 CI 并独立恢复全部跟踪文件，然后结束本任务。后续继续完整语义图、报告浏览及实际 I/O 采集、export、临床编号配置与隐私清除；note 类型和正式参考门槛继续保留。
+- 前端最终 cd web && pnpm test：8 files/65 passed/651ms；pnpm build：208 modules/1.06s；pnpm test:browser：60 passed/41.6s，原 54 项保留；专项 6 passed/9.9s。父 agent 实看桌面角色/参数、原生状态与报告冲突同屏、390 手机角色与参数；首次滚动断言过早读取已改等待真实位置，异常版本对象字段保留诊断。最终冻结后停止前端编辑，再统一提交。
+- 前端冻结最终 12 文件/5 图全部 17 项 OK，清单 SHA256 8f0df6b075158fd32875fb3525f4831f85a2d03fd564bf077c64791a9fba5117；父 agent 五图均实看，包括续页后的工具报告文本/未知补丁，随后未再修改前端文件。
+- 提交前允许清单：tracked_files=274、allowed_changed_files=32、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=17。只提交公开源码、中文记录与合成案例；凭据、真实原件、数据库、图片和缓存仍忽略。
+
+## 2026-10-10 · 双时间历史导出与本地下载页面
+
+- 任务：继续 §2/10/11 及原设计 v1 §9。开始读进度末尾、对应章节和决定；25e051c 基线恢复包 SHA256 f74db61b79e65be6796ab878eab4e71cf2113284d2a9e844ff4a9946a2072f43，独立恢复 287 个跟踪文件均字节一致。按用户既有授权继续前端子 agent，后端由父 agent 开发，完整 M0–M4 不标完成。
+- 改动的文件：新增 rg/export/{__init__,build,privacy,package}.py、tests/golden/test_exports.py 和中文后端验收；修改 CLI、HTTP、README、需求落实、决定与本文件。前端新增 HistoryExportView、useHistoryExport、historyExport/CSS、语义/浏览器案例及中文验收，修改 App/api；没有改原规格、解析器、库结构或钩子。
+- 行为：CLI export/verify-export 及同源令牌 POST /api/exports，全部可见断言/审核/状态/图关系/共同输入/合并/来源引用/文件观察/候选报告共用只读快照和双截止/完整范围/revision；遍历全部分页，不用当前画面投影。来源当前路径/状态、未来审核/退出/观察不进入旧条件；指定范围只经明确报告关联运行/文件，保留 reported_only 和实际 I/O 未知。
+- 隐私：默认没有正文、完整会话、二进制或环境副本。显式证据校验原始摘要/UTF8 范围，先遮盖完整事件再取选定片段；分别保留原始/导出摘要、恒等映射和遮盖范围。支持本次临床正则，凭据字段另行清空；身份或字段碰撞拒绝发布。默认引用包在原件丢失时仍标未读取，正文缺原件则不发布；校验不解包或执行，不证明清单真实性或结论。
+- uv sync --locked：Resolved 28 packages in 1ms、Checked 27 packages in 46ms；rg --help 退出码 0。导出专项：34 passed in 10.48s。最终 uv run pytest -q：678 passed in 247.20s (0:04:07)；uv run pytest tests/golden -q：631 passed in 233.84s (0:03:53)。两者并行，不作性能基准；ruff check rg tests scripts：All checks passed!；pyright rg：0 errors, 0 warnings, 0 informations；git diff --check 无输出、退出码 0。
+- 验收修复：首次两项失败分别为遮盖误判程序生成摘要身份、测试误用未启动 CLI 的模块入口，修正后补转义 JSON 密钥、损坏原件、未知发生时间等案例。初轮全量 678/245.23 秒、golden 631/232.00 秒，不替代最终权限观测/算法摘要补齐后的重跑。
+- uv build --wheel：112 文件/107 源码资源全匹配，缺失/差异/实际密钥/私有文件均 0。仓库外隔离安装模块来自 site-packages；来源工作区已删除仍导出完整 256 报告 I/O、原生 requested、种子文本精确。发布前真实 SIGKILL 返回 -9，没有半包目标、逻辑库不变、/tmp 临时文件 0600，同目标重试通过；实际 HTTP 200 ZIP 可校验。删整个证据库后离线 verify-export 仍校验十个成员，不重建数据目录，schema=15、model_attempts=0。
+- 实际 /mnt/d 独占硬链接与 ZIP 校验通过，但模式显示 0777。CLI 回执请求 0600/实际 0777/posix_private=false；Windows ACL 不在 POSIX 模式证明范围。强杀可能留下临时包，随机名称不保证挂载目录私有；没有保留 HTTP 服务端副本，也没有声称可删除用户已保存/分享的副本。
+- 前端最终 cd web && pnpm test：9 files/73 passed/997ms；pnpm build：212 modules/1.16s；pnpm test:browser：69 passed/51.8s，原 60 项保留。9 专项最终 12.3s，补 tsc --noEmit 无输出/退出 0。真实 HTTP 包的十一成员、每个长度/SHA、默认无正文/显式遮盖/双截止/完整或 null 范围/400/409/401/手机项目切换通过；延迟只模拟实际回包交付时序，库和模型不变。
+- 前端实看后补小屏页面内项目选择；父 agent 再实看桌面默认/隐私、390 完整/隐私四图，没有横向溢出。最终 9 文件/4 图共 13 项冻结全部 OK，SHA256 900aa7483e10e874b62b056ad5f1ffe40ef1596e29900b0b13ca1eb7592d7056；子 agent 已停止编辑，再统一提交。
+- 下一步：只提交允许清单的公开源码/中文记录/合成测试，维护草稿 PR，核对新 HEAD 的推送/PR 两种 CI 和恢复包独立还原。后续继续完整语义图/影响传播、项目临床配置与隐私清除、实际 I/O/真实工具和规模验收；note 类型、Atlas 正式参考和完整 M0–M4 门槛保留。
+- 提交前允许清单：baseline_tracked_files=287、allowed_changed_files=21、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=13；git diff --cached --check 退出码 0。只提交公开源码、中文记录和合成案例；真实资料、密钥、原件、数据库、下载 ZIP、截图与缓存继续忽略。
+
+
+## 2026-10-10 · 完整 L2 语义图与折叠历史保留
+
+- 任务：继续 §2/5/9/10/15 A 与原设计 v1 §7。开始核对末尾进度、对应章节和决定；a6cc282 基线恢复包 SHA256 58116222b2d85eaabc8b7ecdd171bc62473ce14e2a1cce48ff918a1d79ce80c8，300 个跟踪文件独立恢复字节一致。按用户既有授权继续前端子 agent；整体 M0–M4 仍未标完成。
+- 改动的文件：新增 query/graph.py、api/graph.py、tests/golden/test_semantic_graph.py、tests/graph_browser.py 和两份中文验收。修改 CLI、API、export/build 与 privacy、浏览器合成入口、model/GraphView/styles/语义单测/新图浏览器专项，以及 README、需求落实、决定与本文件；未改源规格、解析器、库结构或钩子。
+- 行为：完整 L2 图共用 Reader 与读快照，保留全部内容版本、审核、更正、独立状态、循环、明确范围、原关系/端口及所有证据页。节点用规范身份/范围摘要；同范围版本缺失不借用其它条件/项目，异常方向和汇合保留并标无效，多版本不按 ID 宣称当前内容。六集合 CLI/HTTP 分页固定双截止/修订，改动返回409；历史 ZIP 同源记录 semantic。查询不读原件/当前文件、不联网或写缓存；L1完整性仍false。
+- 前端：比较未选只表示比较，主动显示内容版本不改变事实；过程组保留撤回/阴性/多scope/候选/全部内外关系与证据，展开恢复原ID和位置。旧更正退出有效版本/关系/汇合/采用/证据集合，历史与原文入口仍保留；partial/隐藏候选/缺端点继续拒绝折叠。
+- uv sync --locked：Resolved 28 packages in 12ms、Checked 27 packages in 60ms；rg --help 退出0。语义图与导出专项：59 passed in 20.62s；最终 uv run pytest -q：703 passed in 259.38s (0:04:19)；uv run pytest tests/golden -q：656 passed in 245.84s (0:04:05)。两者并行，不作性能基准；ruff：All checks passed!；pyright：0 errors, 0 warnings, 0 informations；git diff --check 无输出/退出0。
+- 初次失败与修复：测试空scope不合法、HTTP构造及静态页缺失修正；图seed补schema必填结构后真实人工更正通过，不放宽后端。初轮全部702通过/固定654通过1失败，暴露随机UUID数字尾段被误作手机号；只保护应用结构UUID，文字仍遮盖，自定义规则涉及UUID仍拒绝，临床字段不借例外。最终703/656替代早期结果。前端选择布局同步循环与新意图选择清空已修，虚拟fixture来源避免物理日志路径8误增9。
+- uv build --wheel：114文件/109源码资源全匹配，缺失/差异/实际密钥/私有文件均0。隔离安装109资源逐字节一致，模块来自site-packages；删除原库目录后仍读备份三节点/九断言的完整图，多个内容版本未选、循环和compare保留、accepted/refuted独立。真实CLI/HTTP同结果、401/409/export200通过，库不变/model_attempts=0；删除备份后离线ZIP校验十成员通过且不创建库。
+- 前端最终：pnpm test 9 files/79 passed/872ms；build 212 modules/1.15s；pnpm test:browser 74 passed/57.4s，原69保留；五专项14.2s，tsc退出0。父agent实看完整/聚焦桌面及390原边/重要历史四图，无横向溢出。六文件/四图共十项冻结全OK，SHA256 8a25bbfb86648d4d29f8e0ecdf88ea46d8861f746ac445931543c4fc3792ffd4；子agent已停止编辑。
+- 下一步：按允许清单提交、更新现有草稿PR，核对新HEAD的推送/PR两种CI及独立恢复包后结束本任务。影响传播未选比较合同已提问，尚无回复，不猜规则或写提醒；后续继续完整L1输入输出、项目临床配置/隐私清除、规模/真实工具与Atlas正式参考门槛，note/propose_note约定及完整M0–M4验收继续保留。
+- 提交前允许清单：baseline=a6cc282、staged_files=20、tracked_files=307、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=10；暂存差异检查退出0。只提交公开源码、中文说明和合成测试；凭据、真实资料、数据库、ZIP、截图及缓存不入仓库。
+
+
+## 2026-10-10 · 项目临床编号遮盖配置
+
+- 任务：继续 §2/7.2/7.3/11。开始核对进度末尾、对应章节与决定；aa3569a 恢复包 SHA256 f42810e79f9d3dea744919fe6d9bc267168267a08b02ed2a5be5cd2e962e0731，独立恢复的 307 个基线跟踪文件再次核对字节一致。按用户既有授权继续前端子 agent，整体 M0–M4 保持未完成。
+- 改动的文件：新增 store/privacy.py、extract/privacy.py、golden/test_project_privacy.py、privacy_browser.py 和两份中文验收。修改版本迁移/系统锁、瘦身/切片/工作集/定位校验/worker/关联/概览/问答/队列、CLI/HTTP/导出、合成浏览器入口、前端共用配置面板及 QA/导出失效合同、README/需求落实/决定与本文件；原规格、解析器、L0 和钩子未改。
+- 行为：版本 16 按项目只追加规则，限制 32 条/1000 字符，明确人工入口及修订冲突；内置遮盖始终生效，规则不改原件或已有许可。所有模型阶段的计数/生成、预览及导出共用规则，先在完整原文/工具输出/规范记录中遮盖再截窗，引用跨敏感区拒绝；旧样例回执、缓存、调度身份失效，无新增原文也可重新调度。导出用当前项目规则叠加本次规则，只带规则摘要。
+- 并发：POSIX 发送共享系统锁、配置写入独占，前后核对固定配置和许可；未生成不标已发送，网络期间不持数据库写事务。首轮全量 728 通过/2 失败、golden 681 通过/2 失败，独占发送误阻塞其它会话；修成共享发送、保留旧案例并补独立进程验证。原生 Windows 仍保守串行分支，本次只验证 WSL/Linux，不宣称原生并发兼容。
+- uv sync --locked：Resolved 28 packages in 1ms、Checked 27 packages in 61ms。最终 uv run pytest -q：731 passed in 276.96s (0:04:36)；uv run pytest tests/golden -q：684 passed in 261.90s (0:04:21)；项目规则/旧并发/监控专项：52 passed in 19.70s。两组全量并行，不作性能基准。ruff：All checks passed!；pyright：0 errors, 0 warnings, 0 informations；rg --help、project privacy --help 与 git diff --check 退出 0。
+- 验收装配修正：初次专项的一个片段包含多窗口、无匹配关键词、空 scope 和 preview 位置参数修正；工具 helper 改用 text 关键字。早期回归命令两次含不存在的测试文件，未执行测试；改用实际 auto_queue 路径后 165 项通过，最终全量/固定成功替代早期结果。
+- 独立 wheel：116 文件/111 源码资源全匹配，缺失/差异/实际密钥/私有资料均 0。隔离安装 111 资源再次逐字相同；实际 CLI 保存、真实本机 HTTP 401/409/问答 200/导出 200，显式本地模拟协议生成 1 次，预览等于生成输入，计数期间设置返回 409，原文不变、claim 保持 candidate。删原库后 SQLite API 备份仍读规则及只读导出，删备份后离线十成员 ZIP 校验通过，不重建数据目录；schema=16。没有发送真实临床或 Atlas 会话。
+- 前端最终：pnpm test 10 files/83 passed/831ms；build 216 modules/994ms；tsc 退出 0；8 真实 HTTP 专项 11.4s、全量浏览器 82 passed/1.0m，原 74 项保留。修姓名变化导致旧读取被忽略却不重读的等待边界并重跑；旧预览/授权勾选及迟到响应隔离、保存后新输入、原文保留、许可保留、导出叠加及手机操作通过。父 agent 实看桌面规则/导出与 390 手机规则/保存/预览五图，16 项冻结全 OK，SHA256 0f6120044d55ed76d98c3141352d3e1a24fe062c700f8b3ab13d13f51329ea59；子 agent 已停止编辑。
+- 边界：配置不清除旧原件/索引/缓存/快照，也不收回远端已发送资料和用户分享副本；完整隐私清除仍待实现。影响传播未选比较合同仍无用户回复，不猜规则；完整 L1、实际 I/O、规模/真实工具验收、note/propose_note 与 Atlas 正式参考和完整 M0–M4 门槛保留。
+- 下一步：按允许清单提交、维护现有草稿 PR，核对新 HEAD 的推送/PR 两种 CI 与恢复包独立还原后结束本任务。后续继续完整隐私清除及 L1 实际输入输出，待传播合同答案再实现提醒。
+- 提交前允许清单：baseline=aa3569a、staged_files=41、tracked_files=319、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=16；暂存差异检查退出 0。只提交公开源码、中文说明和合成案例；凭据、真实资料、数据库、ZIP、截图与缓存仍忽略。
+
+## 2026-10-10 · CI 进程退出测试竞态修正
+
+- 任务：收尾项目临床编号配置的 PR 验收，读取 §2/15 及已有决定。45efe80 推送 CI 成功；PR CI 全量 730 通过、1 失败，旧进程退出测试在检查文件存在后读取 `/proc/<pid>/stat`，进程此时已被回收而报 FileNotFoundError。
+- 改动的文件：tests/golden/test_artifacts.py、本文件及 docs/acceptance/M4项目临床编号遮盖验收_20261010.md。单次读取进程状态，文件消失表示进程已退出；保留真实父进程强杀、五秒子进程等待和存活失败断言。没有改生产代码、安装包资源、前端或规格。
+- 验收命令：uv run pytest tests/golden/test_artifacts.py::test_background_child_exits_when_actual_parent_pipe_disappears -q 独立运行十次，各 1 passed；重新 uv run pytest -q：731 passed in 281.34s (0:04:41)；uv run pytest tests/golden -q：684 passed in 266.88s (0:04:26)。ruff：All checks passed!；pyright：0 errors, 0 warnings, 0 informations；git diff --check 退出 0。两组全量并行，不作性能基准。
+- 下一步：仅提交上述三文件，维护草稿 PR，重新核对修正后 HEAD 的推送/PR CI 与恢复包；项目遮盖其它验收保持，整体 M0–M4 尚未完成。
+
+## 2026-10-10 · 已登记 L1 文件运行图与历史原文一致性
+
+- 任务：继续 §2/5/8.2/8.3/9/10/15 与原设计 §4/5；开始核对末尾进度、对应章节与既有决定。230c16a 基线恢复包 SHA256 e3271eac8bd4c45ddf5970b044f2999793eeaaf230c5a971bab6033f77def95f，319 个跟踪文件独立恢复字节一致。按用户既有前端子 agent 授权继续界面；整体 M0–M4 未标完成。
+- 改动的文件：新增 query/l1.py、l1_records.py、tests/l1_graph_browser.py、golden/test_l1_graph.py、前端文件运行图组件/读取钩子/模型/样式及单测和浏览器专项、两份中文验收。修改 API 图入口与 server、CLI、export/build 与 privacy、migrations、原导出并发/项目规则迁移测试、前端 App 与合成服务两行，以及 README、需求落实、决定与本文件；不改源规格、解析器、钩子或模型流水线。
+- 行为：完整遍历已登记文件/原生运行/候选清单与编辑/快照及明确同范围尝试，重复端口、未知/空列表、缺失端点与全部内容版本保留。五集合 CLI/HTTP 固定双截止/完整范围/修订，报告输入输出不代替原生执行观察。发现快照不证明旧字节，后来观察不补旧图；源证据接口只按同图条件续读原事件，无后来派生上下文。历史 ZIP 同源保存 l1，十一成员不变。只读不打开当前文件或执行历史命令，实际 I/O 完整性仍 unknown。版本 17 增加编辑修订并保留原子升级和原件。
+- uv sync --locked：Resolved 28 packages in 14ms、Checked 27 packages in 31ms；rg --help、l1-graph --help 退出0。L1/导出/L2 合并回归：80 passed in 28.62s；加强旧编辑迁移断言后 L1 专项 21 passed in 8.52s。最终 uv run pytest -q：752 passed in 291.98s (0:04:51)；uv run pytest tests/golden -q：705 passed in 277.93s (0:04:37)。两组全量并行，不作性能基准。ruff check rg tests scripts：All checks passed!；pyright：0 errors, 0 warnings, 0 informations；git diff --check 退出0。
+- 初次回归失败及修正：新测试漏导入 ConflictError、旧并发导出测试包装仍为两参数，修正装配后 80 项通过；保留并发写入与同一 SQLite 快照断言。合成 SQL 占位与必填字段修正，虚拟来源不计物理健康记录；没有放宽校验或读取真实会话。
+- 隔离 wheel：118 文件/113 源码资源全匹配，缺失/差异/实际密钥/私有资料均0。安装后113资源逐字一致、模块来自 site-packages、schema17。实际 CLI/127.0.0.1 HTTP 完整核对五集合8/113/2/7/2，四个原文字节窗口完整还原，历史截止只有请求，401/403/400/409/图及原文和导出200通过；数据库与原事件不变、model_attempts=0。关闭并删除临时合成原库后备份图完全一致；删除临时备份后ZIP十成员离线校验通过，不重建数据目录。
+- 用户明确选择整项目隐私清除，合同记入 DECISIONS，下一任务实现；本次没有清除真实资料。实际 I/O、影响传播合同、note/propose_note、真实工具和规模验收、Atlas 正式参考及完整 M0–M4 门槛继续保留。
+- 下一步：完成前端全量、真实浏览器、手机画布实际可见与截图验收，冻结后按允许清单提交，维护草稿PR，核对新HEAD两种CI与恢复包，再结束本任务。
+
+- 前端最终：pnpm test 11 files/92 passed/655ms；build 220 modules/1.02s；tsc 退出0；七个真实 HTTP 专项 20.1s；全量浏览器89 passed/1.3m，原83单测/82浏览器案例保留。手机切回项目的空白是真实视图拟合问题，修正受控节点测量回写及布局/尺寸后适配，保留节点与画布/屏幕实际相交断言，没有把 DOM 数量当可见证明。初验新增测试的文本换行和项目名称误判修正，物理观察按实际根/双截止保留未知，不修改数据或放宽校验。
+- 父任务实看最终桌面画布、清单详情、物理观察及390手机画布/摘要、详情五图，无横向溢出；14项冻结全OK，SHA256 10f05a9e25440bd5e847ad92c9c3ee83f72c17e75d35239723599947239b42c9；前端子 agent 已停止编辑。下一步按允许清单提交与维护草稿PR，核对当前HEAD推送/PR两种CI和独立恢复包后结束本任务，再推进整项目隐私清除。
+- 提交前允许清单：baseline=230c16a、staged_files=26、tracked_files=331、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=14；git diff --cached --check 退出0。只提交公开源码、中文记录和合成案例；凭据、真实资料、数据库、ZIP、截图与缓存仍忽略。
+
+## 2026-10-10 · 整项目清除占用保护与导出、滚动回归
+
+- 任务：按用户已确认的整项目粒度继续 §2/6.8/11/15。开始核对进度末尾、对应章节和决定；faaface 基线恢复包 SHA256 ab75c01e448ceb97bac60f06fd07dfcda45f6c9790342160524d6a245e8f37d4，独立恢复的331个基线文件再次核对字节一致。整体 M0–M4 保持未完成。
+- 改动的文件：新增 store/lease.py、golden/test_store_lease.py、整项目清除占用保护和前端L1滚动竞态两份中文验收。修改 store/database.py、backup.py、ingest/spool.py、hooks/entry.py、snapshot/capture.py、api/server.py、export/build.py、golden/test_exports.py、前端 FileRunGraphView.tsx 与其浏览器专项，以及决定、需求落实和本文件；原规格、L0、模型流水线和包格式未改。
+- 行为：Store 存活期间、钩子/spool、影子快照及备份目标写入共享占用锁；独占操作排除仍在读写的进程，普通连接与嵌套共享调用继续并行。构造失败和进程退出释放锁，目录别名同锁；HTTP 占用返回409，真实钩子始终exit0且不发布正文/快照，只记非正文错误类型。POSIX真实进程验收通过；原生Windows接口实现但未运行验收，旧数据目录先经写入口初始化锁文件。
+- 初轮全量759通过、1失败；golden713通过。合法软件请求UUID恰有手机号样式数字导致来源导出被拒绝，补明确回执/rg来源及解析器/同事件与请求/已知截止核对，只对这些应用请求使用已有UUID规则。四类本软件记录和临床/外部/缺回执/后来回执/自定义规则固定验证，原件与引用保持；新测试Reader参数装配错误修正，不通过随机重试或放宽遮盖掩盖。
+- uv sync --locked：Resolved28/11ms、Checked27/57ms。占用专项8 passed in2.69s，导出/占用最终46 passed in14.80s；最终 uv run pytest -q：764 passed in293.38s (0:04:53)，uv run pytest tests/golden -q：717 passed in278.61s (0:04:38)。两组全量并行，不作性能基准。ruff check rg tests scripts：All checks passed!；pyright：0 errors,0 warnings,0 informations；rg --help、git diff --check退出0。
+- 隔离wheel：119成员/114运行资源与源码及隔离安装逐字一致，缺失/差异/实际密钥/私有文件均0。安装后的独立进程/真实钩子/127.0.0.1 HTTP占用案例8 passed in3.68s；实际CLI导出固定请求UUID、十成员摘要/字节数、SQLite备份读取通过，schema17、原件和修订不变、model_attempts=0、清单candidate。只使用临时合成项目，没有清除真实项目或发送真实资料。
+- 前端按用户既有subagent授权处理真实回归：首轮全量88通过、1失败，画布已拟合但整体y=-487.59在屏外；旧平滑滚动和未取消RAF跨项目移动页面。定位限制本组件、项目/目标变化取消旧帧、即时滚动；保留真实可视相交断言及原89用例。专项7 passed/14.9s，迟到回包与延迟RAF用例连续10次10 passed/34.0s；pnpm test 92 passed/11files/717ms，build220modules/1.10s，tsc退出0。父任务最终pnpm test:browser：89 passed (1.1m)，父任务实看桌面画布/详情/观察和390手机摘要/详情五图，无横向溢出。
+- 边界：本任务落实清除前占用保护，未提供删除入口。清除清单、共享对象归属、数据库/索引/缓存/快照/导出副本清理、无原文清除记录与中断恢复仍需实现。外部副本和Claude/Codex原始日志范围已提问尚无答复，不删除真实资料、不自动清理研究工作区。影响传播合同、note类型、实际I/O、真实工具/规模与Atlas正式参考及完整M0–M4门槛继续保留。
+- 下一步：冻结前端证据、按允许清单提交、维护现有草稿PR，核对当前HEAD两种CI和独立恢复包后结束本任务。下个任务继续整项目清除的只读归属清单及执行恢复，不把系统锁或项目遮盖配置当作隐私清除完成。
+- 前端最终冻结17项全OK，清单SHA256 59a0d1a7cf7a6a34edbe8802f2d3fe7c4d24bc770778c5903c70de13f40f1636；子agent已停止编辑。隔离Vite只加载HEAD旧组件，在9791运行加强案例，切项目后待滚动帧预期0实际1，准确失败；没有回退共享源码或覆盖web/dist。父任务全量89成功使用最终新组件，旧行为反证不计入成功测试数量。
+- 提交前允许清单：baseline=faaface、staged_files=17、tracked_files=335、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=17；暂存差异检查退出0。只提交公开源码、中文说明和合成案例，凭据、原会话、数据库、ZIP、截图和缓存不入仓库。
+
+## 2026-10-10 · 管理目录整项目清除、恢复与前端
+
+- 任务：按用户已选择的整项目粒度继续 §2/11/15 与既有占用保护决定。开始核对末尾进度和对应章节；270b099 基线恢复包 SHA256 80e24c01ebfef0479727a27741c7810f8e96745e2848f1fc1b904f4e93257eb2，独立恢复335个跟踪文件字节一致。整体 M0–M4 保持未完成。
+- 改动的文件：新增 store/clear.py、clear_selection.py、clear_files.py、clear_denials.py、golden/test_project_clear.py、独立前端合成服务与清除组件/状态/样式/单测/浏览器专项、两份中文验收。修改 Store占用屏障、scanner/sources/spool、snapshot/capture、backup、API server、CLI main、前端 App，以及 README、需求落实、决定和本文件；未改源规格、schema17或模型调用合同。
+- 行为：只读预览完整归属和数量，独占写事务复算预览摘要；清除原件与目标派生、模型尝试/输出和队列、索引/缓存、对象、spool、快照/概览与根登记。共享字节保留；跨项目行依赖、命名空间/根冲突、未登记对象、无归属输出和链接路径拒绝执行。不可变触发器在隐私事务内暂停并恢复，两个FTS重建、VACUUM、WAL实际截断和完整性检查后才成功。
+- 行为：持久无原文恢复记录覆盖提交前后和部分文件删除；普通读取/写入/钩子被阻止，状态和恢复独立可用。同一请求UUID幂等回放，最终仅保留计数/身份/时间和来源摘要屏障，扫描/钩子/快照不会重导入，后续备份携带屏障。CLI服务释放初始化Store，中断后可直接启动界面恢复。清除完成页面自动重载，确认区提示未保存草稿丢失；旧回包、切项目、401/409、双击及重试均保留正确意图。
+- uv sync --locked：Resolved28/13ms、Checked27/50ms。清除专项20 passed in11.44s；清除/占用/快照钩子/导出合并80 passed in23.19s。最终 uv run pytest -q：784 passed in310.87s (0:05:10)；uv run pytest tests/golden -q：737 passed in294.95s (0:04:54)。两组全量并行，不作性能基准。ruff：All checks passed!；pyright：0 errors,0 warnings,0 informations；rg帮助、清除帮助及git diff --check退出0。
+- 初轮装配失败及修正：合成模型尝试漏必填segment_id，CLI测试模块没有启动入口且后续漏Path导入；改为实际rg入口并保留真实启动/重启恢复断言。只读预览测试核对业务文件，允许SQLite WAL/SHM协调文件；本地HTTP不继承环境代理。没有放宽归属、原件、完整性或中断保护断言。
+- 隔离wheel：123成员/118运行资源与源码及Python3.12隔离安装逐字一致，实际密钥匹配0。源码不可见的独立测试目录执行清除/恢复/真实CLI/HTTP/钩子及占用28 passed in15.70s；所有清除仅为临时合成项目，外部合成原日志和工作区保留，剩余对象仅共享字节，SQLite/FTS/管理文件无独有标记，原生Windows未验收。
+- 前端按用户既有subagent授权完成：pnpm test 12files/96passed/880ms；build224modules/1.21s；tsc退出0；真实HTTP专项7 passed/15.6s，父任务最终pnpm test:browser 96 passed (1.2m)，原89项未删。首轮专项6/7失败是硬刷新销毁旧页面响应，改独立status核对同请求，不修改产品重载行为。父任务实看桌面预览/完成和390手机预览/恢复四图，无横向溢出；20项冻结全OK，SHA256 f0f304f98427068d1ce9a778993bed39000c31155b9443da585265347d68dca5，子agent停止编辑。
+- 边界：当前仅清除本数据目录管理的整项目资料；外部Claude/Codex原日志、研究工作区及用户保存/分享的备份或导出副本沿用既有保留范围，明确外部副本问题尚无答复。恢复清单4MiB上限，超出在删除前拒绝；不是原生Windows或规模验收，不保证物理介质取证不可恢复。没有执行真实项目清除。实际I/O完整性、影响传播合同、note类型、真实工具/规模、Atlas正式参考及完整M0–M4门槛继续保留。
+- 下一步：按允许清单提交，维护现有草稿PR，核对当前HEAD推送/PR两种CI及独立恢复包后结束本任务；随后继续已授权的开发，不把管理目录清除当作全部外部副本清除或整个目标完成。
+- 提交前允许清单：baseline=270b099、staged_files=27、tracked_files=349、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=20；暂存差异检查退出0。只提交公开源码、中文记录和合成案例，凭据、真实会话、数据库、ZIP、截图和缓存不入仓库。
+
+## 2026-10-10 · 清除屏障最后一步失败的状态修复
+
+- 任务：继续同一管理目录清除验收，按 §2/11/15 复查恢复边界。基线 38e5588 已推送；推送 CI 38045565116 和 PR CI 38045567966 均通过22步骤与13类输出核对。基线恢复包 SHA256 44c5cf3294f87c5df4d9f27ed95f4b94d07c3e889bad7e7dcc20a35e840e232d，独立还原349文件逐字一致，历史私有路径与实际密钥匹配均0。整体目标保持进行中。
+- 改动的文件：store/clear.py、golden/test_project_clear.py、管理目录整项目清除中文验收、DECISIONS.md 和本文件。源规格、schema17、模型合同及冻结前端均不改。
+- 行为：完成回执先持久保存，但屏障删除也可能失败；状态查询和幂等执行先检查恢复屏障，不能只凭已有回执报告完成。恢复成功解除屏障后才返回完成；普通 Store 继续拒绝访问。新增故障注入在旧隔离安装包准确失败：1 failed in5.15s，complete与pending不符；不把旧行为反证计入成功验收。
+- 最终清除专项：21 passed in12.71s。uv run pytest -q：785 passed in309.84s (0:05:09)；uv run pytest tests/golden -q：738 passed in295.72s (0:04:55)，两组并行不作性能基准。ruff：All checks passed!；pyright：0 errors,0 warnings,0 informations；清除帮助与git diff --check退出0。
+- 重建wheel123成员/118源码资源逐字一致，实际密钥匹配0；Python3.12隔离重新安装后118资源一致，源码不可见的清除/恢复/真实CLI/HTTP/钩子和占用测试29 passed in17.38s。最终pnpm test:browser：96 passed (1.3m)；前端20项冻结仍全部OK。浏览器首次命令因未设置本地工具PATH退出127，补工具路径后全量通过；端口检查最初受TIME_WAIT影响，按服务的SO_REUSEADDR设置核对8791/9792均可重新绑定，没有遗留监听服务。
+- 边界：本轮仍只用临时合成项目，真实资料删除和远程模型调用均0；外部原日志、研究工作区及用户保存/分享副本沿用保留边界。原生Windows、规模、实际I/O、影响传播、note类型、真实工具与Atlas正式参考及完整M0–M4继续保留。
+- 下一步：只按上述五文件允许清单提交，更新现有草稿PR，核对新HEAD两种CI及独立恢复包后结束本任务；整体开发目标不标为完成。
+
+## 2026-10-10 · 已保存物理版本差异与前端
+
+- 任务：继续 §2/8.2/9.5/10/15 的保存文件版本差异，开始核对进度末尾、对应章节和决定。2956527 基线恢复包再次核对SHA256 52067c0df86ee817ef9d633870bba8e2d0875668a1814688ddca256ce619d816，独立恢复349个HEAD文件逐字一致。整体M0–M4保持未完成。
+- 改动的文件：新增 query/version_diff.py、golden/test_version_diff.py、独立前端合成服务、差异面板/状态/解析/样式、单测和浏览器专项、两份中文验收。修改 API server/views、CLI main、VersionsView，以及 README、PR草稿、决定、需求落实和本文件；源规格、schema17、模型、钩子及清除生产代码不改。
+- 行为：明确比较同项目、同登记根与路径的两个版本，复用不可变物理观察双截止与同一读快照，核对修订。有效复制捕获证明、长度/SHA256/Git blob摘要和对象路径身份通过后才比较保存字节；返回实际选用观察，模式变化独立且缺证明为未知。后来模式矛盾不进入较早视图。链接仅比较目标文字，CRLF、U+2028正文和无末尾换行保留；输入合计64000字节、每侧2000行、输出64000字节，缺失/损坏/非文本/编码无效或超限不返回部分正文。不读当前文件、不运行Git、不写库/缓存、不提升候选。
+- 后端最终：uv sync --locked 为Resolved28/14ms、Checked27/52ms；差异专项25 passed in8.47s；uv run pytest -q 为810 passed in316.17s (0:05:16)，uv run pytest tests/golden -q 为763 passed in302.12s (0:05:02)，两组并行不作为性能基准。ruff为All checks passed!，pyright为0 errors,0 warnings,0 informations，version-diff帮助与差异检查退出0。初轮装配任务类型与备份时机修正，不放宽完整性；加入后来模式矛盾案例前的809/762为中间结果。
+- 隔离wheel124成员、119运行资源与源码及Python3.12.3安装逐字一致，实际密钥匹配0；SHA256 ed8cce2dca95bf831a7e4740c329bf4c8661a690580a3e98b112f0238b469b8a。源码不可见的独立目录执行差异/物理查询/占用49 passed in16.61s，包括真实CLI和HTTP。实际快照合成案例删除工作区、影子Git和原库后，备份对象仍可只读比较，原件/修订不变，模型尝试0。
+- 前端沿用户已有subagent授权完成：pnpm test为13files/103passed/795ms；build为228modules/1.09s，tsc退出0。六项专项首轮通过，但父完整浏览器回归实际101通过、1失败 (1.9m)：同次捕获的37个新版本按时间/完整ID排序，测试错误假定比较后版本总在第一页。只将合成服务改为三次真实捕获，核对实际两页ID并往返翻页验证选择，不修改产品、不加超时或重试。十次不同进程、项目、根及临时路径复验10 passed (1.2m)，最终六项6 passed (15.7s)。
+- 最终前端29项冻结全部OK，清单SHA256 7c86383e59d3f3d91771c9d2c05dd6b7094fb3f116f3ff528946155e118c9474；旧22项因分页装配修复弃用并保留失败证据。父任务实看最终桌面和390手机选择、来源、捕获观察、正文七图，无横向溢出，子agent停止编辑。父任务接续最终102项完整浏览器，不预报成功。
+- 边界：本任务仅用临时合成资料，没有删除真实项目或调用远程模型。未保存和非文本产物差异、实际I/O完整性、影响传播合同、note类型、真实客户端及规模、Atlas正式参考、原生Windows及完整M0–M4继续保留；整项目清除仍只作用于管理目录，外部原日志、研究工作区和用户保存/分享副本沿用既有范围。
+- 下一步：完成最终全浏览器与允许文件清单核对，提交并维护现有草稿PR，检查当前HEAD推送/PR两种CI与独立恢复包后结束本任务；随后继续剩余授权开发，不标整体目标完成。
+- 父任务最终 pnpm test:browser：102 passed (1.4m)，原96项保留；ruff再次为All checks passed!，差异检查退出0。产品未变，后端全量和隔离安装结果继续对应最终119运行资源，不作机械重跑。
+- 提交前允许清单：baseline=2956527、staged_files=20、tracked_files=360、actual_secret_matches=0、forbidden_files=0、spec_unchanged=True、frontend_frozen_items=29、wheel_source_resources_equal=119。暂存差异检查退出0，8791/9792/9793均可重新绑定。仅公开源码、中文说明和合成案例入仓库，凭据、真实会话、数据库、ZIP、截图与缓存继续忽略。
+
+## 2026-10-10 · 精确状态时间与未知诊断
+
+- 任务：继续 §2/5.3/9/15 的状态隔离，开始读取进度末尾、对应章节及决定。e81a0ea 基线恢复包 SHA256 为928f79d146828f21cd72bc0f9ebaa072acc462c56dc64f6c331adfc6f155e54e，独立恢复360个HEAD文件逐字一致。用户选定的整项目清除范围沿用，不操作真实项目；整体M0–M4仍未完成。
+- 改动的文件：新增query/time.py、golden/test_state_time.py、state_time_browser.py、前端exactTime.ts及时间状态单测/浏览器专项、两份中文验收。修改API views、Reader、语义图来源、前端model/types/图/问题卡、原状态单测，以及README、决定、需求落实、PR草稿和本文件。源规格与schema17不改。
+- 行为：原始双时间旁追加UTC六位微秒只读规范值；无时区、非法日期、缺失及UTC越界为null，越界不再抛查询异常。采用/证据按完整微秒、同范围有效确认事件计算，同毫秒不同微秒不再误判；真同刻相反为冲突，单条未知时间也不假定有效证据。未知范围证据需复核。时间诊断不加入人工科学证据枚举，候选/驳回/替换及双截止规则不改。
+- 反证与修正：旧后端18专项为14 failed/4 passed，极端UTC偏移触发OverflowError；旧前端7项6 failed/1 passed。新HTTP测试首版原文路径和详情claim外层写错，按现接口修正测试，不修改生产合同；在专项通过前中止的两组全量不计最终验收。失败日志保留在忽略目录。
+- 后端最终：uv sync --locked为Resolved28/14ms、Checked27/66ms；专项19 passed in30.51s；uv run pytest -q为829 passed in377.84s(0:06:17)，uv run pytest tests/golden -q为782 passed in362.77s(0:06:02)，两组并行不作性能基准。ruff为All checks passed!，pyright为0 errors,0 warnings,0 informations，rg --help退出0。
+- 隔离Python3.12.3 wheel状态/语义图44 passed in70.93s(0:01:10)；125文件成员、120运行资源与源码和安装逐字一致，实际密钥匹配0，SHA256 9e06054d3fa95b09ad7aabee3fcae43df7942b92c2103c1fb0c66af858b4a89b。真实HTTP规范字段/权威状态/原文字节摘要一致，库转储与修订号未变，模型尝试0。
+- 前端沿已有subagent授权继续，父任务实看最终桌面问题/折叠/原文和390冲突/未知范围/候选原文六图。首轮浏览器2 pass/2 fail：过程组无单一状态，测试错误要求组的node-dimensions；手机样式隐藏项目下拉，测试等待不可见控件。按保留原记录/展开原成员核对，桌面选择项目后再于390复核，不伪造聚合、不改手机产品入口、不加超时或重试；最终4 passed(15.9s)。
+- 下一步：完成前端最终冻结与原102加4专项的完整浏览器回归、允许文件和密钥核对，提交维护现有草稿PR，核对当前HEAD的两种CI与独立恢复包后结束本任务；实际I/O、传播/note合同、真实客户端、Atlas正式参考、规模/Windows及完整M0–M4仍保留。
+- 前端最终：pnpm test为14 files/112 passed/744ms，build为229 modules/1.04s，tsc退出0无诊断；35项冻结全OK，清单SHA256 b545e62f8288c4bdd0fb52911dee99634753e7370ac642cc3903d300f18e7196。子agent停止编辑，父任务接续106项全浏览器，不预报成功。实际390项目下拉仍隐藏，验证通过桌面切换再缩窄检查，不声称手机入口可用。
+- 父任务最终 `pnpm test:browser` 为106 passed(1.5m)，原102保留；35冻结再次全OK，差异检查退出0。源码、120运行资源及前端不再修改，后端全量和隔离安装结果继续对应最终代码；随后核对允许21文件，维护现有草稿PR与当前HEAD两种CI/恢复包，整体目标保持未完成。
+
+## 2026-10-10 · Codex 原生补丁与单侧候选全文
+
+- 任务：继续 §2/6.3/6.4/6.5/6.6/8.3/9.5/15 的原生补丁适配，开始读取进度末尾、对应章节及决定。9e83e95 基线恢复包 SHA256 8f89e83ede4556a7070345505b31e5b9c7d7580567e067940f0105494d05673d，独立恢复368文件逐字一致。用户选定的整项目清除范围沿用；本轮不操作真实项目，整体目标不标完成。
+- 改动的文件：新增 derive/native_patch.py、golden/test_native_patch.py、native_patch_browser.py、前端原生补丁浏览器专项及两份中文验收；修改 derive/edits/records/views/worker、ingest/codex、query/l1、既有L1案例、前端l1/types/EvidenceRecords/单测/既有L1浏览器，以及README、决定、需求落实、PR草稿和本文件。源规格与schema17不改。
+- 行为：同实际会话唯一调用关联开始/结束，已有原始补丁请求优先；外层执行器与补丁状态独立，缺开始等待，重复ID拒猜。现代结构化回执允许空stdout，旧缺变更回执需成功及严格路径摘要；普通输出JSON不冒充原生状态。新增后/删除前全文为直接报告候选，更新/移动不补全文，失败可保留一致前像，矛盾不生成全文版本。单侧明确reported_before/after及complete_versions=false，另一侧未知；沿用单项64k UTF8/2000行、事件正文合计64k，超限不截断。
+- 迟到边界：派生后重复开始不改不可变事实；证据页与文件图当前标明关联歧义，较早已知截止只使用当时可见记录。原始补丁请求与唯一原生开始分别计数，不将两种来源本身当重复。
+- 反证与修正：首批22项旧后端全部失败5.80s，前端旧单侧语义1 failed/6 passed737ms；失败日志留忽略目录。测试初版误用Store上下文管理器、误要求包装请求零观察，按现合同修正测试。迟到歧义补齐前中止的两组全量不计验收。SQL仅分行修正ruff长度，前后AST逐字一致；重建安装包含最终源码。
+- 后端最终：uv sync --locked为Resolved28/3ms、Checked27/46ms；原生补丁/L1/文件图111 passed20.16s；uv run pytest -q为870 passed382.31s(0:06:22)，uv run pytest tests/golden -q为823 passed365.73s(0:06:05)，两组并行不作性能基准。ruff为All checks passed!，pyright为0 errors,0 warnings,0 informations，rg --help及差异检查退出0。
+- 隔离Python3.12.3安装：同三组111 passed22.32s；wheel126成员/121运行资源与源码和安装逐字一致，实际密钥匹配0，SHA256 9d759d436c657d7b7ea8f247754c2a5341279e6e7a2d081069f093b24c4f80a2。事务崩溃、备份、源文件消失、幂等和L0游标保留均有合成固定案例；模型调用0。
+- 前端沿已有subagent授权：115单测/14files/896ms、build229modules/1.12s、tsc退出0；独立原生专项4 passed12.7s，父任务实看最终两张桌面与三张390图。32项最终冻结全OK，清单SHA256 10f9404b8c2fd519fffb5e6b57ce27188ff0815a5013dcd3960a060212bfdd25。七文件恢复包逐字核对；子agent停止编辑。
+- 父任务首轮完整浏览器99 pass/3 fail/8未运行1.7m：既有L1文案精确断言遇逗号，改为前后全文标签均不存在，保留API/零版本/正文/导航，其原5项通过9.7s；两个合成服务日志在监听前fsync/Git准备被等待清理SIGINT。后端结束后串行完整110 passed1.6m，原106保留，没有改超时或重试。初次日志归档路径错误，但子agent事先保留的原始三份失败日志仍完整冻结，没有重构日志。
+- 边界：仅合成原生协议，不证明真实所有工具版本、完整实际I/O、worktree/跨项目归属、影响传播/note合同、真实客户端、Atlas正式人工参考、规模/原生Windows或完整M0–M4门槛。源规格、模型和清除生产代码不改，整项目清除仍只限已授权管理目录。
+- 下一步：按23文件允许清单提交并维护现有草稿PR，核对新HEAD推送/PR两种CI与独立恢复包后结束本任务；整体开发继续，不把本轮协议/界面验收当全部目标完成。
+
+
+## 2026-10-10 · 本机根目录登记与手机项目切换
+
+- 任务：继续 §2/6.6/10/11/15 B 和原设计书第5节的显式项目登记，前端沿已有子agent授权修复§9手机入口。开始核对进度末尾、相关章节和决定，找到目录内原设计docx并只读相关段落；ecbac1d起始恢复包SHA256为47d2822bcc1c699a4cc6840049f19c972e8e7b789314a57b7359013a249869a8，独立恢复HEAD及干净状态再次核对。整项目清除沿用户选择，本轮只删除临时合成项目，整体目标仍未完成。
+- 改动的文件：新增store/roots.py、golden/test_project_roots.py、前端移动项目浏览器专项及两份中文验收；修改CLI、Store.project、migrations、手机样式和README、DECISIONS、REQUIREMENTS_STATUS、PR草稿、本文件。源规格不改，数据库升级18只增加Git登记元数据。
+- 行为：已有项目显式追加仓库/worktree/数据/别名根；两个worktree不同根ID，共同Git目录独立保存。URL只存本地配置字节SHA256，不写原始地址或凭据，不联网、不跑仓库命令；缺失/超限/失败未知。重复不覆盖旧身份，项目/类型冲突拒绝，相同远端/共同目录不合并，不改会话归属。data不读Git、不加入快照。只读清单同快照分页和修订，旧库升级不扫描旧根，迁移原子回滚；备份和清除屏障纳入新登记。
+- 专项：初轮4失败/21通过来自测试错误模块入口及临时目录与Store夹具重名，后续2失败/79通过仍为入口错误；改用真实rg可执行入口，不改产品合同。关联组81 passed25.44s；随后增加换行/shell路径、超限和同共同目录不同项目三案例，最终28 passed8.28s。原始失败日志保留忽略目录。
+- 后端最终：uv sync --locked为Resolved28/10ms、Checked27/51ms；uv run pytest -q为898 passed392.43s(0:06:32)，uv run pytest tests/golden -q为851 passed377.92s(0:06:17)，两组并行不作性能基准。ruff为All checks passed!，pyright为0 errors,0 warnings,0 informations，rg --help/root-add/roots帮助及差异检查退出0。
+- 隔离Python3.12.3安装：根目录28 passed11.16s，包含实际CLI；仓库外临时目录-I运行，模块来自安装目录。wheel127成员、122运行资源与源码/安装逐字一致，实际密钥匹配0，SHA256 d81b2d3d1de57e2dd4d5ede1721ff38fcebacd052dbdf2017118345a6e2a5922。源码冻结后未再修改运行资源。
+- 前端：仅样式显示原唯一项目选择器，保留App/请求隔离。115单测/14files/739ms、build229modules/1.05s、tsc退出0；移动三专项初次3 passed8.6s、最终3 passed8.1s。父实看三张390图及桌面图，17项冻结全部OK，清单SHA256 ec9bfc16510fcd6a6eab101c2e8abff988ad1553f7bab08d59c25e42f16a08b4；子agent停止编辑。后端结束后父串行完整113 passed1.6m，原110项保留，不加超时/重试。
+- 边界：未读取真实完整会话、不调用模型、不删除真实资料或改个人客户端设置。本机根登记不等于自动worktree发现、跨设备路径或跨项目片段归属；实际I/O、影响传播/note合同、真实客户端/规模/原生Windows、Atlas正式人工参考和完整M0–M4继续保留。手机为Chromium视口验收，草稿仍只页面内存。
+- 下一步：按14文件清单提交并维护现有草稿PR，核对当前HEAD推送/PR两种CI、独立恢复包和服务端口后结束本任务。随后继续跨项目片段归属与剩余采集/真实门槛，不把本轮登记和界面验收当整体完成。
+
+
+## 2026-10-10 · 解析类型与工具版本账本
+
+- 任务：继续 §2/6.1/9/10/11/15 B 的明确采集缺口，开始核对进度末40行、对应章节及决定。fdcbad5基线已验证恢复包SHA256为86b4d4cac5ee00b5016547ec0eb298ec989be25f0fcfa282a1fe545aa4713451，独立恢复379文件一致；前端沿用户既有子agent授权。用户明确的整项目清除范围继续适用，不操作真实项目；跨项目优先级已提问，等待答复时先做独立账本。
+- 改动的文件：新增ingest/catalog.py、query/parsers.py、golden/test_parser_health.py、解析账本中文验收及前端账本组件/helper/样式/单测/浏览器与独立合成服务；修改scanner、migration19、清除归属表清单、API、CLI、HealthView及README、需求落实、决定、PR草稿和本文件。两份源规格不改。
+- 行为：每完整物理行的类型集合、工具版本及依据与L0/游标一起提交，副本与多块计数区分；非法声明重置同文件版本上下文，复制／轮换／旧库不借版本。类型过长或控制／代理码点只存标签，正文留L0。旧库不补造历史；CLI／HTTP项目分页冻结观测截止、归属变更拒绝拼页。
+- 初验：新36项首轮2 failed/34 passed in8.90s，原因是测试写UTF8孤立代理字符、误用原文响应未提供的object_sha256；改为JSON转义及实际引用摘要合同，不改生产接口。解析／导入／迁移／清除关联82 passed in22.54s；随后首末指针增强纳入全量最终测试。失败日志保留忽略目录。ruff通过、pyright0错误；全量正在执行，结果随后追加，不预报通过。
+- 下一步：核对全量及隔离安装，后端结束后依次跑前端专项与完整浏览器，实看最终桌面／390截图并冻结；维护既有草稿PR和当前HEAD两种CI／恢复包。本轮采集诊断不等于所有工具版本、跨项目归属、真实Atlas参考或整体目标完成。
+- 后端最终：uv sync --locked 为Resolved28/12ms、Checked27/55ms；uv run pytest -q 为934 passed in395.09s(0:06:35)，uv run pytest tests/golden -q 为887 passed in380.98s(0:06:20)，两组并行不作为性能基准。ruff为All checks passed!，pyright为0 errors,0 warnings,0 informations；rg及parser-health帮助退出0。
+- 隔离Python3.12.3安装：仓库外-I运行新36项为36 passed in11.34s；实际CLI、HTTP、迁移回滚、故障、分页／归属变更、备份和临时整项目清除都有案例。wheel129成员、124运行资源与源码／安装逐字一致，实际密钥0、私有文件0，SHA256为cdf2af7cc90220b04306664e7451707630338704704171ecf80e074d80a8e7b5。运行资源冻结后不再编辑，未调用模型。
+- 前端首轮专项2 passed/2 failed(19.8s)：未带字节窗口时摘要本来为null，StrictMode及同页导航使只等两次JSON回包的假设错误。保留初日志，测试改为另真实全文引用、标记实际延迟响应并隔离导航；产品取消／身份逻辑、超时及重试不改。修正后四项已通过11.0s，随后补手机类型卡的截图及几何核对；未将第一次失败算作通过。
+- 前端最终：122单测/15files/965ms、build232modules/1.43s、tsc退出0；补几何后四专项4 passed(11.2s)。父实看桌面统计／类型／原文与390统计／类型五图；35项冻结全部OK，清单SHA256为949640135f0ec7894cd62b81010195ca2111ec62559a8db46d411a6ad6aa9f63。8文件恢复包独立解包逐字一致，子agent停止编辑。父首次冻结核对重定向误用web工作目录，随即在根目录实际重新核对全35项；没有将失败准备当验收。全117浏览器串行进行。
+
+- 父任务最终串行 `cd web && pnpm test:browser` 为117 passed(1.7m)，原113项全部保留；35项前端冻结再次全OK，差异检查及最终ruff退出0。运行资源、前端及验收代码冻结，不再修改；随后按22文件清单提交维护既有草稿PR，核对当前HEAD推送／PR两种CI及独立恢复包后结束本任务。完整M0–M4与整体目标保持未完成。
+
+
+## 2026-10-10 · 钩子失败报告的持久采集
+
+- 任务：继续§2/6.1/6.8/9/10/11/15 B、D，开始核对进度末40行、对应章节和决定。73430d1基线恢复包完整验证，沿用户整项目清除选择，只对临时合成库执行清除。前端沿已有subagent授权；源规格及钩子生产代码不改，整体目标仍未完成。
+- 改动的文件：新增ingest/hook_errors、query/hook_errors、golden/test_hook_errors、账本验收及前端独立组件/helper/样式/单测/浏览器/合成服务/中文验收；修改migration20、扫描循环、Store.health、API、CLI、清除表清单、HealthView及README、DECISIONS、REQUIREMENTS_STATUS、PR草稿与本文件。
+- 行为：全管理目录的运维报告，不写科研L0或对象库；白名单外类只存摘要，非法正文不复制。流式读取、前缀／提交边界核对、轮换／缩短／已观测缺失后重现建立新实例；报告、游标与不可变观测同事务。残片、积压、超长行、读取变化、缺失和不可安全读取分别显示。相同字节的不同实例分别计数，完整实际失败历史始终未知；未观测不补零，状态变化时间不证明进程存活。分页固定观测及报告截止，备份保留账本，整项目清除保留仅运维的无正文全库元数据。
+- 初验：新增1 failed/35 passed in8.05s，测试误用钩子命名参数，改实际位置参数并把RG_DATA_DIR固定到临时目录。错误调用可能向默认管理目录追加无正文参数异常，本轮不删除真实管理数据。关联组127 passed in34.78s；随后补强提交前实际进程退出、不可变约束、inode重用与日期溢出，40 passed in6.91s。首失败日志留忽略目录。
+- 隔离安装：Python3.12.3仓库外-I运行40 passed in9.29s，含实际CLI／HTTP、进程退出／事务恢复、迁移回滚、源消失备份、合成整项目清除。wheel131成员、126运行资源与源码／安装逐字一致；实际密钥0、私有文件0，SHA256 f394c0b410d74fa99c03be92598a3679f4c55049f1bbc6bfb1d454b116058f64。源码冻结后未改运行资源，模型调用0。
+- 下一步：等两组全量实际结束后，再串行前端专项和完整浏览器，实看桌面／390最终图并冻结；维护既有草稿PR，核对当前HEAD两种CI和独立恢复包。真实客户端漏报、原生Windows、完整I/O、跨项目优先级与M0–M4保留，未预报通过。
+
+- 后端最终：uv sync --locked为Resolved28/15ms、Checked27/63ms；uv run pytest -q为974 passed in413.88s(0:06:53)，uv run pytest tests/golden -q为927 passed in399.07s(0:06:39)，两组并行不作为性能基准。ruff为All checks passed!、pyright为0 errors,0 warnings,0 informations；rg及hook-errors帮助退出0。后端运行资源已冻结，前端专项在两组结束后才启动。
+
+- 前端最终：128单测/16files/1.06s，build235modules/1.04s，tsc无诊断；4项真实专项首轮全部通过9.9s，没有失败、超时或重试调整。父实看桌面统计／报告与390统计／报告四图；33项冻结全OK，清单SHA256 a2dd1240de54812f915e36e05e4936275eec0cff92822e071a3a9b4a482b8e56。8文件恢复包ab446ad37ad7aae34d43f7b8af75de37a588ea2a23964161567599ead899101d逐字一致；子agent停止编辑，8791/9797释放。父在后端两组结束后串行完整121浏览器，未预报最终结果。
+
+- 父任务最终串行cd web && pnpm test:browser为121 passed(1.8m)，原117项完整保留；33项冻结复核全OK，实际8文件恢复包内容逐字一致。后端126运行资源与已安装wheel再次逐字核对，差异检查退出0。随后按24文件清单提交维护既有草稿PR，核对新HEAD推送／PR两种CI与独立恢复包后结束本任务；整体目标与M0–M4保持未完成。
+
+## 2026-10-11 · Codex原生父线程关联
+
+- 任务：继续§2/6.3/9/10/11/15 B，开始核对进度末40行、对应章节及决定。aa92e9c基线恢复包SHA256为8657a2c338bd7f72a03e3d19b0296a1ef0551c213197256a7989470e69679863，401文件独立恢复及干净状态再次核对。沿用户整项目清除选择，本轮只使用临时合成项目；前端沿已有subagent授权，整体目标仍未完成。
+- 改动的文件：新增ingest/parents、query/session_parent、golden/test_session_parent、后端中文验收和前端父线程组件／helper／样式／单测／浏览器合成服务／验收；修改migration21、清除表清单、scanner、API证据及只读接口、CLI、EvidencePanel/types，以及README、DECISIONS、REQUIREMENTS_STATUS、PR草稿、本文件。源规格及个人客户端设置不改。
+- 行为：原生顶层及旧thread_spawn直接父ID声明与L0／游标同事务，唯一父身份才关联；父头迟到恢复，冲突、无效身份、自引用、歧义及循环不猜。根session_id、forked_from_id和目录不作直接父依据；Claude原关联保持。可变投影可恢复，只读查询依据不可变声明；全部判定与最近20条部分展示区分。项目归属不继承，跨项目只保留子头源声明，不落父外键／返回父编号或引用。升级只建表，重扫从已存可识别头补记并保留原L0时间；备份和清除纳入新表。
+- 首验：50项2 failed/48 passed in11.41s，测试误用数据库文件名；跨项目父外键阻止原清除保护。修正路径并收紧跨项目投影，原清除拒绝规则不变。一次关联组误用不存在的test_spool.py为0项，改实际文件后100 passed in29.44s。补强真实进程退出、旧多头补记、并发快照、旧Codex投影恢复及直接父身份案例，最终55 passed in9.74s；失败日志保留忽略目录。
+- 隔离安装：Python3.12.3仓库外-I运行55 passed in14.61s，含真实CLI／HTTP、提交前进程退出79、投影故障、只读并发快照、迁移回滚、源消失备份及合成整项目清除。wheel133成员、128运行资源与源码／安装逐字一致，实际密钥0、私有文件0，SHA256 e43586ae455cd8c9b37e20ebbbf1b3046e9a5e73e680deba67615fe046a70f90。首安装准备误引用不存在的golden/__init__.py，移除错误准备项后取得上述结果；没有当作通过。运行资源已冻结。
+- 进行中：uv sync --locked为Resolved28/13ms、Checked27/51ms；ruff通过、pyright0错误，rg及session-parent帮助退出0。两组全量正在运行，不预报结果；后端结束后才跑前端浏览器专项／完整验收，实看最终桌面及390截图并冻结，再维护既有草稿PR及当前HEAD两种CI、独立恢复包。
+- 边界与下一步：本轮不读取完整真实会话、不调用模型、不删除真实资料。完整Claude parentUuid链、全部工具版本／实际规模、跨项目片段优先级、完整I/O、影响传播／note合同、真实客户端／原生Windows、Atlas正式人工参考及M0–M4继续保留；本轮关联与界面通过也不代表整体完成。实际全量和最终提交证据随后追加，完成本任务后结束本会话。
+
+- 后端最终：uv run pytest -q为1029 passed in435.58s(0:07:15)，uv run pytest tests/golden -q为982 passed in420.83s(0:07:00)，均退出0；两组并行不作性能基准。uv sync --locked为Resolved28/13ms、Checked27/51ms；ruff为All checks passed!，pyright为0 errors,0 warnings,0 informations；rg及session-parent帮助退出0。后端128运行资源冻结，前端135单测／17files／976ms、build238modules／1.08s、tsc退出0；浏览器专项在后端结束后启动，不预报结果。
+
+- 前端专项：4项真实浏览器首次全部通过11.3s，无失败／超时／重试调整。父实看桌面关联／父头／冲突及390关联／跨项目五图；32项冻结全OK，清单SHA256为823d6dbb1c063bded9e4f1771dd8b1362a64ef66ce318aa4565b8f2ccc4f322f。9文件恢复包c90ef293e595b93f6c3c887d49ca657c074559b9d36008f5813f4a3d5becf4c5独立解包逐字一致，前端停止编辑且8791／9798释放。父开始串行完整浏览器，结束后追加实际结果；源声明与当前父关系分开，源文件行位置不当成对象窗口，只传事件ID导航。
+
+- 父任务最终串行cd web && pnpm test:browser为125 passed(1.8m)，原121项完整保留；32项前端冻结再核对全OK，9文件恢复包逐字一致，后端128运行资源与已安装wheel再核对一致。最终ruff、差异检查退出0，运行资源／前端／验收代码不再修改。随后按24文件清单提交维护既有草稿PR，核对新HEAD推送／PR两种CI和独立恢复包后结束本任务；下一任务继续Claude parentUuid链及其余明确采集缺口，整体目标与M0–M4保持未完成。
+
+## 2026-10-11 · Claude来源事件父链
+
+- 任务：开始核对进度末40行、§2/6.2/15 B及决定，f384f7d基线的412文件、恢复包、隔离运行资源、前端冻结与当前HEAD两种CI实际再次核对。沿用户整项目清除选择，本轮只用临时合成库；前端沿已有subagent授权，整体目标保持未完成。
+- 改动的文件：新增ingest/claude_chain、query/event_chain、golden/test_event_chain、后端中文验收及前端父链组件／helper／样式／单测／专项浏览器／合成服务／中文验收；修改migration22、scanner、watch、清除表清单、CLI、API及原文响应、EvidencePanel/types、README、DECISIONS、REQUIREMENTS_STATUS、PR草稿和本文件。
+- 行为：正文UUID去重不改，逐物理来源保存父UUID／严格旁支声明；多块共原文锚点。父记录迟到可恢复，同来源优先／项目唯一等价组回退；副本变体、歧义、循环、积压和多来源祖先不猜。全候选判定与20引用部分展示分开，祖先最多64步。旧元数据每来源每轮补至多256条，原件消失仍从已存对象恢复，批内事务失败整体回滚，新尾不跨缺口，原L0及时间不改。跨项目无父引用／外键，备份和整项目清除纳入新表。
+- 首验：54项为2 failed/52 passed in15.52s，测试遗漏正文ID块序号、取错时间列；修正为既有身份与命名列。关联准备误用不存在的test_clear.py导致0项，已改实际test_project_clear.py，不计通过。初日志留忽略目录；补强轮换、对象损坏、源消失旧备份、实际补记进程退出和批内回滚后，最终验证进行中，不预报结果。
+- 下一步：后端全部与固定案例、隔离Python安装实际结束后，再串行前端专项及完整浏览器，实看桌面／390图并冻结。维护既有草稿PR、核对当前HEAD两种CI和独立恢复包后结束本任务；全版本／实际规模、跨项目片段优先级、完整I/O、影响传播／note合同、真实客户端／原生Windows、Atlas正式参考与M0–M4继续保留。
+
+- 关联最终：新增63 passed in18.77s；事件链／原父线程／导入／spool轮询／整项目清除共168 passed in46.60s。ruff为All checks passed!，pyright为0 errors,0 warnings,0 informations；uv sync --locked为Resolved28/1ms、Checked27/58ms，rg及event-chain帮助退出0。运行资源冻结；全量和隔离安装仍在执行，未开始前端浏览器。
+
+- 复核修正：祖先循环需按来源实例及UUID组合判断，避免不同fork的相同UUID被误报循环。仅UUID的实现已修正并追加回归；正在执行的两组全量显式停止，旧结果不作最终验收。重新构建并隔离安装，再运行最终64项与两组全量；前端接口合同不变，浏览器仍未启动。
+
+- 修正最终专项：64 passed in18.31s；仓库外Python3.12.3 -I隔离安装64 passed in26.99s，包135成员／130运行资源与源码及实际安装逐字一致，实际密钥0、私有文件0，wheel SHA256为6ea7b25a8b92d05a326bf0be36cf642a4903c5999554aad78d1648a6ffc86dd3。ruff通过、pyright0错误；两组旧全量退出143，旧日志保留忽略目录，修正后正在重跑。运行资源再次冻结，没有启动前端浏览器或调用模型。
+
+- 后端最终：uv run pytest -q为1093 passed in470.74s(0:07:50)，uv run pytest tests/golden -q为1046 passed in455.59s(0:07:35)，均退出0；两组并行不作性能基准。ruff为All checks passed!、pyright为0 errors,0 warnings,0 informations；sync及CLI帮助沿上述结果。后端130运行资源冻结，已通知前端在两组实际结束后启动真实专项，未预报浏览器结果。
+
+- 前端专项最终：143单测/18files/978ms，build241modules/1.51s，tsc退出0；4项真实浏览器专项首轮全部通过15.0s，无失败／超时／重试变动。父实看桌面关联／积压／副本与390关联／引用卡／跨项目六图，父再次核对33项冻结全部OK，清单SHA256为de76885ada0da182edac070efb4e6b5b8696e7595d6abe7758583d73c4593d4e；9文件恢复包22b66332cf08ee91c0a88b2ecb2d39a9bacaed1a248e849c39e20396b9b74c2d内容逐字一致。前端停止编辑，8791／9799已释放；父在后端与专项实际结束后串行完整浏览器，未预报结果。
+
+- 父任务最终串行cd web && pnpm test:browser为129 passed(2.0m)，原125项完整保留；33项前端冻结再核对全部OK、恢复包九文件逐字一致，后端130运行资源与已安装wheel一致。最终ruff、差异检查退出0，运行资源／前端／验收代码不再修改。随后按25文件清单维护既有草稿PR，核对新HEAD推送／PR两种CI及423文件独立恢复包后结束本任务；下一任务继续明确需求缺口，整体目标与M0–M4保持未完成。
+
+- 终检补强：3b10094已按25文件清单提交，423文件独立恢复／历史实际密钥0／私有路径0验证后推送，草稿正文逐字一致且未合并。但真实循环新增损坏压缩原文案例复现1 failed/64 deselected in1.85s：ZstdError不属于循环已有的错误类别，会中止其他来源。父链补记现将其规范为无正文ValueError，保留缺口、回滚批次并由既有扫描错误处理继续其他来源；不改生产钩子、对象库或前端合同。旧验收不作为修正最终结果，重建隔离安装并重跑后端；前端33项冻结不变，当前HEAD的CI及恢复包仍待修正后再次核对。
+
+- 补强专项：65 passed in19.87s；仓库外Python3.12.3 -I隔离安装65 passed in32.14s，135成员／130运行资源与源码及实际安装逐字一致，实际密钥0、私有文件0，wheel SHA256为112ed629560b723c591cde71dbf63da9f9215dbadf6f92c3c8fbf4c087a3fe03。ruff通过、pyright0错误。明确256为每次补批上限，spool／重试可启动独立批次，不将无提示的两轮案例冒充全部入口I/O上限。两组修正全量仍在执行；前端合同与冻结保持，旧提交两种CI已退出0，不替代新提交验收。
+
+- 补强后端最终：uv run pytest -q为1094 passed in469.39s(0:07:49)，uv run pytest tests/golden -q为1047 passed in454.13s(0:07:34)，均退出0；并行不作性能基准。65项隔离安装及130运行资源按上述最终包验证，ruff／pyright通过；前端合同未变、33项冻结再次全部OK，保留143单测及129浏览器实际验收，不机械重跑无变更界面。随后按8文件补强清单提交，独立恢复423文件及密钥／私有文件检查通过后才推送，验证新HEAD的推送／PR两种CI与精确草稿正文。完成本任务后结束本会话，下一任务继续明确采集和功能缺口；整体目标与M0–M4仍未完成。
+
+## 2026-10-11 · Codex已存父线程自动补记
+
+- 任务：开始核对进度末40行、§2/5/6.1/6.3/9/10/15 B及决定；a28c915基线实际核对干净工作区、远端、精确草稿、当前HEAD两种CI、423文件独立恢复、130运行资源、33项前端冻结及已释放端口。恢复包SHA256为3215e25350c6139499e225ff4251a8a2de8303c61ebd0606f10275bae8695e77，整体目标保持未完成。
+- 改动的文件：迁移23、ingest/parents、scanner、watch、query/session_parent、新golden/test_parent_backfill和原父线程升级期待；前端沿用户已有subagent授权更新父线程覆盖字段／积压展示／单测及合成浏览器，不改Claude父链与用户配置。README、DECISIONS、REQUIREMENTS_STATUS、PR草稿、本文件及中文验收随实际结果更新。
+- 行为：已存Codex可识别头每来源每批256条自动核对，原件消失和旧轮换实例仍可补记；批内声明与游标事务提交，新尾不跨缺口，已有头不重读，损坏／被锁来源不阻塞其它来源。覆盖未齐不判唯一父，已观察非法／冲突继续保留；后台齐备自动恢复投影，读接口只查同一快照，无人工或模型调用。
+- 首验：父线程专项80 passed in20.79s。随后补强游标比较失败、原文摘要损坏及既有头无重读，关联组为198 passed in57.18s、ruff All checks passed!、pyright0错误；uv sync --locked为Resolved28/1ms、Checked27/47ms，rg及session-parent帮助退出0。运行实现已冻结，两组后端全量和隔离安装正在执行，不预报结果，浏览器等待两组实际结束。
+- 边界及下一步：只用临时合成库，不读取整份真实会话、不调用模型、不删除真实项目。补记游标不证明全部历史或所有工具版本；§12、真实客户端／原生Windows／实际规模、完整I/O、跨项目片段优先级、note与传播合同等继续保留。完成后端／前端实际验收、维护既有草稿PR、验证当前HEAD两种CI和独立恢复包后结束本任务。
+
+- 隔离安装最终：仓库外Python3.12.3 -I实际运行父线程及补记84 passed in36.87s，135包成员／130运行资源与源码及安装逐字一致，实际目录密钥0／私有文件0，wheel SHA256为af22723342f17ff92ced4b33db1ddcbec960b35f11615bf5105016c167ccdcc9。覆盖真实CLI／令牌HTTP、读快照与事务／进程退出79、原文损坏和旧备份恢复；两组全量仍在运行，没有预报完整结果或启动浏览器。
+
+- 后端最终：uv run pytest -q为1123 passed in489.71s(0:08:09)，uv run pytest tests/golden -q为1076 passed in474.66s(0:07:54)，两组均退出0；并行不作性能基准。130运行资源保持上述隔离包冻结，最终ruff通过。前端147单测／18files／905ms、build241modules／1.49s、tsc退出0；两组结束后才通知启动原9798四例及新增9800四例浏览器专项，未预报结果。
+
+- 前端专项最终：首次7 passed/1 failed(23.2s)，唯一失败为390卡边框滚动取整相差0.171875px；只把测试滚动改居中，整卡／标题／按钮严格位置断言保留，产品／超时／重试不改。复验原四项及新四项为8 passed(21.5s)、退出0；原始失败日志／图和最初helper复现4 failed/143 passed(1.59s)保留。父实看七张桌面及390图，43项冻结全部OK，清单SHA256为5dd68a4c579549d14001de9c39ff5161009c60a2fd5ef9236f8b6cc8c9ebb877；九文件恢复包149cbabdc4005d43b33d36b8cd772bc1e2b1eb7227656aba820661337b66d089实际独立解包逐字一致。原件七图与稳定副本逐字一致；前端停止编辑，8791／9798／9800已实际可绑定，父随后串行完整133项浏览器，未预报完整结果。
+
+- 父任务完整浏览器最终：cd web && pnpm test:browser为133 passed(2.1m)、退出0，原129项保留。两组后端与专项均实际结束后才串行启动；43项前端冻结再次全部OK、130运行资源与最终wheel仍逐字一致，最终ruff及差异检查退出0。实现及验收源码不再修改，按22文件精确清单提交；验证428文件独立恢复、历史密钥／私有路径检查后才推送既有草稿PR，核对当前HEAD推送／PR两种CI与精确正文。完成本任务后结束本会话；下一任务继续明确核心需求，note与传播规则问题已提出，真实工具版本／客户端／规模／Windows及Atlas正式参考门槛继续保留，整体目标与M0–M4未完成。
+
+
+## 2026-10-11 · 完整研究图读取与历史折叠
+
+- 任务：核对进度末40行、§2/5/9/10/15 A、原设计第7节及决定。实际再运行上一轮终检，基线3d39d19的工作区／远端／草稿正文／双CI／428文件独立恢复／130运行资源／43项前端冻结及测试端口均通过。上一轮为实质进展，本轮继续整体开发。
+- 改动的文件：新增query/graph_records和golden/test_graph_records，更新query/graph、api/graph、api/server及graph CLI集合；前端沿用户已有subagent授权补完整研究图分页、历史详情及原文条件和折叠语义，后端／总文档由父负责。
+- 当前行为：完整记录页最多100条，按同一双截止保存审核／替换与全部可见引用；历史详情不取今天状态，历史原文先筛项目与双时间再读已存对象。前2000条简版接口保留给其它视图，不能作为完整研究图的依据。
+- 首验：uv run pytest tests/golden/test_graph_records.py -q为15 passed in7.45s，ruff为All checks passed!，pyright为0 errors,0 warnings,0 informations，均实际退出0。覆盖2006条完整页、105引用、迟到审核／更正、未知时间／范围、跨项目、并发写快照、删除来源的字节窗口、真实令牌HTTP及CLI。没有读取真实全文、调用模型或删除真实资料。
+- 下一步：加强历史原文的并发及错误参数验证、运行关联组和两组全量，再串行前端真实专项及完整浏览器、实看桌面与390图。更新中文验收与需求状态、维护草稿PR、核对新HEAD的双CI和独立恢复后结束本任务；note／传播等待原问题答复，实际规模、真实客户端和M0–M4门槛继续保留。
+
+- 关联复验：首轮为1 failed/151 passed in53.69s，新增并发原文案例只追加L0却期待语义图修订变化，属于测试设定错误；改为同时追加审核记录，保留原失败日志，不改变修订合同。最终152 passed in53.33s；仓库外Python3.12.3 -I隔离安装48 passed in19.69s，136包成员／131运行资源与源码及实际安装逐字一致，实际密钥0／私有文件0，wheel SHA256为8b7194393d87f1a4caf6aaae5013aebbe79c1f34899d97482f75a133beb459a3。两组全量已实际启动，未预报结果；前端浏览器仍等待它们实际结束。
+
+- 后端最终：uv run pytest -q为1146 passed in491.73s(0:08:11)，uv run pytest tests/golden -q为1099 passed in476.83s(0:07:56)，两组均退出0；并行不作性能基准。131运行资源保持已安装wheel冻结，已通知前端在最终单测／构建／类型检查结束后开启真实专项；未预报浏览器结果。
+
+- 前端首轮：158项单测通过，但新增测试类型推断使build／tsc实际退出1；子任务在读取该返回值前提前启动专项，已停止并保留原始日志。该轮4 passed／2 failed／4未运行(24.7s)，分别为旧dist未包含旧最小记录兼容修正、2005条合成种子的逐条提交拖住监听准备。修正测试类型及一次合成导入事务后，158单测、build243modules／1.06s及tsc实际退出0，再重新启动原五项与新增五项专项；不调整超时／重试，不预报复验结果。
+
+- 前端专项最终：其后两轮5 passed／1 failed／4未运行(16.3s／15.8s)均为镜像夹具断言错误，按Claude实际raw_events.alias_of保留原件、归一正文核对后，原五项与新增五项10 passed(32.2s)，实际退出0；最终158单测／19files／875ms、build243modules／1.06s及tsc退出0。2033条真实合成HTTP记录21页读齐、35引用保留，历史／409／错页／迟到200及401／390几何通过。父实看六图，56项冻结全部OK，13文件恢复包独立解包逐字一致；清单SHA256为f61298bad29fe6be6921c89eb67d7b7ef203ac834a44d6b69026710c2f682ae5，恢复包4f5bb2c254330860f8560165b2b6583396919a451f59894c04fd3e2c82c25be3。前端停止编辑，8791／9801实际可绑定，最终全局ruff为All checks passed!、差异检查退出0；父接续串行完整浏览器，不预报结果。
+
+- 父任务最终串行cd web && pnpm test:browser为138 passed(2.4m)，实际退出0，原133项保留；两组后端及专项实际结束后才启动。131运行资源与源码／最终wheel／隔离安装仍逐字一致，56项前端冻结和13文件恢复已核对，最终全局ruff及差异检查通过。实现与验收源码不再修改；按25文件清单提交、独立恢复437文件及历史密钥／私有路径检查后再推送维护既有草稿PR，核对新HEAD两种CI和精确正文后结束本任务。下一任务继续真实工具／规模、个人ViewState、完整十类折叠及其它需求缺口；note与传播原问题仍待答复，整体目标和M0–M4保持未完成。
+
+## 2026-10-11 · 个人研究图视图保存与恢复
+
+- 任务：核对末40行、§2/9、原设计第7节及相关决定。上一轮为实质进展；实际重新运行终检，eb3eb2b的干净工作区／远端／精确草稿／当前HEAD双CI／437文件独立恢复／131资源／56项前端冻结和测试端口全部通过，恢复包SHA256为45614d6766d3ad7b023cb937aab7ff4cd04ebf58c5ff3494d515ee8ed39010c1。
+- 改动的文件：新增api/view_state及后端固定案例，server增加个人视图读写；前端沿用户已有子agent授权负责布局拖动、保存／读取、版本／过程组／视角恢复及独立合成浏览器，总中文文档由父负责。既有view_states已纳入备份和整项目清除，不新增迁移。
+- 行为：个人显示身份沿既有复核者姓名和项目；完整图双截止／修订与显示参数主动保存，行号CAS和图修订核对防止静默覆盖。恢复先固定保存条件读齐全部页，再核对同修订成员／版本及折叠条件，位置、视角和显示选择不成为研究事实。
+- 当前：实现和测试进行中；只使用临时合成资料，不读取真实全文、不调用模型、不删除真实项目。下一步验证并发保存、旧／损坏视图、读取快照、跨项目／范围、备份及整项目清除，运行完整后端和隔离安装后再启动前端真实专项与完整浏览器，维护草稿并核对新HEAD双CI和独立恢复；整体目标及M0–M4继续未完成。
+
+- 后端首验保留失败：5 failed/25 passed为Store生命周期与缺少静态首页夹具；2 failed/28 passed为备份入口与环境SOCKS代理；随后1 failed/29 passed实际发现VACUUM重排裸rowid。改用迁移24稳定自增编号，增加升级失败回滚、原文零读取、旧编号保留、清除后其它项目CAS及删除后不复用测试。一次命令未找到uv、一次ruff导入／行长检查失败也保留，未作为测试通过。
+- 最终专项31 passed in6.35s，关联157 passed in57.48s；uv sync --locked为Resolved28/1ms、Checked27/58ms，ruff All checks passed!、pyright0错误，rg帮助退出0。132运行资源已冻结，最终wheel已构建；两组完整后端和仓库外安装正在运行，前端浏览器继续等它们实际结束，不预报结果。
+
+- 后端全量最终：uv run pytest -q为1177 passed in514.83s(0:08:34)，uv run pytest tests/golden -q为1130 passed in499.55s(0:08:19)，两组均实际退出0；并行不作性能基准。仓库外Python3.12.3 -I隔离安装79 passed in32.73s，137包成员／132运行资源与源码及安装逐字一致，实际密钥0／私有文件0，wheel SHA256为6e062e2564f0921c097079445fed19db1e161dca52cc806a36b3e44a7f84a136。前端165单测／20files／1.19s、build245modules／1.69s及tsc实际0后，现通知串行原五项、上一轮五项及新五项真实浏览器；未预报结果。
+
+- 前端专项：首命令误写旧semantic文件名，实际10项为research5加view5，不记15项；7 passed/3 failed(1.1m)分别为两个DOM坐标舍入断言和中文HTTP标记。复验正确semantic5加view5为8 passed/2 failed(1.0m)，剩余为视角舍入和刷新后误以为保留项目／页。只修测试显示精度和重开步骤，数据库／请求／原边证据精确校核保留。一次类型检查退出1后误启动的轮次已主动SIGINT并退出130（1 passed/1 interrupted/3未运行，19.7s），不记通过，随后逐项等待静态终态0才单独启动。
+- 最终新view5专项5 passed(45.7s)，actual0；原research5和semantic5分别在前两轮实际全0。当前165单测／20files／1.07s、build245modules／1.64s及tsc实际0；原始失败日志／图片保留，超时／重试未改。前端正在补恢复后主动聚焦的390完整组卡图并冻结，本轮完整浏览器仍未启动，不预报结果。
+
+- 前端冻结最终：补图组专项1 passed(17.8s)，父实际查看七张桌面／390图。64项清单全部OK；10文件恢复包父独立解包逐字一致，原件七图与稳定副本一致，8791／9801／9802均实际可绑定。清单SHA256为a3fcc9c4a12dd72c8d19d3ebbd708f2d25828f3c7f1cd0e10b226980755e99b4，恢复包d0719d192bcbcd84ce5448176300c7213eac6800ae570322ad4505e7cfb18a1f。前端停止编辑；最终全局ruff和差异检查通过，父现接续串行完整浏览器，不预报结果。
+
+- 父任务完整浏览器最终：cd web && pnpm test:browser为143 passed(3.1m)，实际退出0，原138项保留。两组后端及专项终态、前端冻结与端口释放后才串行启动；132运行资源仍与源码／wheel／隔离安装一致，64项前端冻结和10文件独立恢复已核对，最终全局ruff及差异检查通过。实现与验收源码停止修改；按21文件精确清单提交，独立恢复446文件并检查历史密钥／私有路径后再推送维护草稿PR，核对当前HEAD推送／PR两种CI和精确正文。完成本任务后结束本会话；下一任务继续完整折叠十类、真实工具／客户端／规模、完整I/O等缺口，note与传播原问题仍待答复，整体目标及M0–M4保持未完成。
+
+
+## 2026-10-11 · 十类语义与折叠独立固定验收
+
+- 任务：核对进度末40行、§2／9／15 A／12 M4、原设计第7节及相关决定。实际重跑上一轮终检，49296a7 的干净工作区、远端、精确草稿、当前双CI、446文件独立恢复、132运行资源、64项前端冻结和测试端口全部通过。整体开发继续，本轮补齐既定十类语义的独立固定输入与预期，不改产品语义。
+- 改动文件：README.md、docs/DECISIONS.md、docs/PROGRESS.md、docs/PR草稿.md、docs/REQUIREMENTS_STATUS.md、docs/acceptance/十类语义折叠验收_20261011.md、fixtures/golden/semantic_cases.json、tests/frontend_server.py、tests/golden/test_semantic_cases.py、tests/semantic_cases.py、web/tests/model.test.ts、web/tests/browser/semantic-cases.spec.ts。前端沿用户已有子agent授权负责两份测试和截图冻结，其余由父负责；生产源码未变。
+- 输入：十类十一场景，A04必需输入／证据综合分别验证。原生扫描、完整HTTP／历史ZIP、逐条原文字节和摘要、实际离线Worker两模型同窗口重提取、缓存、人工更正、迟到旧会话与双截止分别核对。预期独立写定，不调用产品图函数，不自动搜索可折叠子图；运行时清单只保存身份关联。只用公开合成资料，不读取完整真实会话、不调远程模型、不执行历史命令、不删除真实项目。
+- 已结束验收：uv sync --locked为Resolved28/15ms、Checked27/64ms；十六项最终专项16 passed in21.45s、关联83 passed in61.91s；仓库外Python3.12.3 -I隔离安装95 passed in49.52s，最新十六项隔离复验16 passed in16.80s。uv run pytest -q为1193 passed in537.61s(0:08:57)，uv run pytest tests/golden -q为1146 passed in521.65s(0:08:41)，均实际退出0，并行耗时不作性能基准。全量后仅调整合成项目显示名并增加A10断言，当前十六项均再次通过。
+- 静态与前端：ruff All checks passed!、pyright0 errors/0 warnings/0 informations、rg帮助退出0。pnpm test为168 passed/20files/1.03s，pnpm build为245modules/1.10s，最终tsc退出0；十一场景11 passed(40.3s)，A03／A05补充严格可视2 passed(26.7s)，均终态0。父原尺寸实看七图，阴性被否定与未选C拒绝的外部状态卡在真实缩放／平移后完整可见。55项冻结全OK、两文件恢复包父独立解包逐字一致，七图稳定副本与原件一致；冻结清单7ec3e8087799957caa6a04f242e08e89069471d40699845fcc45ebe30df31077，恢复包fbf0830690ee9c86718262e795c60cf41388366138da4500b39f0af0f2163080。137包成员、132资源与源码及安装逐字一致，实际目录密钥0、私有文件0，wheel沿用6e062e2564f0921c097079445fed19db1e161dca52cc806a36b3e44a7f84a136。
+- 首验保留：后端12 failed/4 passed为错误原文参数及编辑字段；离线Worker首次2 failed为对不含目标事件的片段返回目标位置，改为明确空候选。浏览器首轮8 passed/3 failed为动态复选框定位和旧候选有效状态预期，另有两次新增测试类型失败；原日志、当轮输入／源码和截图保留。完整浏览器首轮到第113项后收到终止信号，实际退出143、无最终报告，不记为通过；来源未确认，已保存原始证据，仅停止本轮遗留合成服务后重跑完整回归，不改超时／重试。
+- 下一步：等待完整浏览器实际终态，再补齐中文验收、按12文件清单提交、独立恢复451文件及历史密钥／私有路径核对，维护既有草稿PR并核对新HEAD双CI。固定A组不替代M4真实找答案时间；M0／M1正式人工参考、M2真实全量采集、M3两周使用、实际I/O／工具版本／客户端／规模等门槛保留，note和影响传播、外部副本清理边界沿原待定项，整体目标与M0–M4未完成。
+
+- 完整回归第二轮实际153 passed/1 failed(3.7m)、退出1：旧健康测试固定全库来源8，十一场景加迟到会话共12个新来源使实际为20。原日志／旧测试／身份清单／截图保留，父仅更新web/tests/browser/health.spec.ts该固定预期并解释输入组成，精确提交清单扩为13文件；未改统计实现／超时／重试。当前168单测/20files/959ms、build245modules/1.02s含类型检查、健康4 passed(10.7s)均实际0后，再串行完整回归，不预报最终结果。
+
+- 完整回归第三轮实际153 passed/1 failed(3.8m)、退出1：既有个人视图展开后节点先出现、边DOM尚未完成测量，立即读取为空。父只将web/tests/browser/view-state.spec.ts的完整原边ID断言改为条件等待，原集合／位置／证据／超时不变，旧源码与失败证据保留；精确提交范围为14文件。下一步先等构建和个人视图专项实际终态，再串行完整回归。
+
+- 当前build245modules/1.02s含类型检查实际0后，个人视图完整五项复验5 passed(47.6s)、退出0，包含展开后完整原边ID。现串行完整浏览器第四轮，之前失败与143中断保留，不预报结果。
+
+- 父串行完整浏览器最终cd web && pnpm test:browser为154 passed(3.7m)、实际退出0，原143项保留。两组后端及静态／专项终态、前端冻结和服务释放后才运行；完整失败轮及143中断均独立保留。所有实现和测试源码停止编辑，最终提交范围14文件（初列12加health.spec.ts和view-state.spec.ts），仍仅测试／公开合成输入／中文文档，无产品源码改动。接下来按精确清单提交，独立恢复451文件并核对历史密钥／私有路径，维护既有草稿PR、核对新HEAD推送／PR两种CI与精确正文后结束本任务。下一任务继续真实质量／采集／使用及其它明确缺口；整体目标与M0–M4尚未完成。
+
+
+## 2026-10-11 · Claude 多步编辑顺序核验与旧候选诊断
+
+- 任务：执行版§2/6.2/8.3/9。原生MultiEdit已入库，但旧派生未逐项核对请求，无效中间步骤仍会成为完整双侧候选。改动rg/derive/edits.py、multiedit.py、edit_checks.py、views.py、worker.py、rg/query/l1.py及store迁移／整项目选择合同；新增tests/multiedit.py、golden/test_multiedit.py；前端子任务六文件为types.ts、EvidenceRecords.tsx、l1.ts、l1.test.ts、browser/multiedit.spec.ts与tests/multiedit_browser.py；同步README、DECISIONS、需求状态、验收和草稿说明。
+- 改动：按顺序替换，逐步核对UTF-8中间长度及最终工具候选。旧编辑行及后候选不改写；后台派生自动追加无正文诊断缓存，图及默认导出仅读元数据，待核验后版本未知。当前证据差异直接核验；原后编号保留，仍为工具文本候选，不确认真实物理文件。迁移25原子建表并使含旧MultiEdit的图修订失效一次；缓存按项目备份／清除，后台中断回滚，未核验新项优先，恢复对象后显式重试追加新诊断。
+- 已结束验收：uv sync --locked为Resolved28/1ms、Checked27/56ms；最终专项34 passed in7.20s，相关225 passed in59.19s，仓库外Python3.12.3 -I最终wheel隔离安装116 passed in34.45s，均实际退出0。ruff全仓及scripts All checks passed!、pyright0/0/0、rg帮助退出0；新wheel139成员／134资源与源码及实际安装逐字相同，目录凭据0、私有文件0，SHAeb8043b7737104766e1cbf78da4999010a3800632339587b259f198d14351d94。运行源码已冻结。
+- 失败保留：红灯1 failed精确复现旧错误；目标扩展首轮27 passed/3 failed为测试调用／升级修订比较／误用原文字节，已修正。复核发现DECISIONS第384行明定图不读正文，父主动中断首轮全量两组，各637项通过后SIGINT、实际退出2、不记通过，改为后台追加诊断并重测；新增测试首轮缩进导致收集失败，修复后专项已全部通过。不改超时、重试或既有图读取合同。
+- 下一步：等待两组最新全量真实终态；之后顺序启动前端独立四场景，核对静态、原尺寸截图、只读数据库摘要及证据冻结，再串行完整浏览器。按精确文件清单维护已有草稿PR、核对新HEAD双CI与完整bundle独立恢复。Atlas人工参考及真实效果、完整实际I/O、M2真实采集、M3两周使用、note／影响传播／外部副本范围等保留，整体目标未完成。
+
+- 后端最终门槛已实际退出0：uv run pytest -q为1227 passed in543.67s(0:09:03)，uv run pytest tests/golden -q为1180 passed in528.18s(0:08:48)。运行134资源冻结未变，随后通知前端子任务开始独立四场景浏览器，尚未预报界面通过。
+
+- 前端终态：172 passed/20files/968ms，build245modules/1.05s，产品和补API存档后tsc均实际0；四场景首轮4 passed(13.1s)、第二轮4 passed(14.0s)，服务退出0，完整逻辑数据库查询前后摘要相同。父原尺寸实看五张桌面／390px图并逐字核对稳定副本；97项清单全部通过，父独立解包六文件逐字一致，41份实际API JSON可解析。冻结清单9555615e693f0fe20e3193021aefd7658b49b1d7486760f9af71ce9699bba4af，恢复包4e87e69d37885686d8f57f647116da37a81d0c64697337b474896acb27afaf42。运行134资源未变，8791／9801／9802／9803可绑定，前端停止编辑后父串行启动完整浏览器，不预报结果。
+
+- 父串行完整浏览器cd web && pnpm test:browser最终158 passed(3.8m)，实际退出0，原154项保留。最终全仓ruff All checks passed!、差异检查退出0。实现与测试源码冻结，本轮按22文件精确清单提交；接下来独立恢复458个跟踪文件、检查全部历史密钥／私有路径、维护既有草稿PR并核对新HEAD推送／PR两类CI及精确正文后结束本任务。下一任务继续真实质量、采集、使用及其它明确缺口；Atlas正式人工参考、完整实际I/O、M2全量采集、M3两周使用及原待答设计项保留，整体目标与M0–M4尚未完成。
+
+
+## 2026-10-11 · 原生客户端 MCP 与命名空间注入排除
+
+- 任务：读取进度末40行、§2／6.3／6.5／6.8／7.11及相关决定，实际重新核对上一轮完整交付。原生本机Codex0.162.0和Claude2.1.280隔离测试发现工具命名空间漏排除及Claude证据工具未注册；继续整体目标，本轮不安装日常钩子。
+- 改动文件：rg/ingest/common.py、codex.py、scanner.py、exclusion.py，rg/slim/slimmer.py，rg/extract/validate.py、worker.py，rg/mcp/tools.py、server.py；新增公开合成原生fixture两份、样本说明、golden/test_native_client_mcp.py、scripts/check_native_clients.py及中文验收，同步README／需求状态／草稿与决定。
+- 修复：精确五个别名和Codex独立namespace；其他MCP身份不猜成本机编辑。保存原件重核输入资格，在缓存接受／引用校验之前排除，不改L0；解析3／瘦身4进入Worker静态配置，旧待执行窗口不再重发。客户端发现schema兼容对象，执行端仍严格互斥引用。过去已发布断言未批量撤回，污染审计保留。
+- 已结束验收：当前专项22 passed in2.62s、首19项2.00s、pyright阶段0/0/0；uv sync --locked为Resolved28/1ms、Checked27/43ms。维护版原生脚本实际两客户端均五工具成功、六次固定响应请求、退出0；完整数据库转储及Git index不变。仅公开合成资料、回环固定协议输出，不调远程模型、凭据不入prompt；用量占位不冒充token实测。关联及最终静态仍在执行，完整回归未预报。
+- 原始失败保留：首fixture红灯2 failed in2.96s；新增脚本前原生Claude五工具对照最后evidence实际工具不存在而进程0，发现仅四工具，修复后维护脚本五个实际返回均通过。一次文档补丁格式错误原子拒绝，重发后保存。
+- 下一步：等关联实际终态后全量后端／golden与最终wheel隔离安装；前端未修改，仍核对既有冻结及适当回归。收尾同步设计问题待用户答复，产品配置保持原规则；完成本批验证后维护既有草稿PR、核对当前双CI及独立bundle恢复。真实试点／全版本／p95／旧已发布污染审计及整体M0–M4仍未完成。
+
+- 最终本地验收均实际退出0：后端1250 passed in548.60s(0:09:08)，golden1203 passed in532.58s(0:08:52)，专项23 passed in3.90s，关联193 passed in57.81s，仓库外Python3.12.3 -I隔离安装205 passed in80.78s。ruff全仓All checks passed!、pyright0/0/0、CLI帮助0；前端172单测／20files／1.51s、build245modules／1.89s含类型检查。官方SDK两协议及两配置实际0；原生两客户端五工具各成功、数据库转储及Git index不变。140包成员／135运行资源源码及安装逐字一致，实际凭据0、私有文件0，wheel SHA463c068e9a416a294b38d1d39ff308c366f19e9abaa0a091098f915c26f798a7。
+- 前端产品和测试源码不改，97项既有冻结全OK；本地完整浏览器158项是bcf02d7基线，不冒充本轮新运行，当前提交浏览器以双CI为准。按二十文件精确清单提交，接续独立恢复465文件及全历史凭据／私有路径核对，维护既有草稿PR、核对新HEAD两种CI和精确正文后结束本任务。原生收尾同步待答，生成配置不改；旧已发布污染审计、真实质量／采集／使用及整体M0–M4仍未完成。
+
+
+## 2026-10-11 · 旧注入原件的只读取证资格与审计
+
+- 任务：读进度末40行、§2／5.3／6.5／7.10／7.11／9／10及已有决定；实际重跑0b94702终检，干净源码、远端、精确草稿、当前双CI、465文件独立恢复、135包资源与97项前端冻结全部通过。继续整体目标，不将上一轮进展误记为完成。
+- 已复现：旧漏标工具原件会从已发布候选引用和原文搜索后备进入问答；七个固定案例红灯7 failed in5.20s，包括人工已确认候选。修复后七项7 passed in2.63s，既有原件及审核状态、完整数据库转储不变，无证据时计数和生成均0。
+- 当前改动：rg/ingest/exclusion.py、query/reader.py、retrieval.py、graph_records.py、api/views.py及slim/slimmer.py；只读取证新增input_exclude_reason，原exclude_reason保留。MCP包装有标记时整体不进模型，唯一调用关联在历史取证中同时核对双截止；瘦身版本5拒绝旧缓存。新增tests/injected_sources.py及golden/test_injected_source_reading.py，接续有界只读source-audit命令及中文验收；父负责后端／CLI／文档，沿用户已有前端子agent授权提供来源提示和独立公开合成浏览器验收。
+- 边界：不改claim_state、人工审核、采用或证据状态；旧模型候选如何退出自动状态计算和工作集的设计题已问用户，答复前不实现这部分。诊断不证明真实引用语义，未发现排除原因不等于确认有效；不读全会话、不调用远程模型、不删除真实资料，不安装日常钩子。
+- 下一步：完成只读审计与源码／HTTP／历史／MCP／问答关联回归，等待状态设计答复；再按实际终态全量／隔离安装／前端冻结与浏览器验证，维护草稿和新HEAD双CI及完整独立备份。整体M0–M4及旧收尾同步问题保持未完成。
+
+- 新增专项23 passed in6.23s，关联最终189 passed in45.31s，仓库外Python3.12.3 -I安装201 passed in62.09s，均实际退出0。关联首轮1 failed/184 passed为既有并发原文拦截器旧签名，现透传新参数，快照断言保留；原失败日志不删除。全仓ruff All checks passed!、pyright0/0/0、CLI帮助0。wheel141成员／136运行资源与源码和安装逐字一致，目录凭据0、私有文件0，SHA c9657c21329a0796dc14450b087fc673c4784d6b377fc10a61cbe465e4e347ff。运行源码冻结，完整后端及golden在执行，前端172单测和构建已实际0，独立浏览器仍等两组终态。
+
+- 父复核共享Claude原件的多逻辑结果，整记录标记查找会误排除无关结果；新增红灯1 failed/10 deselected/2.42s，现按每个结果原正文检查。主动中断首轮两组全量，各2 failed/478 passed/约216s、实际退出2，不记通过；两失败为旧不可重解析逻辑索引造成L1取证500。现原文入口保留可读正文，资格无法核对时标source_unavailable并拒绝问答证据；调用对象缺失／损坏同样保留结果正文。前阶段23专项、189关联和201安装仅对应此前实现，最终正在重跑；旧日志／wheel独立保留，运行136资源重新冻结。前端补无法核对中文理由后172单测／997ms、245模块构建／1.01s、tsc实际0，仍等待父最新两组全量终态后启动浏览器。
+
+- 最新实现验收：专项含L1共48 passed in20.10s、关联214 passed in69.75s、仓库外Python3.12.3 -I安装226 passed in70.51s，均实际退出0；ruff All checks passed!、pyright0/0/0。最终wheel141成员／136运行资源与源码和安装逐字一致，实际凭据0、私有文件0，SHA7ce2357c48f013c05e058fcd1fcde8d1385ee931d55e13c9e0ca70f19c9daac4；136源码资源重新核对冻结。最新两组全量已启动，父不会在真实退出之前放行浏览器。
+
+- 第二轮golden实际1230 passed in531.94s(8:51)／退出0；全量1 failed/1276 passed/549.31s(9:09)／退出1。旧MultiEdit导出测试的随机摘要含手机号形状，before_version被遮盖造成版本引用失配。新增rg/export/privacy.py的三个精确版本引用字段规则及golden/test_export_version_references.py（固定合成摘要红灯4 failed/1 passed/0.84s），自由正文仍遮盖，自定义规则明确命中引用则拒绝。非重试随机数据；源码／wheel与专项／关联／安装重新核对，最新全量稍后启动，前端继续等两组实际终态。提交范围扩至25文件，所有失败原件保留。
+
+- 导出引用修复后最终专项87 passed in28.12s、关联253 passed in72.15s、仓库外Python3.12.3 -I安装265 passed in65.32s，均实际退出0。ruff All checks passed!、pyright0/0/0；wheel141成员／136资源与源码和安装逐字相同，实际凭据0、私有文件0，SHA a89ee1e8b9e7b8d724a33f92c3d6ea5c56d0d5998ce8c7a5c81802cf6be7878a。25文件精确范围及136运行资源冻结未变；最新第三轮两组全量已启动，浏览器仍待实际终态。只读核对发现混合正文的默认遮盖／安全范围已覆盖rg-context与转义固定案例，长窗口和其它资料路径保留专项核验，不将猜测当缺陷或全部自引用清除。
+
+- 第三轮最终完整验收已实际退出0：uv run pytest -q为1282 passed in557.83s(0:09:17)，uv run pytest tests/golden -q为1235 passed in542.18s(0:09:02)。136运行资源冻结和25文件范围一致；官方SDK2.3.0的两代协议及Codex／Claude生成配置均实际退出0、五工具通过、数据库转储不变。本轮没有重跑原生客户端，原生版本证据仍属于上一轮。两组终态后才通知前端启动独立四场景，完整浏览器尚未运行。
+
+- 独立前端首轮实际1 failed／3 did not run，合成服务在启动阶段退出：第三Claude合成项目沿用了第二例原生UUID，被正确识别为副本；没有进入页面断言。原日志与当时五文件副本保留。父仅修改tests/injected_sources.py，保存公开副本前一致映射uuid／parentUuid／sourceToolAssistantUUID，原fixture及136产品资源不变；同库三项目入口实际0、来源专项27 passed in7.11s／退出0、ruff实际0。前端继续独立场景，隔离安装重测以包含最终测试副本；本地完整回归发生在这次测试身份修正前，最终提交的全量测试另由双CI核对。
+
+- 最终测试副本隔离安装265 passed in60.03s(0:01:00)，pyright0/0/0，均实际退出0，wheel及136资源未变。独立前端第二轮实际3 passed／1 failed(13.5s)：390px背景修订标签被长标题挤至right402.03125，诊断卡几何及原文正确，数据库前后转储一致、服务退出0。子任务保留实际几何和失败副本；额外仅允许web/src/styles.css移动端两条布局规则，先核对HEAD与备份，再重跑原几何断言。精确范围扩至26文件，473跟踪文件预期不变，前端冻结扩至六文件；浏览器尚未预记通过。
+
+- 前端最终均实际退出0：172 passed／20files／1.41s，build245modules／1.38s、tsc0，独立四场景4 passed(14.0s)，服务0、8791／9804可绑定。父亲自原尺寸查看五张稳定桌面／390px图，核对169项清单、物理解包六文件逐字一致、20份实际API与8份几何JSON、最终测试副本及数据库前后摘要0d9e6a3ba2f8dfa007e7f98f9a1dc7300b163b66a2476dec07288604153deb5f。清单SHA f40505a2d12d7850b6e0175708060ccbeece909b34b362d5dd690627efce17d3，恢复包f84bcb6473a50cb107e95d471800d78c8299fc7cdd4859e7a0629cabd812d47a；源码停止编辑。父额外DOM检查首轮误把画布内被裁剪的ReactFlow元素当页面溢出，改核对实际document宽度及诊断整卡范围，原浏览器几何断言不改；失败说明保留。父完整串行浏览器已启动，不预记结果。
+
+- 父完整串行浏览器最终162 passed(3.9m)，实际退出0，原158项保留。产品与测试源码停止编辑，后续仅核对完整冻结、静态及差异；按26文件精确清单提交，接续473文件独立恢复和全历史实际凭据／私有路径扫描，更新既有草稿PR、核对最终HEAD推送与PR两种CI及精确正文。本地完整后端／golden早于公开合成UUID隔离修正，最终测试副本来源27项与隔离安装265项、完整浏览器162项已通过；最终提交全量由新双CI核对。下一任务继续待定状态／工作集方案、真实提取质量与采集／使用等缺口；人工正式参考、完整实际I/O、M2真实全量采集、M3两周使用、外部副本边界和收尾同步待定项保留，整体M0–M4尚未完成。
+
+## 2026-10-11 · 链接来源资格与长混合正文窗口
+
+- 任务：按进度末40行、§2／6.5／7.2–7.11及相关决定继续整体开发。实际重新核对431f186：远端、精确草稿、当前两类CI、473文件完整独立恢复及136包资源全部通过，先另存可验证bundle再修改。
+- 改动文件：rg/extract/linker.py、pipeline.py；新增golden/test_link_source_qualification.py、test_long_injected_windows.py与中文验收，同步README、需求状态、草稿、进度及决定。前端及既有公开fixture辅助函数不改。
+- 已复现：四个旧原生注入来源在有限窗口计数前进入提供方，红灯4 failed in5.39s；资格检查后4 passed in2.31s。关联首轮3 failed／35 passed／16.68s，新专项首轮3 failed／14 passed／21.63s均是只更新两层调度后调用缓存仍复用；现三层处理身份一致。最终新增专项17 passed in20.86s，实际退出0，核对持久队列旧完成项重查且概览不重发，四个长正文／转义／双角色窗口无标记正文回流，保存字节及原事件不变。
+- 边界：原模型断言、人工确认及状态／工作集卡片保持既有规则；已发布污染记录处理仍待用户选择。关联只检查即将送入的单侧保存原文，不宣称全部自引用已清除。全为公开合成材料，不读完整真实会话、不调用远程模型、不删除真实项目、不安装日常钩子。
+- 下一步：关联回归、Python3.12仓库外实际安装及完整后端／golden均按终态核对；136运行资源已冻结。前端沿已通过的169项冻结，不重复委派或改页面，最终浏览器由新HEAD双CI核对。接续维护既有草稿、完整独立bundle恢复；真实Atlas质量／采集／使用及整体M0–M4仍未完成。
+
+- 关联最终234 passed in75.43s(0:01:15)、仓库外Python3.12.3 -I安装251 passed in117.56s(0:01:57)，实际退出0；首次关联命令误写不存在的test_locating.py，退出4无测试，已用实际test_locations.py更正，失败日志保留。ruff全仓All checks passed!、pyright0/0/0、CLI帮助、SDK两代协议与两客户端配置均实际0，五工具及数据库转储不变。141包成员／136运行资源逐字相同、实际凭据0／私有文件0，wheel SHA f2b8ebc2ee4f2314fb157e0dd6f3754555697046338525a3ba3c6478b22cbc2c。父重新核对169项前端冻结、另建目录物理解包六文件与当前源码一致；无前端编辑或本地浏览器重跑。两组完整回归在执行，未预报通过。
+
+- 最终完整验收均实际退出0：uv run pytest -q为1299 passed in 583.93s (0:09:43)，uv run pytest tests/golden -q为1252 passed in 568.37s (0:09:28)。136运行资源冻结未变，十文件精确范围含三新增，README数据库版本按当前迁移常量更正为25；不增加数据库迁移。前端169项冻结与六文件恢复保持一致，无本地浏览器重跑，收尾核对最终提交两类CI的全量及浏览器。按十文件提交后接续476文件完整独立恢复与全历史实际凭据／私有路径核对，维护既有未合并草稿及精确正文；整体M0–M4、真实质量／采集／使用与待定设计保持未完成。
+
+## 2026-10-11 · 原生 Windows 存储与清除
+
+- 任务：读进度末40行、§2／8.2／11／12／14／16及相关决定；实际重核24f1808终态，再独立复制并验证恢复bundle。用户要求“按照自己的思路做就行”，普通设计题按自主授权推进，旧等待答复项不再作为开发阻碍；真实科学参考与使用门槛保持事实边界。
+- 改动：store 的 objects／database／clear／clear_files／clear_denials，新增 paths；hooks/entry及新增windows_log；新增公开directory_aliases辅助与storage_portability固定案例，调整既有store_lease／project_clear原生用例，新增Windows CI及中文验收、README、需求状态、决定与草稿说明。
+- 复现：旧安装包仓库外实际原件发布后AttributeError、建库UnicodeDecodeError；初始新专项10 failed／1 passed，首轮Windows关联6 failed／33 passed／1 skipped，Linux1 failed／39 passed。测试错用title列、默认回执编码／链接权限与CLI子进程旧安装分别更正；实际错误日志用原生句柄只追加。全部原失败日志保留，不用重复随机测试消除失败。
+- 验收实际退出0：修复后Windows40 passed／1 skipped／11.83s，改用真实junction取消跳过后41 passed／10.88s；最终仓库外Windows3.12.3 -I安装41 passed／11.98s，CP936、utf8_mode0。Linux存储／清除／钩子关联64 passed／25.35s，最终目录别名专项20 passed／7.09s；ruff All checks passed!、pyright0/0/0、CLI帮助0。143包成员／138运行资源与源码及原生安装逐字一致，实际凭据0、私有文件0。
+- 下一步：138产品资源已冻结，完整后端及golden按真实终态核对，再维护既有草稿、新HEAD双CI与完整独立备份。前端沿既有169项冻结，不改页面或重复委派。断电／规模、完整Windows快照／摘要／导出、真实质量／采集／两周使用及整体M0–M4仍未完成；普通剩余设计由Agent接续实现。
+
+- 最终完整回归实际退出0：uv run pytest -q为1311 passed in578.76s(0:09:38)，uv run pytest tests/golden -q为1264 passed in562.88s(0:09:22)。138产品资源冻结保持一致，测试辅助只补返回类型标注；19文件范围含5新增，预期481跟踪文件。前端169项冻结逐项核对通过，无本地前端重跑。接续Codex身份提交、完整bundle独立恢复／全历史凭据扫描、既有草稿精确正文及新HEAD双CI；Windows持续验收只覆盖本批三组，整体目标保持未完成。
+
+
+## 2026-10-11 · 模型记录来源资格
+
+- 任务：按进度末40行、§2／5.3／6.5／7.6–7.9／7.11及相关决定接续自主开发；重新核对f87ccc8的远端、草稿、两类CI、完整备份和运行资源，另存并验证恢复bundle后修改。旧污染模型记录如何进入自动状态／模型工作集按用户自主授权实现，不再等待普通选项答复。
+- 改动：新增derive/claim_sources及迁移26；更新来源轮转、提取入库／工作集／链接／概览与三层处理身份、只读Reader／上下文／图／审核API、管理清除选择。新增来源golden、修正旧链接模拟和无发生时间的工作集预期；前端共用来源诊断／状态计算及独立公开浏览器服务由已授权子任务实现。同步中文README、需求状态、决定、验收和草稿。
+- 行为：模型来源诊断只追加，原模型及人工审核保持不变；全部引用通过才参与自动模型输入及科学状态。新且不可核对的确认事件不能让旧采用误变当前；独立人工记录保持原规则。查询只读匹配诊断，工作集复用已核对来源以保留增量，后台持久轮转实际重核；链接两侧在计数前实查，概览不打开原件。
+- 复现与验收：最初3 failed／2.85s；首次完整后端／golden均2 failed／529 passed，主动中断实际退出2，分别262.79s／262.77s。重复读取旧原件已纠正，无发生时间采用保持time_unknown；原增量集合不放宽。最终来源25 passed／6.45s，增量／提取／工作集65 passed／20.27s；此前迁移／队列／L1关联167 passed／70.25s。误写不存在test_worker路径退出4无测试，改用实际test_working_selection；全部失败原日志保留。
+- 当前安装：修正后144包成员／139运行资源与源码及Windows3.12.3仓库外-I安装逐字一致，实际凭据0／私有文件0；默认CP936、utf8_mode0为41 passed／13.83s，实际退出0无跳过。ruff All checks passed!、pyright0/0/0、CLI帮助0、uv sync locked Resolved28／2ms与Checked27／69ms；完整后端／golden重新启动，不预记通过。
+- 下一步：等完整回归和独立前端真实终态，核对冻结、安装和完整截图；随后按精确范围提交、维护已有草稿、新HEAD双CI与全历史备份恢复。真实Atlas正式参考／质量、全部采集／使用及整体M0–M4仍未完成。日常钩子不安装，真实项目不删除，完整真实会话不读取，不调用远程模型。
+
+- 最终产品冻结后的完整后端为9 failed／1327 passed／607.29s，退出1；golden打印8 failed／1281 passed／591.53s，外层退出143且原因未确认，不记通过。旧规则确认测试仍预期两个修订增量，现验证候选／规则审核／来源诊断三个增量，并核对重复确认幂等；没有发生时间仍保持time_unknown，跨范围确认不改变原范围。首轮测试对齐仍漏第二处旧增量断言，6 failed／31 passed／9.34s，失败日志保留；最终命令uv run pytest tests/test_review_scope.py tests/golden/test_claim_source_qualification.py tests/golden/test_rule_confirmation.py -q实际63 passed／14.20s、退出0。仅修正旧测试，139产品资源保持冻结；最终提交的完整测试副本由新HEAD双CI验收，不将定向结果冒充本地全量通过。
+- 前端实际182单测／20files／1.00s、build245modules／1.11s、tsc均退出0；来源四场景4 passed／22.8s。完整浏览器实际155 passed／3 failed／8未运行／4.4m、退出1：旧图在ELK渲染前拍空基线，两组原时间／版本种子服务在并行后端全量时未于原5秒内监听。仅旧图测试等待现有canvasVisible后保存基线，409及全部图断言保留；原失败与未运行11场景在后端结束后串行补验11 passed／33.2s、退出0，不改超时或重试。首轮／次轮来源场景2／2及3／1失败日志均保留。
+- 父已原尺寸查看五张稳定桌面／390px图；八文件独立恢复逐字相同，320项冻结清单均通过，SHA c20cbb316bedb6d041187922fef3b09c789311e384c8dc1b2b55f3b83d1fce8f，恢复包f6eadb9f989ddf1dfed799685149def9cb36c821317b97ee54a77b3a8c7098aa。公开合成库查询前后摘要5141f478b7f61cb48c133e1ad6e7b31d7565ea0c9cf3c842f0f944766e4c2aec一致；服务退出0，相关端口可绑定。源码停止修改，接续33文件精确提交、486跟踪文件完整独立恢复及全历史凭据／私有路径核对，维护既有未合并草稿、核对精确正文和新HEAD两类CI。
+
+
+## 2026-10-11 · 原生 Windows 快照、摘要与导出
+
+- 任务：按进度末40行、§2／7.5–7.7／8.1–8.2／10／11及相关决定自主推进。重核4cd3606的远端、精确未合并草稿、双CI、486文件独立恢复及139运行资源；先另存验证bundle，SHA16e48a9f94a162f850f006c02d2a783f5268ca77357faf9d88c44ce74d4bb660。前批推送／PR两类CI各30步骤及14类检查通过：完整后端1336、golden1289、前端182、浏览器166、构建245模块、原生Windows41；本地旧失败记录保留。
+- 改动文件：新增store/windows_files、golden/test_native_files及中文验收；更新snapshot/files与capture、artifacts/files、export/package、Windows CI、README、需求状态、决定、草稿与进度。无数据库迁移，无前端编辑。
+- 实现：实际目录句柄的卷和128位文件身份作基线，子路径相对父句柄打开；拒绝正文重解析点和额外数据流，读后核对目录。Windows缓存用真实ChangeTime；普通NTFS快照保留原字节及独立index，大文件只记元数据。Windows ZIP独占发布及失败按句柄清理；POSIX导出保留全部祖先，变更时作废，只清理本次inode，保留他人替换文件。
+- 复现：旧Windows安装9 failed／1.46s；原生接口迭代和ctime差异原日志保留，最后基线竞态1 failed／19 passed／6.22s。POSIX父目录改名原实现2 failed／12 passed／4.81s。真实junction和已打开空目录原地变重解析点有实际系统调用；Windows拒绝并发改名时按实际拒绝核对，不声称目录已成功变化。未请求管理员权限，原生末级符号链接创建WinError1314，分支未物理验证。
+- 当前验收实际退出0：Windows3.12.3仓库外-I安装61 passed in19.25s、默认CP936／utf8_mode0；ruff All checks passed!、pyright0/0/0、CLI帮助和uv sync locked均0。145包成员／140产品资源与源码及安装逐字一致，实际凭据／私有文件0，wheel SHA450dc01553139a14799fc44a6706e9530456853dd239c7b655099c184a445b2c。资源已冻结；完整后端执行中，不预记通过。
+- 下一步：核对完整后端终态、精确13文件提交、489文件独立全历史恢复与凭据／私有路径扫描；维护既有草稿精确正文，新HEAD推送／PR双CI覆盖全量、golden及前端。前端沿320项冻结及八文件恢复，不重复委派或本地浏览器。全部Windows文件系统、断电／规模、真实Atlas正式参考／质量／采集／两周使用及整体M0–M4继续落实，不改个人钩子或删除真实资料。
+
+- 最终完整后端命令uv run pytest -q实际1353 passed in434.32s(0:07:14)，退出0。140产品资源未变，最终13文件范围含3新增，489跟踪文件、实际凭据／私有文件0、进度及决定前缀追加约束通过。完整golden包含在本地全量，单独golden及前端沿最终HEAD双CI命令核对，不重复本地前端或委派；八文件恢复、合成库前后摘要及320项冻结均通过。接续Codex身份提交、独立全历史bundle恢复和精确草稿维护，当前整体目标保持未完成。
+
+- 17fca9b已提交／推送并维护精确草稿，489文件独立恢复逐字一致，6refs／1824objects／1134blobs、全历史凭据及私有路径0，bundle SHA4c2ac539f713a38984571c2d564e541d007be6c764d7c4d6f3e4361bf7a19919。PR整套CI通过；推送后端、golden、前端及浏览器通过，但Windows旧摘要测试准备快照超过2秒，为1 failed／60 passed in45.83s。保留first-ci完整证据，不记双CI全部通过。
+- 只调整测试输入准备：新文件新增三项复用原摘要／缓存／事务全部断言，用显式公开合成影子Git原件经真实publish／register／consume进入Worker；不改原三项Linux测试、不改生产2秒或原生真实快照场景、不冻结时钟、不增加重试。新文件20项与存储41项合为61。改动七文件：Windows CI、新固定案例、决定／进度／需求状态／草稿及本批验收；140产品资源和前端320项保持冻结。
+- 调整后实际退出0：uv run pytest tests/golden/test_native_files.py -q为20 passed in5.08s，仓库外Windows3.12.3 -I安装61 passed in16.17s，ruff All checks passed!。145包成员／140资源仍与源码及安装逐字一致，凭据／私有文件0。仅追加测试不重复本地已通过1353项全量，最终新HEAD双CI将核对1356全量／1309golden、61Windows及前端／协议。下一步精确七文件追加提交、完整恢复与两类终态；整体目标继续未完成。
+
+
+## 2026-10-11 · 默认范围工作集与已有对象引用
+
+- 任务：按进度末40行、§2／7.5–7.7及相关决定接续自主开发；重核2f79343终态，先保留并验证恢复bundle，SHA39c98ea943ee38c59fabc7fe7a4941a6cf9a979546c95ab15b3600e61f73f9ff。该HEAD双CI各30步骤／14类检查实际成功，完整后端1356、golden1309、前端182、浏览器166、构建245模块及原生Windows61。用户自主授权继续有效，不等待普通设计答复。
+- 改动：新增extract/working_scopes及golden/test_scoped_working_context，更新working_set、worker、validate、schemas、redact、pass2提示、Windows CI，以及中文README、决定、需求状态、验收、草稿与进度。无迁移或前端改动。
+- 行为：同对象每个完整范围最新合格版本分别保留，已替换记录不复活；组和卡片共同实测受3000 token约束，补查最多两轮。已有对象所有引用端点完整范围必须相等，未知旧范围不能生成已知归属，空白字段拒绝；原件及人工记录不改写，候选仍为候选。策略更新pass2／持久配置身份，pass1缓存不变。中文提示词按UTF-8读，不改全局Windows编码。
+- 复现：旧原生CP936包三项均因提示词解码失败，3 failed／0.80s；隔离范围行为的显式UTF-8旧包为3 failed／0.88s，复现漏范围、跨范围发布及缺分组。初版helper／定位错误日志保留；扩展首轮2 failed／22 passed／6.53s，测试删除只追加记录及补查相同输入缓存预期更正为独立记录和实际新增卡片，不削弱生产约束。
+- 当前实际退出0：uv run pytest 新范围／工作集／提取／增量／队列／规则／来源／标识符／Worker关联为169 passed in44.69s；仓库外Windows3.12.3 -I实际安装为86 passed in18.65s、CP936／utf8_mode0；ruff All checks passed!、pyright0/0/0、CLI帮助和uv sync locked均0（Resolved28／12ms、Checked27／66ms）。146包成员／141运行资源与源码及实际安装逐字一致，凭据及私有文件0，wheel SHA0b54a893a9188a7ad55ce38db7763f6a1e833157496029bf586d8a93bd99c450。
+- 下一步：141资源已冻结，完整后端正在执行，终态据实追加；核对15文件范围、492文件独立全历史恢复、既有草稿精确正文及新HEAD双CI。前端沿320项冻结和八文件恢复，不重复本地浏览器或委派。真实范围语义／Atlas正式参考与质量、全量采集／运行I/O、真实规模／钩子／两周使用及整体M0–M4仍未完成，不删除真实项目或安装日常钩子。
+
+- 最终完整后端命令uv run pytest -q实际1381 passed in436.09s(0:07:16)，退出0。141产品资源冻结保持一致；本地全量包含全部固定案例，单独golden及前端／协议由最终HEAD双CI执行。本批15文件含3新增，预期492跟踪文件；接续Codex身份提交、精确未合并草稿维护、完整独立全历史备份与新HEAD两类CI，未将合成通过记作整体目标完成。
+
+
+## 2026-10-11 · 独立原话确认版本与范围
+
+- 任务：按进度末40行、§2／7.7及既有独立规则、来源资格决定继续自主开发。重核d482e5f终态，双CI各30步骤／14检查成功；后端1381、golden1334、前端182、浏览器166、构建245模块及Windows86。492文件独立全历史恢复相同，凭据／私有路径0，先保留并验证bundle，SHA377a12f01db2f64cbadfc028e495ae6daa7768e1bc67f079c30f0c9d750a2e34。
+- 改动：extract/rules、worker，新增golden/test_rule_scope_versions与中文验收，Windows CI、README、决定、进度、需求状态及草稿，共10文件，无迁移或前端编辑。
+- 行为：最新有效版本按完整范围核对，已替换／驳回／来源不合格版本不提供标签。未指定范围的同名歧义不依赖插入顺序；同ID多范围也保持候选，唯一范围ID或明确完整范围仍可独立确认。独立人工定义保留，模型声明不作证明。规则版本explicit-user-v2更新持久配置与pass2调用身份，pass1缓存不变，原模型／原件及人工审核不改写。旧v1证明历史资格复核另行实现。
+- 复现：首批完整Worker六案例1 failed／5 passed in3.50s，确认顺序依赖；最终14固定公开案例在旧Windows安装CP936／utf8_mode0为7 failed／7 passed in3.62s。公开实体ID只在测试创建处固定，生产UUID／脱敏不改；旧原生7／7 in2.69s及中间11案例5／6 in2.15s保留，不能冒充最终副本。
+- 当前实际退出0：最终六组关联命令uv run pytest 指定六个golden文件-q为151 passed in45.10s；仓库外Windows3.12.3 -I实际安装100 passed in21.24s、CP936／utf8_mode0；ruff All checks passed!、pyright0/0/0、CLI帮助与uv sync locked均0（Resolved28／13ms、Checked27／53ms）。146包成员／141资源与源码及原生安装逐字相同，凭据／私有文件0，wheel SHA1311891227f9b1d5a9785d5681fc5cf4fe826b1b369e5fda8443bcfa75251ed0。
+- 下一步：141资源冻结，完整后端正在执行，不预记通过；核对10文件／494跟踪文件、精确草稿和新HEAD双CI／独立恢复。前端沿320项冻结及八文件恢复，不重复本地浏览器或委派。旧规则历史资格、真实Atlas正式参考／范围语义／质量、完整采集／实际I/O、真实钩子和规模／两周使用及整体M0–M4仍未完成；不清除真实项目或安装日常钩子。
+
+- 最终完整后端uv run pytest -q实际1395 passed in437.96s(0:07:17)，退出0；141产品资源冻结保持一致。完整golden包含于本地全量，单独golden／前端／协议沿最终HEAD两类CI核对。本批10文件含2新增，预期494跟踪文件；接续精确Codex提交、草稿维护、独立全历史恢复与新HEAD终态。旧v1证明历史资格复核及真实科学／使用门槛保留，不宣称整体完成。
+
+
+## 2026-10-11 · 历史规则证明资格与前端独立诊断
+
+- 任务：读进度末40行及§2／5.3／7.7，沿自主开发和前端子agent授权落实旧证明复核。重核e47134b远端／草稿／双CI／独立恢复，先验证完整恢复bundle，SHA b7b9393ba640766f09c00c0b89fe5aface9fe293fe1caa58e3618064028d214b。
+- 改动：新增derive/rule_references、eligibility及golden/test_rule_reference_qualification；迁移27和清除选择、派生worker、rules／worker／working_set／linker／overview／pipeline、API／Reader／context及原规则验收；前端types／model／components／GraphView／model.test、新browser规则专项及公开合成服务；Windows CI、README、中文决定／需求状态／本批验收／草稿／进度。
+- 行为：原审核和L0不改写，历史证明只用原确认时已知定义／替换／人工审核；新v3保存范围筛选、工作集及定义版本。旧缺信息不猜，确认徽章保留，来源与规则分别诊断并共同约束状态和模型。自动轮转重查；当前人工覆盖不改变旧截止视图；较新未能核对动作阻止回退。新表入清除，只有严格数字全局游标可保留；关联及流水线中文提示明确UTF-8，系统CP936不变。
+- 复现：初始2 failed／2.79s；扩展4／71及11／93保留，修正测试操作顺序、旧仅状态诊断兼容及公开模型输出准备。清除数字游标误挡为1／103／25.05s；严格格式修正后55 passed／19.96s。原生首轮1 failed／134 passed／26.07s，定位关联提示默认解码；专项1 failed／0.56s保留，未放宽编码／重试／超时。前端红灯4／34、2／48与合成服务主键错误保留。
+- 实际退出0：十二组后端关联298 passed in84.13s；仓库外Windows3.12.3 -I安装135 passed in25.83s、CP936／utf8_mode0；ruff All checks passed!、pyright0/0/0、CLI及uv sync locked均0（Resolved28／1ms、Checked27／41ms）。148包成员／143运行资源与源码及安装逐字一致，凭据及私有文件0；wheel SHA bd24e2aee90deff2251184da0277fd2dfc3477b8ca91200b7fedbccd7b31e8dd，已冻结。
+- 前端实际0：198单测／20文件／1.07s，245模块构建／1.13s、tsc与scoped ruff均0，新四项真实浏览器21.0s；七项目实际API及原文保存，逐表导出前后SHA相同，服务0退出并释放端口。七文件独立恢复及153项冻结父核对；子实看六图、父原尺寸看桌面／390宽两图。
+- 下一步：完整后端正在执行，依据真实终态追加；结束后完整浏览器，精确文件范围及未合并草稿、全历史独立恢复和新HEAD两类CI。旧证明自动复核不填补真实缺资料；Atlas正式参考／质量／时间成本、全量采集／实际I/O、实际钩子／规模／两周使用及整体M0–M4继续推进，不清除真实项目或安装日常钩子。
+
+- 最终完整后端`uv run pytest -q`实际`1430 passed in450.60s(0:07:30)`、退出0，143运行资源冻结未变。完整固定案例包含于本地全量；单独golden由新HEAD双CI核对，不重复本地后端。完整浏览器在实际后端结束后已启动，终态另记；真实科学与使用验收继续保留。
+
+- 完整浏览器首轮遗漏本机LD_LIBRARY_PATH，Chromium缺libasound.so.2，163项启动失败后仅中断本批主进程，实际退出130／448.808s。8791／9806释放已核对；保留首轮日志和终态，只修本机执行环境并重跑170项，不改产品、超时或重试。
+
+- 最终完整浏览器`cd web && pnpm test:browser`实际`170 passed(4.6m)`、退出0，实际进程281.008s，8791／9806端口释放；首轮环境失败保留。完整后端1430、原生安装135、前端198及静态均已实际0。本批精确30文件含6新增，预期500跟踪文件；143运行资源和153项前端冻结保持一致。下一步Codex身份提交推送、精确未合并草稿、500文件独立全历史恢复及新HEAD双CI；整体真实质量和使用门槛不宣称完成。
+
+- a0b5f17首轮推送／PR双CI完整日志已保留，各27步骤成功、浏览器1失败、收尾2跳过；后端1430（198.92s／199.51s）、golden1383（184.21s／186.20s）、前端198／245模块、Windows135（68.65s／64.70s）及其余协议／静态共13类实际通过。两边浏览器均169 passed(5.9m)／1 failed，原个人视图综合场景在同一30秒总限内重复打开多个页面，于第193行超时。按独立迟到条件拆分验收，保持原断言、30秒和零重试，生产143资源及七文件／153项冻结不改。首轮全历史500文件恢复一致，备份SHA01b68eda4f05aa8f94283316b1dc46f477feb66f9d2f7d6257e6fa4d9d544497；最终拆分专项／完整浏览器及新提交终态按实际结果另记。
+
+- 个人视图专项`cd web && pnpm test:browser tests/browser/view-state.spec.ts`实际`10 passed(1.0m)`、退出0；`pnpm exec tsc --noEmit`退出0。原四项前缀逐字不变，原五种迟到条件与恢复分页修改共六项的动作／断言逐句等值；新六项各2.6／2.7／3.4／2.7／4.8／2.8秒，30秒和零重试不变。16项冻结与一文件独立恢复由父核对，恢复包SHA2b26d98e35c6c8a9686c58ae73531ebdd79f7cc9b4c114eb92b571a8aff6a9f1，原七文件／153项冻结及143运行资源不变；完整175项正在父串行执行。
+
+- 最终拆分后完整浏览器`cd web && pnpm test:browser`实际`175 passed(4.6m)`、退出0，实际进程277.143s；8791／9802／9806端口释放。前端源码、143运行资源及原七文件／153证据冻结未变，新增一测试源文件由父独立恢复与16项冻结核对；不重复本地已通过的无变动后端1430／原生135／前端198。将以精确七文件追加提交，整个历史资格批次共31文件／500跟踪文件，再核对新的推送与PR双CI及完整恢复。
+
+
+## 2026-10-11 · 人工与候选笔记
+
+- 任务：读取进度末40行及§2／5.4／8.1／10，沿用户自主实现与前端子agent授权补齐note和research.propose_note，不再等待普通设计题答复。重核48d0462终态：远端及未合并草稿精确、两类CI成功（各30步骤／14检查，后端1430、golden1383、浏览器175、Windows135）；500文件独立全历史恢复相同，凭据／私有路径0。先验证完整bundle，SHA c6ae0e8d88f4ddbcdf894b9c8d0c5e3847fde2d85037009e7d9d1b649dddeedc。
+- 改动：迁移28／清除选择，新增record/note，record/events／schema，CLI／API／MCP／Reader／context，客户端包装，自动工作集／关联／独立规则／概览的笔记隔离，原生别名排除及解析版本4；新增golden/test_notes并更新协议／客户端固定合同及Windows CI。前端子agent负责独立笔记列表、人工表单、候选审核编辑、关联ID展示与13文件范围，独立9807公开合成服务。
+- 行为：独立note沿统一claims及审核存储；人工manual／human／confirmed，MCP固定项目与model:mcp／model_inference／candidate，无确认或身份覆盖。完整原话、证据窗和UUID回执原子追加，同意图先返回已有记录，跨操作或意图变更冲突。about只接受同项目ID且编辑不可重定向，范围不继承。模型原话不成为自己的科学证据，笔记排除自动提取／关联／概览及采用对象，原生提议调用和结果排除回流；新增回执随整项目清除。
+- 实际0：既有迁移／人工问题／客户端包67 passed in21.53s；笔记修正后26 passed in9.56s。初轮笔记2 failed／24 passed in8.10s，均测试准备（Reader实际items及HTTP所需index）已更正，不减断言。扩大关联两轮均旧五工具发现断言1 failed／323 passed in111.11s及109.95s；最终六工具断言专项1 passed in1.24s。两次测试文件名定位错误退出4、无用例，未记为通过。
+- 实际0：ruff All checks passed!、pyright0／0／0、CLI帮助；SDK2.3.0新旧两代协议各6个工具，五种只读查询数据库不变、真实候选保存和UUID重放不新增；两种生成配置SDK各6工具启动／context查询数据库不变。源码144运行资源已冻结；最新wheel已重新构建及安装，Windows仓库外隔离测试正在执行，完整后端亦在执行，终态另记。
+- 下一步：依据实际终态补全中文验收与草稿，父运行完整浏览器、核对前端独立恢复和原尺寸截图，精确提交维护现有草稿、全历史恢复与新HEAD双CI。Atlas正式人工参考／质量／时间成本、全量采集／实际I/O、真实钩子／规模／两周使用及整体M0–M4仍保留；不删除真实项目或安装日常钩子。
+
+- 原生最终实际0：仓库外 Windows3.12.3 `-I` 安装九组测试 `177 passed in36.70s`，CP936／utf8_mode0不变，包装进程37.211s。149包成员／144资源与源码及实际安装逐字一致，实际凭据／私有文件0；wheel SHA07939045a2a055ec7b6da9ad3658c6c897d2887623bea8a6bc6276c742d96f4d。首轮1 failed／176 passed in36.52s为旧迁移fixture中文默认CP936写入，明确UTF-8后通过，不全局切编码。
+- 前端最终实际0：205单测／21文件／1.00s，250模块构建／1.11s、tsc／公开服务ruff均0；新五场景真实浏览器5 passed(15.0s)，原文截图补验1 passed(16.4s)。补验首轮控件定位未匹配1 failed(30.1s)保留，修正选择器，产品／30秒／零重试／原文与几何断言不变。195项稳定证据冻结、13文件独立恢复父核对相同；五图子原尺寸查看，父看桌面证据及390表单两图。候选确认／编辑只追加，初始原件／claim／证据SHA未变，UUID重试单独核对计数／修订不变，不冒充整库只读。
+- 首轮完整后端日志1 failed／1459 passed in484.98s，旧v16夹具只应使用当时四种回执表；已修正，专项1 passed in2.04s。包装进程终态143，无结果JSON，不冒充完整成功或退出1；整套已重新执行。最终夹具静态检查 `uv run ruff check rg tests scripts` 为 All checks passed!，退出0；最终CLI退出0。中文本批验收已建立，完整后端／浏览器终态待实际退出追加。
+
+- 最终完整后端 `uv run pytest -q` 实际 `1460 passed in464.56s(0:07:44)`，退出0，包装进程467.505s；144运行资源与前端冻结未改。全部固定案例包含于全量，单独golden交由最终HEAD两类CI核对。完整浏览器在后端真实退出后串行开始，使用已核对本机浏览器库环境，不预记通过。
+
+- 完整浏览器 `cd web && pnpm test:browser` 实际 `180 passed(4.7m)`，退出0，包装进程285.510s；8791／9802／9806／9807释放。144运行资源和13前端源文件／195证据冻结未变，本批精确49文件含11新增、预期511跟踪文件。改动文件见本批验收与提交；下一步以Codex身份提交推送、精确现有未合并草稿、511文件独立全历史恢复和新HEAD两类CI终态核对。科学／真实使用边界不因合成通过消失。
+
+
+## 2026-10-11 · 自动工作树发现
+
+- 任务：沿用户无需继续确认的授权，读取进度末40行及§2／6.6／相关原设计归属段，补一次配置后的自动工作树登记。重核7836d37远端与未合并草稿，PR38125964324和推送38125960145均实际成功，各30步骤／15检查；后端1460、golden1413、前端205／250模块、浏览器180、Windows177及两代协议／客户端六工具通过。511文件独立全历史恢复相同，凭据／私有文件0；已验证并另存完整恢复bundle，SHA9e7ffaca83691d3d7e27b746877c349418f762831d9242a9dc63cfd3cf6c9512。
+- 改动中：迁移29、store/worktrees及roots／清除选择、snapshot/config、采集循环、CLI／HTTP，固定案例及Windows CI；前端沿既有授权负责健康页工作树面板及七文件独立范围。默认关闭；已开启项目按唯一共同目录、当前身份与清除阻断自动登记，不更改会话归属或科研原件，开关暂停保留历史。中文决定已记录分页、共享时限和诊断口径。
+- 实际退出0：原根登记／迁移／快照／spool四组79 passed in23.50s；scoped ruff All checks passed!，pyright0／0／0。真实公开临时Git两工作树开启后创建1根，重复不新增。新增专项首轮1 failed／32 passed in12.56s，为并发测试遗漏开启，已补测试准备，未减少断言；最终专项及扩大验收终态另记。
+- 下一步：核对新增固定案例、原生安装和完整后端，待前端冻结后做完整浏览器、独立恢复与实际截图，再维护精确草稿和最终HEAD双CI。仍保留跨项目片段、实际I/O／工具链和Atlas正式质量／使用门槛；不清除真实项目、安装日常钩子或调用远程模型。
+
+- 原生Windows最终实际0：仓库外Python3.12.3 -I安装十组测试 `211 passed, 1 skipped in64.19s(0:01:04)`，包装65.170s；跳过为Windows不允许的换行文件名。CP936／utf8_mode0不变，150包成员／145运行资源与源码和实际安装逐字一致，实际凭据／私有文件0；wheel SHA16abb70b7d9715118ef9348949a1b57f88b6f8abc004260a2c5f4540ed1c4d0c。扩大七组155／53.11s、ruff／pyright／CLI／锁文件均实际0；完整后端仍运行，不预记通过。
+
+- SDK实际0：官方2.3.0新旧两代协议均6工具，五种只读查询数据库不变、候选写入及UUID重试不新增；两种生成客户端各6工具启动与上下文通过且数据库不变。前端首轮专项6 passed／1 failed(37.0s)，为夹具将锚点轮转误认为每次重查main；修为本轮实际歧义根后7 passed(22.8s)，科研表与Git index／config／正文SHA均相同。最终样式变量与390歧义卡视觉复核中，终态与冻结另记。
+
+- 完整后端最终 `uv run pytest -q` 实际 `1495 passed in500.55s(0:08:20)`，退出0，包装进程503.497s；145运行资源冻结保持一致。全部固定案例包含于本地全量，单独golden由最终HEAD双CI核对，不重复本地后端。最终静态All checks passed!，退出0。前端最终210单测／253模块与7专项已实际通过，待父冻结核对后串行完整浏览器，终态另记。
+
+- 前端最终实际0：210单测／22文件／1.01s，tsc、scoped ruff，253模块构建／1.12s；七专项 `7 passed(22.4s)`。首次tsc unknown属性键边界和浏览器轮转假设失败保留，最终使用既有主题变量并核对390歧义卡标题／计数／诊断位于固定项目栏下方；30秒／零重试不变。209项证据冻结、七文件独立恢复由父核对逐字一致，恢复包SHA301ae605fd61a678c37528fbdb42f0c450dbed207d6ece81d1b4dd2a598ee397；子原尺寸实看五图，父看桌面partial与390歧义两图。科研表SHA／计数及两仓库index／config／正文SHA不变，模型0；策略8／诊断12／根+2合法追加，不冒充整库只读。完整187浏览器在后端实际退出后串行启动，终态待记。
+
+- 完整浏览器最终 `cd web && pnpm test:browser` 实际 `187 passed(4.8m)`，退出0，包装293.29s；8791／9802／9806／9807／9808实际释放。145后端资源、七前端源文件和209证据冻结不变。新功能本批精确23文件含9新增，预期520跟踪文件；全量1495／原生211及1跳过／前端210均已实际通过。下一步以Codex身份提交并维护现有未合并草稿，全历史独立恢复与新HEAD两类CI按实际终态核对。
+
+- e4d902b首轮推送WindowsCI实际1 failed／210 passed／1 skipped in97.58s：英文CP1252管道无法输出中文工作树路径，Python -I不使用外部IO编码设置。本机CP936与前端首轮通过保留；首次拉取运行中整run日志不可用，改用已完成job日志并保存。受控CP1252／ASCII两项实际复现2 failed／35 deselected in3.51s；结构化CLI采用必要的JSON Unicode转义，不改系统编码或原文。最终发现专项37 passed in14.45s、全部ruff／pyright实际0；最终wheel／原生安装与完整后端正在重新核对。HTTP／前端七文件和209冻结未变，已完成187浏览器不重复本地，最终HEAD双CI仍完整执行。
+
+- 编码修正原生最终实际0：仓库外Windows3.12.3 -I十组 `213 passed, 1 skipped in64.26s(0:01:04)`，包装65.175s，CP936／utf8_mode0不变。150包成员／145运行资源与源码和实际安装逐字相同，凭据／私有文件0；新wheel SHAc806ecca656b2d25d72d22f07cefbbdfeb92d6ca44792f9addc20ab5e0455428。PR首轮Windows同一失败1／210／1跳过／170.33s，完整job日志已保存；新专项37、ruff及pyright均实际0，最终完整后端仍运行。
+
+- 编码修正后的CLI帮助、SDK两代六工具及两类接入包已实际退出0；五种只读查询和候选重试数据库不变。仅rg/cli/main.py一个运行资源改变，其余144及七前端源／209稳定证据保持一致；原完整187浏览器无需重复本地，最终两类CI将完整覆盖修正后的提交。
+
+- e4d902b首轮两类CI完整日志已保存，各28步骤成功／Windows1失败／收尾1跳过：后端1495（212.63s／198.85s）、golden1448（198.86s／182.02s）、前端210／253模块、完整187浏览器（6.2m／5.4m）及静态／协议通过。两个Windows唯一失败均为已复现的CP1252中文JSON输出，首轮完整520文件恢复相同，bundle SHAa6eac259f26748a7305f92b6e82529067fa08f1cd6d95783c9bc1b69cfa3c841另存。
+- 编码修正最终完整后端 `uv run pytest -q` 实际 `1497 passed in496.04s(0:08:16)`，退出0，包装499.001s；37专项、Windows213／1跳过、ruff／pyright／CLI／SDK均实际0。运行资源差异仅CLI输出格式，HTTP／前端和稳定209证据不变；已通过187本地浏览器保留，最终提交双CI将完整重查。以精确八文件追加修正，整个工作树批次仍23文件／520跟踪文件，草稿、全历史恢复和新HEAD两类CI按实际终态继续核对。
+
+## 2026-10-11 · 物理片段与目录声明账本
+
+- 任务：沿自主开发授权继续§6.6，读取进度末40行、§2／6及相关切片／接口合同；原设计项目归属段要求按证据片段保留跨项目会话。现有代码仍依整会话项目读取，故先保存原生声明与可核对物理边界，不把目录线索发布为正式归属。后续消费者接通仍保留。
+- 基线：bb59b00最终PR38130574603及推送38130571026均实际成功，各30步骤／15检查；后端1497、golden1450、前端210／253模块、浏览器187、Windows213及1跳过，两代MCP／客户端六工具通过。520文件独立全历史恢复相同，秘密／私有文件0；完整恢复bundle已验证并另存，SHA9ee1da0b1442afd80e48e6df43d4bd3de69c5ad67141e03b98ef79a5fce5d028。当前远端与未合并草稿HEAD重核一致。
+- 文件：迁移30、clear_selection、ingest/project_context及scanner；query/project_fragments、CLI、HTTP；golden/test_project_fragments和Windows CI；本轮中文决定、验收、落实情况与草稿。首事件、原件摘要与所有内容块边界保持可核对；自动扫描原子写入声明，查询只读，来源内继承遇未知／未观测／非法记录中断。分页固定原件及观测两个截止，项目／根登记变化拒绝拼页；正常补记32条／1 MiB，超大对象不解压，恢复只追加。
+- 实际退出0：扩大五组 `127 passed in33.87s`，包装36.798s；ruff All checks passed!，pyright0／0／0，新增CLI帮助。首轮 `1 failed,37 passed in8.51s` 为清除预览夹具误用counts而非rows；随后恢复历史扩大 `1 failed,126 passed in35.50s` 为误假定只读Store可直接打开旧版，已按真实“先写入口升级”合同核对拒绝且数据库不变。未减少原件、恢复、分页、清除或跨来源隔离断言；早期F401及E501静态失败保留，最终实际通过。
+- 实际退出0：Windows3.12.3 -I仓库外安装十一组258／1平台跳过，系统CP936／utf8_mode0不变；152包成员／147运行资源与源码及安装逐字一致，实际凭据／私有文件0。两代官方SDK2.3.0及两类生成客户端均6工具，通过只读数据库不变、候选保存与UUID重试核对。147运行资源已冻结，完整后端正在运行，不预记通过。
+- 下一步：核对完整后端终态，精确维护现有未合并草稿与全历史恢复，最终HEAD双CI检验；随后实施片段正式归属、提取／读取／清除的统一边界。Atlas正式参考／质量／时间成本、真实采集与I/O、真实钩子／规模／两周使用及整体M0–M4仍待验收；本轮不调用远程模型、不删除真实项目或安装日常钩子。
+
+- 完整后端最终 `uv run pytest -q` 实际 `1542 passed in503.68s(0:08:23)`，退出0，包装506.855s。Windows实际 `258 passed,1 skipped in70.52s(0:01:10)`，退出0，包装71.456s；wheel SHA10a8dfd151a33c9862fa0ab33131ab4ab6040ff77c5bbd2629a164b6967d977c。147运行资源冻结保持一致；CLI／全部ruff／pyright／两代MCP／两类客户端均实际0。前端源未变，bb59b00的210／253模块／187浏览器保留为已通过基线；最终HEAD仍完整执行浏览器及单独golden。精确14文件含4新增，预期524跟踪文件，接下来提交维护草稿、全历史恢复与双CI终态核对。
+
+
+## 2026-10-11 · 原始记录级清除后重导入防护
+
+- 任务：沿自主推进授权读取进度末40行、§2／11与现有清除恢复／备份合同，补换路径或会话头后的同原件重导入防护，不发布正式跨项目归属。普通取舍由Agent落实并记入决定，不再要求用户逐项确认。
+- 基线：f330ac0最终PR38133572734与推送38133568783均实际成功，各30步骤／15检查；后端1542、golden1495、前端210／253模块、浏览器187、Windows258及1跳过均通过。524文件独立全历史恢复、147资源／安装／wheel相同，秘密／私有文件0。远端HEAD与现有未合并草稿正文精确核对；完整恢复bundle已验证并另存，SHAcec494ad5d93d4b45ae354600bd364ec84113cf52eb8a60cda9a4273a28888f6。
+- 改动：store/record_denials、clear、backup，ingest/scanner与spool，新增固定案例及Windows CI；中文决定、落实情况、验收与草稿。摘要独立提交且进入SQLite备份；来源在原件写入前停住，游标不越过被挡记录，提示队列保留等待。只选实际清除且没有保留引用的原生对象；相同文字的独立记录与共享原件保留。
+- 已实际退出0：早期三组77／24.70s；扩大五组104／28.65s，补首次索引发布与旧清除恢复后105／31.23s；首轮原生安装272／1平台跳过／73.35s。最初命令误用不存在的tests/test_ingest.py实际退出4且未运行测试，随后使用真实golden/test_ingestion.py；早期导入排序／行长和denials类型错误已修正，失败输出保留。完整后端首轮因发现spool会将已挡来源标done，在70.541s主动停止（实际143），不算通过；修正队列后冻结148资源，重新启动最终全量与原生安装。
+- 下一步：核对最终扩大案例、完整后端及Windows安装终态，维护精确已有草稿、独立全历史恢复与最终HEAD双CI。前端源未变，沿f330ac0完整CI基线；新HEAD CI仍完整跑浏览器。正式跨项目片段及统一读取／提取／清除、Atlas正式参考／质量／时间成本、真实采集／I/O／钩子／规模／两周使用仍保留，不清除真实项目或补造参考。
+
+- 最终冻结专项实际0：五组 `107 passed in45.92s`，包装48.519s；Windows3.12.3 -I仓库外安装十二组 `274 passed,1 skipped in76.36s(0:01:16)`，包装77.273s，CP936／utf8_mode0不变。153包成员／148运行资源与源码及安装逐字相同，秘密／私有文件0，wheel SHA22d8d61447582d8aa2f62c149e212202b62520f2a95c665dc641282cae15a540。全部ruff／pyright／CLI、SDK两代协议与两类接入包均实际0；完整后端终态待记，不预记通过。
+
+- 最终完整后端 `uv run pytest -q` 实际 `1558 passed in520.44s(0:08:40)`，退出0，包装522.086s；148运行资源冻结保持一致。最终107专项／274原生及1平台跳过、ruff／pyright／CLI／两代SDK／两类客户端均实际0。精确12文件含3新增，预期527跟踪文件；下一步以Codex身份提交、维护未合并草稿、核对全历史独立恢复与最终HEAD双CI。前端源未变，不重复本地187浏览器，最终CI完整运行。
+
+
+## 2026-10-11 · 正式片段归属与前端接入
+
+- 基线：70321cc最终PR38137473421与推送38137470873均实际成功，各30步骤／15检查；后端1558、golden1511、前端210／253模块、浏览器187、Windows274及1跳过均通过。527文件独立全历史恢复一致，148资源／安装／wheel逐字相同，秘密／私有文件0。迁移前完整备份已核对，SHA4d8f69ff9710eb8ffb0305511c57265ef1be46a3e8167c0588f5ac55b879eb85。
+- 任务：沿自主开发授权阅读进度末40行、§2／6.6／9／10／11与已有决定。正式归属、统一读取／提取／清除由父推进，前端按用户明确要求交付子代理。普通取舍直接落实，不再逐项询问。
+- 文件：store/fragment_schema、fragments及迁移31、清除合同，ingest/scanner／parents／exclusion，query投影消费者、derive／extract／slim／export、API／CLI与快照关联；新增golden/test_fragment_assignments、更新旧版本断言及Windows CI。前端九文件包含健康页入口、片段面板／语义／样式、单测、真实浏览器与独立公开fixture；没有改已有默认测试服务。中文验收、决定、落实情况和草稿同步维护。
+- 实际专项：首轮旧迁移断言／清除表合同／AUTOINCREMENT重扫改变序列3 failed／54 passed／12.64s，修为当前版本、扩展清除及先查再插入后94 passed／31.77s。新增首轮夹具搜索参数及系统代理配置2 failed／16 passed／8.68s，使用真实q／trust_env=False后18 passed；最终六组115 passed／34.68s，包装37.454s，实际退出0。静态早期SQL行长和拆分引入字符串调用已定位修复，完整Python -W error compileall实际0；最终全部ruff与类型终态另记。
+- 前端最终实际0：216单测／23文件／1.07s，tsc、scoped ruff，256模块／1.09s，真实浏览器7 passed／18.5s。首轮采集SQL第二WHERE导致准备失败1项／5未运行，第三轮规则SQL字符串调用导致专项未启动，失败原日志与源码保留；第二轮6 passed／20.2s也保留。最终科研表SHA、34原事件、2claims、1审核、原件与输入文件SHA不变，模型0，归属修订3→7合法变化。九文件独立恢复逐字一致，恢复包SHA95f1769f2b112c037e90979c67873746df32a432637c858df9eff2c01054a186，176项冻结相同；子实看五图，父看桌面片段与390确认两图。
+- 下一步：核对冻结150运行资源、完整后端、Windows安装包、两代MCP／接入包、完整浏览器的实际终态；精确维护现有未合并草稿与全历史独立恢复、最终HEAD双CI。已有科研依赖迁移、混合来源清除后越过旧记录、原始别名依赖仍有保护限制；Atlas正式参考／质量／成本、实际采集／I/O／钩子／规模／两周使用及整体M0–M4待验收，不清除真实项目或伪造人工参考。
+
+- 第一轮完整后端发现旧数据兼容：缺少物理首块的历史L0被内连接遗漏，且未分区的旧跨会话重复关系被过度过滤。实际两项短探针复现L1节点缺失及重复原件提前打开；保持旧断言，修为首块左连接、未分区关系保留，仅新分区隔离跨边界关系。第一轮在339.949s明确SIGTERM，包装及终端实际143，不算通过。首轮安装包292／1跳过、SDK等通过保留为早期证据；新150资源冻结后重新打包／安装／验收，不沿用旧wheel宣称最终一致。
+
+- 兼容扩大五组实际89 passed／37.98s，退出0。UUID补入已有显式记录总回执，防止不同操作共用编号；四组101 passed／26.44s，退出0；初命令误用不存在的test_explicit_records.py实际4／未运行，改用实际manual_question.py后通过。第二轮完整后端在370.058s明确停止（实际143），为核对到问答准备后、pending登记前可发生重归属。提取器在同一写事务核对全部已知输入所属项目并登记pending，之后归属操作会看到科研依赖并拒绝；发送前归属不符不计数、不生成。新增实际边界案例及问答／提取四组77 passed／21.40s，退出0。此前294原生／1平台跳过、两代SDK／两类客户端实际0保留；最终冻结150资源后重新核对安装及全量。
+
+- 最终冻结安装实际0：Windows3.12.3 -I仓库外安装十三组295 passed／1平台跳过／80.11s，包装80.995s，CP936／utf8_mode0不变。155包成员／150运行资源与源码及实际安装逐字相同，秘密／私有文件0，wheel SHAbed2aab1f28c468612ac1763bb0e5ac1f7ae803acd7f394b6f8387a21b90b048。全部ruff／pyright、官方SDK2.3.0两代协议与两种接入包均实际0，六工具的只读数据库和候选重试核对通过；完整后端终态尚待记，不预报通过。
+
+- 第三轮完整后端实际2 failed／1577 passed／550.39s，包装553.222s，退出1；唯一两项为旧迁移25整库转储比较在当前31版本新增会话字段后失配。该案例现在固定执行迁移25，保留原整库逐字断言，再打开当前版本核对原件、全部旧会话列、新列默认值及外键；没有删除不变性检查。运行资源150／最终wheel不变，扩大迁移专项终态随后记录。
+
+- 迁移25修正后的三组67 passed／15.83s，实际0；第四轮全量在173.602s明确停止（实际143），为保留缺首块旧事件的原归属补入拆分前409。最终三组68 passed／18.55s，包装22.672s，实际0；没有删除旧L0兼容或整库不变断言。150运行资源重新冻结为交付版本，安装包与完整后端重新执行；本轮不再扩大实现范围。
+
+- 交付版本Windows3.12.3 -I仓库外安装十三组实际 `296 passed, 1 skipped in 112.90s (0:01:52)`，退出0，包装114.448s；系统CP936／utf8_mode0不变。155成员／150运行资源与源码及安装逐字相同，实际凭据／私有文件0，wheel SHA9368c17e423fb3a5ad07b4b963a873ea88b6a2781ae2021359b728c50f48b665。全部ruff实际0，pyright0／0／0实际0；完整后端继续运行，源码冻结不变。
+
+- 交付完整后端 `uv run pytest -q` 实际 `1580 passed in 620.16s (0:10:20)`，退出0，包装624.945s；150运行资源冻结及前端九文件／176项证据核对不变。完整浏览器在后端实际结束后启动，随后精确提交61文件／537跟踪文件并维护已有未合并草稿、独立全历史恢复和最终HEAD双CI。
+
+- 完整浏览器首轮遗漏本机已有libasound路径，启动前库解析实测缺libasound.so.2；在116.269s明确SIGINT，实际130，失败原日志保留。仅加载既有.tools/browser-libs路径，ldd缺库0及8791释放已核对，代码／断言／30秒／零重试不变；环境正确的完整验收重新执行。
+
+- 环境正确的完整浏览器实际193 passed／1 failed(5.9m)，包装359.686s，退出1。唯一失败为已有file-run-graph第151行场景首次打开未出现完整性区域；新增七项正式片段场景通过。原日志、截图及页面上下文已独立保留，前端子代理诊断有依据的最小修复；不扩大超时／加重试／删断言。完整后端1580、Windows296及150资源冻结不变，浏览器不预报通过。
+
+- 文件运行图鉴权恢复专项补足后实际7 passed／17.4s，tsc实际0；诊断轮7 passed／17.2s保留。首次Failed to fetch未复现，原因仍未知，恢复完成等待是独立验收缺口。原open、七项名称和其余断言逐字保留；只增加真实同项目／同截止末集合200、末页与完整摘要。父独立一文件恢复逐字相同，22项冻结一致，恢复包SHA8085d3bab6452ae013528bd9122f1f94f19a7ca2981d1ec149d0eb5ca7ea5de9；原九文件／176项不变。当前精确范围62文件／537跟踪文件，完整浏览器重新运行；后端不重复验收。
+
+- 交付完整浏览器 `cd web && pnpm test:browser` 实际194 passed(5.2m)，退出0，包装314.581s，8791／9809／9802／9806均释放。150运行资源、前端九文件／176项及追加一测试／22项冻结不变。完整后端1580／620.16s、Windows296及1平台跳过／112.90s、前端216／256模块、ruff／pyright、两代SDK／两类客户端均已实际通过；失败原证据和未知网络原因保留。精确62文件／537跟踪文件将以Codex身份提交；最后核对已有未合并草稿、全历史独立恢复及提交头双CI，不补造真实研究验收。后续推进已有科研依赖迁移及混合来源续采，Atlas正式参考／质量／时间成本与真实使用门槛仍保留。
+
+## 2026-10-11 · 已有科研依赖预检与前端接入
+
+- 基线：42932bb已推送，草稿PR1保持未合并；PR38144855820与推送38144852210均实际成功，各30步骤／15检查。537跟踪文件的全历史独立恢复相同，150运行资源与实际安装／wheel一致，秘密及私有文件0。迁移前备份再核对，SHA20b38544ef64fe4845fcef2ee2c2b08c65ecf56d28108504053254cc1ad9d58b。
+- 任务：阅读进度末40行、§2／5.4／6.6／7.7／11及已有决定，继续自主开发；父推进只读科研依赖闭包，已有前端子代理按用户明确授权接入展示，不逐项询问普通设计选择。
+- 文件：新增store/fragment_dependencies及引用合同、golden/test_fragment_dependencies，复用fragments完整选择校验并扩展科研保护；API、CLI、Windows CI。前端六文件为片段面板、语义解析、样式、单测、真实浏览器专项和独立公开fixture；默认8791服务及文件运行图测试不改。中文决定、落实情况、验收与已有草稿持续维护。
+- 后端实际：首轮17项3 failed／14 passed／5.32s，扩大39项2 failed／37 passed／12.65s，随后17项2 failed／15 passed／9.68s、1 failed／16 passed／7.58s；原因分别为合成SQL误用原生列／状态和CLI／HTTP构造入口错误，均按当前代码校正，不删断言。预算案例补足真实扫描量；原生单项1 passed／1.22s。修正后初三组84 passed／21.04s，引用合同扩大两组39 passed／12.78s；最终新黄金29 passed／9.22s，六组198 passed／42.43s，实际退出0。完整ruff All checks passed!、pyright 0 errors／0 warnings／0 informations实际0。
+- 前端最终实际0：221单测／23文件／1.16s，tsc、scoped ruff，256模块／1.14s；原7＋新增4浏览器11 passed／21.5s。首轮fixture误用artifact_versions.recorded_at导致1 failed／10未运行，第三轮run_io整行13列与4业务列期望失配导致10 passed／1 failed／31.8s；第二轮11 passed／21.6s及全部失败日志、源码、输入与截图均保留。业务列身份断言修为显式四列，整表全部列仍进SHA和整库逐字比较。正式断言／超时／零重试不变。
+- 前端父独立核对六文件解包逐字相同，216项冻结一致，恢复包SHAceb14fd4dc683a28cccdde8f27dadfbd9c2de67d471552f48353b53b0e71edef；子实看四图、父看桌面分组及390必需记录两图。预检与续页前后整库相同、生产错误摘要409，科研／审核／上下文／I/O／原件／输入不变，模型0，合法无依赖归属修订10→16。服务退出及8791／9809释放已核对。
+- 下一步：152运行资源冻结，完整后端及Windows仓库外安装正在验收，终态退出后另记；随后完整浏览器、精确维护未合并草稿、全历史独立恢复及提交头双CI。已有科研依赖的实际迁移、别名清除／混合来源续采继续保留；Atlas正式参考0／25、正式问题0／5及质量／成本／真实采集／I/O／钩子／规模／两周使用不以合成资料替代，不标完整M0–M4完成。
+
+- 最终完整后端 `uv run pytest -q` 实际 `1609 passed in553.16s(0:09:13)`、退出0，包装556.044s。Windows3.12.3 -I仓库外安装十四组实际 `325 passed,1 skipped in94.29s(0:01:34)`、退出0，包装95.550s，CP936／utf8_mode0不变。157包成员／152运行资源与源码及实际安装逐字相同，实际秘密／私有文件0，wheel SHAb6e3f5edd64a8a4deb0f899aa24548b048d2e075ce06bde203bbcaf98e7378d0。CLI两类帮助与全部静态／类型实际0。源码冻结不变，完整浏览器在后端真实退出后执行，最后核对现有草稿、独立恢复及提交头双CI。
+
+- 交付完整浏览器 `cd web && pnpm test:browser` 实际 `198 passed (5.2m)`，退出0，包装315.645s；8791／9809／9802／9806均释放。152运行资源、前端六文件／216项及已有文件运行图／22项冻结不变。完整后端1609、Windows325及1平台跳过、前端221／256模块及静态／类型均已实际通过；精确18文件／541跟踪文件维护已有未合并草稿，并核对全历史独立恢复与提交头双CI。下一任务推进已有科研依赖的实际迁移；真实研究材料和使用门槛保留，不将预检标为完整开发完成。
+
+## 2026-10-12 · 清除缺口后的持续采集
+
+- 基线：3e056c0已推送，现有PR1仍为未合并草稿；前批完整1609后端／198浏览器及Windows325／1跳过为前批证据。任务前恢复包实际核对，SHA88bdb9a49bf6c4ffa3276449fb4fdfb0333a22cabfc7621a251ec1aef2596f7f。阅读进度末40行、§2／6.1／6.6／6.8／11和既有决定；按用户自主开发授权推进，复用已授权前端子代理，不逐项询问普通取舍。
+- 文件：新增store/gap_schema、ingest/privacy_gaps、golden/test_clear_continuation；迁移32、清除／选择合同、scanner／spool、父线程／Claude父链补记及只读片段查询。前端六文件只修改物理片段语义、面板／样式、单测、真实专项及独立公开fixture；已有默认8791服务、文件运行图测试／22项冻结不改。Windows CI补新黄金组；中文决定、落实情况、验收与现有草稿继续维护。
+- 实际早期：41项依赖／迁移通过，pyright0／0／0；旧记录屏障首次5 failed／11 passed／5.74s，属于旧停留期待。新黄金首次5 failed／7 passed／7.48s，含Codex父线程补记卡在已清除缺口、fixture入口／备份类型／空表触发器断言错误。修复实际补记与清除原来源边界；更新停留期待为完整缺口审计，保留原件／对象／搜索绝不回写的断言。五组首修1 failed／142 passed／56.87s，遗留spool重复等待断言改为已完成不重复消费，并另补不完整尾部确实queued案例。
+- 实际扩大八组 `uv run pytest`：212 passed in73.70s(0:01:13)，退出0，包装76.749s；最终新黄金／记录屏障／迁移三组49 passed in14.50s，退出0，包装17.098s。随后补主删除与缺口同回滚／恢复幂等、元数据未知／缺口内起点不得越过三项，纳入最终全量及Windows。全部ruff All checks passed!，pyright0／0／0实际0。
+- 下一步：154运行资源冻结，完整后端、Windows仓库外安装与最终前端专项正在验收；以终态另记完整浏览器、精确提交、现有未合并草稿、全历史独立恢复及同HEAD双CI。已有科研依赖实际迁移、旧跨分区别名清除、自动配置／跨设备及Atlas真实材料／质量／时间成本／采集／I/O／钩子／规模／两周使用仍待完成，不清除真实项目或将合成资料充作人工参考。
+
+- 最终前端实际0：223单测／23文件／1.01s，tsc、scoped ruff，256模块／1.05s；原11＋新2浏览器13 passed(23.6s)，首轮13 passed(23.9s)保留。27个续扫副本逐项alias_of旧27个保留原件，精确跳过1条／149字节，清除对象未重存，科研摘要和既有原件／审核／上下文／I/O不变、模型0。父独立六文件解包逐字相同，新218项冻结、前批非目标210项与文件运行图22项一致；恢复包SHA9d11dea8d5a3373c9511afbf21fe68623decc3595a1c999d39ff5cb621caa964。子原尺寸看四图、父看桌面缺口和390目录卡；默认服务、断言、30秒及零重试不改。
+
+- Windows首轮内层346／1跳过／102.63s，但外层实际143且无成功回执，原因未知，完整日志与终端回执另存失败证据；不计正式通过。相同冻结包重验实际 `346 passed, 1 skipped in108.59s(0:01:48)`，退出0，包装109.114s，Windows3.12.3 -I仓库外安装十五组，CP936／utf8_mode0不变。159成员／154资源与源码和安装逐字一致，秘密／私有文件0，wheel SHAe9398d016f9afb65a00ee700963c9ae7ba2c831ac69524d691eeaaf610f9197e。最后全部ruff、pyright0／0／0、两类CLI帮助实际0；源码继续冻结，完整后端终态随后记录。
+
+- 交付完整后端 `uv run pytest -q` 实际 `1630 passed in601.91s(0:10:01)`，退出0；新增主删除回滚／恢复幂等与未知／缺口内元数据游标三项也包含在内。154资源及前端六文件／218项冻结继续不变，完整浏览器在后端真实结束后启动；随后精确提交24文件／545跟踪文件并维护现有未合并草稿、独立恢复及同HEAD双CI。
+
+- 交付完整浏览器 `cd web && pnpm test:browser` 实际 `200 passed(5.2m)`，退出0，包装315.515s；8791／9809／9802／9806全部释放。154资源、新六文件／218项、前批非目标210项及文件运行图22项冻结不变。完整后端1630／601.91s、Windows346／1跳过／108.59s、前端223／256模块及静态／类型均已实际通过。精确24文件／545跟踪文件将提交并维护现有未合并草稿，再核对全历史独立恢复和同HEAD双CI；随后继续已有科研依赖实际迁移，正式Atlas与真实使用门槛保留。
+
+
+## 2026-10-12 · 已有科研依赖的明确迁移
+
+- 基线：6b35063，任务前恢复包已创建并实际核对，SHA344caa2be7c04d41c7dd826ce4dff2740ef480226ee8bf42c3df165de33b5993。阅读进度末40行、§2／5.4／6.6／7.7／8.2／8.3／11与已有决定；按用户授权自主实施，继续复用已授权前端子代理。
+- 文件：新增store/ownership_schema、ownership、ownership_cleanup、science_migration、shadow_cleanup及golden/test_science_migration；迁移33、有效归属消费者、双时间读取、科研闭包与整项目清除、API／CLI、Windows CI。前端六文件接通明确迁移、完整分页同意与回执；默认服务、文件运行图22项、30秒与零重试不改。中文说明及验收持续更新。
+- 实际专项：历史查询六组153 passed in47.44s，退出0；新增科研迁移黄金最终19 passed in7.62s，退出0。覆盖原件及科研／审核逐字不变、历史归属与规则资格、完整上下文、人工记录、重复迁移、目标外发许可、四类工作锁、迁移失败回滚、两种清除顺序、共享 Git 实际旧对象清理、清除中断恢复及备份。诊断轮的合成快照参数／空计数键、旧版查询兼容及处理上下文预期错误均保留日志并修正，未扩大快照2秒预算或削弱原件断言。
+- 当前全量ruff实际All checks passed!，退出0；pyright实际0 errors／0 warnings／0 informations，退出0；两类CLI帮助实际0。159运行资源冻结，164成员wheel已实际构建并安装到独立Windows环境，源码／wheel／安装及真实秘密检查由安装验收核对。完整后端与原生Windows验收正在执行，终态另记。
+- 前端六文件父独立解包逐字相同，220项及既有文件运行图22项冻结一致；恢复包SHAf3ca1cb8c1987aed41f83bf85f07e7afbfe39bd363d47bde7e117dedfb9d3d0b。父实际查看桌面、390像素手机迁移同意与稳定回执三图；源码保持冻结。
+- 下一步：取得全量与Windows真实终态后执行完整浏览器，维护现有未合并草稿、全历史恢复及同HEAD双CI。原始跨分区别名、自动配置／跨设备与Atlas正式参考0／25、问题0／5及质量／时间成本／全部真实客户端采集／I/O／钩子／规模／两周使用继续保留；不将工程合成验收标为完整M0–M4完成。
+
+- Windows扩大验收首轮实际2 failed／363 passed／1跳过／116.01s，退出1；原因是备份复制正在持有的快照锁。修正仅排除快照目录下对应仓库的运行锁，保留真实文件。针对新黄金重验实际2 failed／17 passed／11.60s，退出1，暴露最后清除Git打包只读文件的Windows拒绝访问。清除仅对已选管理普通文件解除只读属性；其他权限失败继续保留恢复入口。两次全量诊断在需要改运行代码时主动中断，实际130与原日志保留，不计正式全量通过。当前159资源再次冻结，Windows专项先验收后再启动最终全量。
+
+- 修复后原生Windows新黄金实际19 passed／11.02s、退出0，包装11.856s；CLI完整迁移与重复意图实际0，原件及科研不变、模型0。最终Windows3.12.3 -I仓库外安装十六组实际365 passed／1平台跳过／114.72s、退出0，包装115.273s，CP936／utf8_mode0不变。164包成员／159运行资源与源码和实际安装逐字一致，秘密／私有文件0，wheel SHA4146422f217bdaff0cd61148ac0e56d6908fd6665f58e5f2334dc5586037049f。最终ruff／pyright实际0；源码继续冻结，完整后端终态随后记录。
+
+- 完整回归定位到既有迁移25的人工旧库案例：版本24创建MultiEdit时查询了迁移33才有的根目录投影。已保留原升级／回滚／原件不读取断言，旧版根目录与编辑版本读取显式选择当时已有的物理表；当前版本仍读取相同有效投影。全量继续保留实际失败终态，修复后的两组专项与最终全量另记，不将进行中或失败轮计为通过。
+
+- 完整旧库诊断终态实际1 failed／1648 passed／621.95s，退出1，包装624.926s；唯一失败为上述迁移25旧库根目录读取。修复后的MultiEdit与科研迁移两组实际53 passed／22.38s、退出0，原断言保留。151运行源码格式检查实际0，159运行资源重新冻结；最终全量及同冻结安装包重新验收。
+
+- 交付冻结包的原生Windows安装十六组实际365 passed／1平台跳过／115.38s、退出0，CP936／utf8_mode0不变；159运行资源与164成员wheel及实际安装逐字一致，秘密／私有文件0。交付wheel SHA1f07ef1bf936a94791c24c8e4648e88a8dfe8d912521671cb48de065ad00f936。前端227单测／23文件／1.09s及256模块／1.17s实际0，220项、前批非目标212项及文件运行图22项均一致。
+
+- 交付完整后端 `uv run pytest -q` 实际1649 passed in616.61s(0:10:16)、退出0，包装619.178s；新增19项和原迁移25回滚／禁止回读原文断言均包含在内。159运行资源、前端六文件／220项、非目标212项及文件运行图22项继续冻结；完整浏览器在后端实际成功退出后自动启动，终态另记。
+
+- 交付完整浏览器 `cd web && pnpm test:browser` 实际204 passed(6.5m)、退出0，包装394.219s；8791／9809／9802／9806已释放。完整后端1649／616.61s、Windows365／1跳过／115.38s、前端227／256模块及全部静态、类型和CLI实际通过；159运行资源与六文件／220项、前批非目标212项和文件运行图22项冻结一致。将精确提交87文件／552跟踪文件并维护现有未合并草稿，独立恢复完整历史并核对同HEAD双CI。下一任务继续原始跨分区别名、自动配置／跨设备及真实使用门槛；Atlas正式参考0／25、问题0／5等真实科研验收不以合成资料补造，不标完整M0–M4完成。
+
+
+## 2026-10-12 · 云端大图读取与选择竞态修复
+
+- 基线499fcbe已推送、现有PR1保持未合并草稿。两组同HEAD云端验收均实际失败：后端与Windows通过，浏览器16 failed／188 passed。完整日志及前轮验收逐字归档到私有缓存，未把本地204通过当作云端通过。修复前完整Git历史包实际核对；阅读进度末40行、§2／7.11及归属历史决定。
+- 文件：store/ownership、query/reader、derive/claim_sources与eligibility；两组黄金保留原历史／原件断言并检查批量历史归属和SQL次数。一个读取快照内批量查实体归属，非模型记录不重建不需要的来源签名；模型资格仍完整核对。固定双截止2033条完整图逐字一致，实际SQL33467→2346、剖析耗时0.291→0.112秒。
+- 实际专项：四组黄金129 passed in35.25s、退出0；新增数量与历史映射约束两项2 passed in2.14s、退出0。真实大图与个人视图15 passed(1.4m)、退出0，包装89.23s。全量ruff实际0，pyright0／0／0。原浏览器5秒期待、30秒、零重试与旧断言保留。
+- 前端已授权子代理单独修复390像素选择丢失竞态；完整后端、重新冻结159资源的安装包验收正在执行。最终前端、完整浏览器、草稿／恢复及新同HEAD双CI以实际终态补记，不使用失败HEAD旧结果宣称本轮通过。
+
+- 修复后完整后端实际 `1649 passed in612.82s(0:10:12)`、退出0，包装615.586s；新SQL约束在旧运行代码实际失败1，修复代码保持历史状态原断言且通过。交付安装包159资源／164成员逐字相同，Windows实际 `365 passed, 1 skipped in117.81s(0:01:57)`、退出0，包装119.212s；wheel SHA f65c568c27f78bc1ddfcbd427a27ee899d0530d7147228c2664b178288f379b6，CP936／utf8_mode0不变，秘密／私有文件0。前端实际227／23文件／1.14s、256模块／1.07s及CLI迁移／重试实际0；手机专项与完整浏览器终态另记。
+
+- 前端最终两文件独立恢复逐字一致，恢复包SHA0ab70225fffcffb95c2630df1a57a3ec042e1e7e82a07a310d5e9a010fac3301；90项证据及原220／22项冻结均父独立核对。原四项正文／断言逐字保留，新唯一回归用真实claims200暂停证明忙时禁选、完成后连续勾选／取消再选／折叠原位展开。最终5 passed(20.1s)实际0；旧真实构建相同回归实际1，目标为忙时checkbox仍enabled，最终红灯无route清理副错误。前两次端口占用和并发fsync监听等待失败未到行为回归，不计选择复现；首回调修正19.7s和门控清理前20.1s保留诊断原轮。
+- 最终前端已运行静态实际0：227／23文件／1.04s，tsc无错误，256模块／1.05s；父核对最终源并承接原命令实际回执，不为汇报重新运行相同已通过检查。父原尺寸查看390忙时禁选截图，旧图／节点名称仍可读，操作暂禁用。完整205浏览器已在后台真实成功结束及子服务释放后启动，终态另记。
+
+- 本次交付完整浏览器 `cd web && pnpm test:browser` 实际205 passed(5.4m)、退出0，包装329.249s；原16个云端失败对应场景及新唯一手机回归均包含在内。8791／9809／9802／9806及9794已实际释放。后台1649／612.82s、Windows365／1跳过／117.81s、前端227／1.04s、256模块／1.05s及静态／类型／CLI实际通过；159资源、后端6文件／前端2文件与原220／22冻结一致。将精确提交13个跟进文件，现有未合并草稿继续维护；最终提交的双CI及全历史恢复以实际审计回执核对。下一任务继续原始跨分区别名、自动配置／跨设备与真实Atlas质量／时间成本／采集／I/O／钩子／规模／两周使用，正式参考0／25及问题0／5不以工程资料补造，不标完整M0–M4完成。
+
+
+## 2026-10-12 · 失效原生别名清除
+
+- 上一提交95db3c0实际推送并独立恢复核对，552跟踪文件逐字一致；同HEAD的PR运行38169250181、推送运行38169247098均成功，各30步骤与15项标记通过。两组完整后端1649、固定案例1602、浏览器205实际通过；旧499fcbe失败证据保留。现有草稿保持未合并。
+- 本任务前恢复包已创建且 git bundle verify 实际0；基线95db3c0，SHA e3d1780dd3d9acca849fd31a4bb522b3d49c5f4434831e6e12e058d85e78501f。读进度末40行、§2／6.6／11及既有决定，按用户授权自主选择，不询问常规取舍。
+- 文件：新增rg/store/alias_schema及黄金test_alias_clear；修改migrations、clear_selection、ownership、fragment_dependency_contract、fragment_dependencies、Windows CI及中文说明。迁移34保留全部L0值，历史别名改用无回收编号与插入存在校验；清除仍显式核对未证明／有效引用，科研闭包读取当前别名。
+- 第一轮专项实际22 failed／41 passed／26.81s，发现科研固定布局合同仍按旧外键拒绝迁移；同步合同及当前依赖核对后七组134 passed in53.26s，退出0，包装56.055s。增加清除后再次迁移、有效跨项目别名及中断恢复后，最终新增14 passed in6.00s，退出0，包装8.760s。
+- 同一清除案例在隔离旧95db3c0实际1 failed in3.57s，退出1，明确为raw_events.alias_of阻塞；修复绿灯不删除原未知依赖保护。ruff实际All checks passed!，pyright实际0 errors／0 warnings／0 informations，均退出0。160运行资源已冻结；完整后端及仓库外原生Windows安装验收正在执行，最终终态另记。
+- 下一步：核对完整后端／Windows终态，验收受影响浏览器与CLI，维护现有未合并草稿并独立恢复当前提交，核对同HEAD云端检查。自动配置／跨设备与Atlas正式参考0／25、问题0／5、真实质量／成本／采集／I/O／钩子／规模／两周使用门槛保留，不以工程资料补造。
+
+- 冻结复核发现旧库已有损坏外键还需先验证；主动中止前轮全量，实际616 passed in259.99s、KeyboardInterrupt、退出2，包装262.403s，不标为全量通过。前轮Windows379 passed／1 skipped／124.79s、退出0及wheel／冻结均保留在私有前轮目录，不能代替最终代码。补上升级前完整外键检查后新增15 passed in6.21s，退出0，包装8.918s；最终8代码文件／160资源重新冻结，重新构建并安装wheel后启动最终后端、原生Windows与独立端口浏览器验收。
+
+- 最终原生Windows交付包实际380 passed／1 skipped in128.59s、退出0，包装129.659s；165成员／160资源与源码、wheel和安装逐字相同，CP936／utf8_mode0，实际秘密及私有文件0。wheel SHA 512379688637ea0b7b91fd16ce7928f5cf44f26e268f0679380627509a8c7bd0。前端227／23文件／1.10s与256模块／1.20s、CLI帮助及完整迁移／同意图重试实际退出0；本次前端源未变，旧220／22／90冻结在提交审计时另核对。
+
+- 并行完整浏览器实际1 failed／4 did not run／200 passed(5.7m)、退出1，包装347.475s；唯一失败为时间状态服务未在原5秒轮询内监听，服务日志显示仍在合成seed的原件INSERT，afterAll中止。未进入页面行为，不能标为语义回归或完整通过；父并行安排不当，完整日志、错误上下文和服务日志均私有保留。后端结束后串行完整重验，不加超时、不改断言、不设置重试。
+
+- 最终完整后端 uv run pytest -q 实际1664 passed in640.93s、退出0，包装643.428s；后端真实成功退出后启动串行完整205浏览器。160资源／8代码文件与原220／22／90前端冻结逐字相同；新迁移前置拒绝及所有既有历史／规则／采集测试均包含在本次全量。
+
+- 最终串行完整浏览器 cd web && pnpm test:browser 实际205 passed(5.4m)、退出0，包装325.834s；原失败服务的5项均通过，8791／9809／9802／9806／9794实际释放。最终后端1664／640.93s、Windows380／1跳过／128.59s、前端227／1.10s、构建256模块／1.20s及静态／类型／CLI实际通过，运行代码不变。
+- 将精确提交13文件并维护已有未合并草稿；555跟踪文件的全历史独立恢复、凭据／私有资料零匹配和同HEAD双CI以实际回执核对。下一步自动归属配置／跨设备，正式Atlas参考0／25、问题0／5及真实质量／成本／采集／I/O／钩子／规模／两周使用继续保留；不宣布完整M0–M4完成。
+
+
+## 2026-10-12 · 本机未来记录自动归属
+
+- 上轮63e6348同HEAD双云端实际成功：PR38173291456、push38173288021，均30成功步骤／15验收标记；后端1664、固定案例1617、浏览器205通过。完整历史恢复555跟踪文件逐字相同、凭据及私有文件0匹配；上轮终态现补记，不沿用为本轮代码验收。
+- 开始前阅读末40行及§2／3／6.6／9／12、现有归属决定；私有完整Git备份已核验，SHA3e7fd0c0aab021b728a7bc163bbf0e4a957ce8e3bcd00edb7aba14af7bcd773b。§3明确跨设备属M5以后，早期下一步列表中的“跨设备”不作为当前M0–M4缺口。
+- 文件：新增store/assignment_schema、assignment_policy与ingest/automatic_assignment，修改migrations、clear_selection、scanner、project_fragments、API、CLI、Windows验收及新增黄金。迁移35仅新增策略／归属回执；默认关闭，明确开启后只归属未来新导入且未人工绑定的记录。未知、冲突、隐私断点及根登记超限进入收件箱；单一工具请求结果保留请求归属；人工分区优先，历史和科研状态不回填。
+- 初轮新增实际3失败／13通过／5.93秒；修正测试使用真实清除租约／命名空间和HTTP构造后，两组实际31 passed in13.09s。五组实际5失败／105通过／28.67秒暴露旧33迁移夹具仍按最新表合同检查；夹具明确使用当时表合同，原历史断言保留。扩展后23 passed in7.14s；嵌套未知格式补充后最终新增24 passed in7.19s、退出0。
+- 全量发现需要阻断未知嵌套格式的目录继承，主动中止旧运行代码回归，包装退出130、未得到pytest全量终态；原日志保留，不算通过。最终163资源重新冻结，完整回归重新开始；前端由已授权子代理接入，安装包／原生Windows及浏览器按实际终态补记。
+- 下一步：完整回归、原生安装、真实API浏览器及同HEADCI；随后核对本机采集安装、保留与备份。正式Atlas参考0／25、问题0／5和真实质量／成本／I/O／钩子／规模／两周使用继续保留，不补造人工材料。
+
+- 最终完整后端 `uv run pytest -q` 实际1688 passed in617.82s、退出0，包装620.569秒；新增24项及所有原历史／归属／提取固定案例均包含。163资源／21代码文件和前端32项冻结一致；全量ruff实际All checks passed，pyright0 errors／0 warnings／0 informations。前端实际232／24文件／1.01秒，构建259模块／1.08秒；CLI真实保存与后续自动归属退出0、模型调用0。Windows交付安装后开始仓库外原生验收，随后串行完整浏览器。
+
+- 仓库外原生Windows安装包实际404 passed／1 skipped in122.47s、退出0，包装123.506秒；168成员／163资源与当前源码、wheel及安装逐字相同，CP936／utf8_mode0、真实密钥及私有文件0。wheel SHA130da0d7cdbf53ee5694c0dcd1a97784cddbdcbc2ea3fb379182845363366a2d。Windows实际成功退出后启动完整211浏览器，含新增6项真实生产API专项；未改原30秒超时、5秒期待及零重试。
+
+- 前版完整211浏览器实际211 passed(5.5m)、退出0，包装334.247秒；新增6项真实生产API均通过，父核对390截图、旧原件与科研摘要不变、模型调用0。交付复核新增旧29库只有32条已存目录观测时的边界案例，前版实际1 failed in2.39s、退出1，明确为第42条误归属。改成不跳过未观测记录后，两组70 passed in16.94s、退出0；追加后续观测完成仍不回填原归属的断言，再单独重验。前版完整1688／Windows404／浏览器211／wheel已归档到私有pre-legacy-audit，不能冒充最终运行代码。163资源与21代码文件重新冻结，最终25项新黄金及完整回归重新执行。
+
+- 旧库缺口完整修复后的最终全后端 `uv run pytest -q` 实际1689 passed in618.11s、退出0，包装620.689秒；旧库红灯回归最终完整断言单项1 passed in2.33s、退出0。163资源／21代码文件仍冻结一致；全量ruff实际All checks passed，pyright0／0／0、真实CLI归属退出0及模型0。最终wheel重新构建、安装实际退出0，原生Windows重新验收后再串行完整浏览器；前版通过不代替新代码。
+
+- 旧库修复后最终Windows3.12.3仓库外安装实际405 passed／1 skipped in110.33s、退出0，包装112.143秒；168成员／163资源与源码、wheel及安装逐字相同，CP936／utf8_mode0、凭据及私有文件0。最终wheel SHAa16b4e31b9b71f6ec748a9a5162434265f86ffacaa98be1aefc1a7e390a1b79d。Windows成功退出后已开始最终串行211浏览器，不使用前版浏览器结果替代当前代码。
+
+- 最终浏览器实际1 failed／210 passed(6.2m)、退出1，包装378.506秒；旧notes第139行用例在打开第二条笔记的修改按钮时30秒超时。父查看失败截图，普通详情已报Failed to fetch却持续Loading；生产ClaimDrawer只为历史读取设置错误状态，普通读取失败没有恢复入口。完整日志、上下文与截图保留browser-network-failed；notes服务器日志0字节，后续同服务用例成功，不能凭此声称后端错误。所有六端口已释放；已授权前端代理修复普通／历史详情的明确失败状态及主动只读重试，原断言、超时与零重试不改。当前163后端源码／wheel未变且1689／Windows405仍有效，不重复未受影响的完整后端。
+
+- 前端代理仅改App.tsx并新增claim-detail-failure.spec.ts，普通／历史详情失败明确提示并可主动GET重读，按项目／记录／修订／读取条件隔离。`pnpm test`实际232 passed／24文件／1.85s，`pnpm exec tsc --noEmit`实际退出0，`pnpm build`实际259模块／1.60s；新增真实API专项最终6 passed(15.7s)、退出0。迟到200／401均等待正文处理后核对，历史原文字节与图状态不变，未自动科研写入。
+- 父实际查看390普通失败与桌面历史失败图，按钮可见且无横向溢出；两文件独立恢复逐字一致，恢复包SHAbd4f41fe8a5c01aa5d9a788f539e603773f8d313eb405d2c8f40bd886a947d16。旧notes与HEAD逐字相同，前策略32项冻结及163后端资源不变，23代码文件重新核对；8791／9809／9802／9806／9794／9798实际释放。最终217项完整浏览器串行开始；本批验收文档与草稿已重写到最终实现范围，实际终态、提交恢复及双CI另记。
+
+- 最终串行 `cd web && pnpm test:browser` 实际217 passed(5.9m)、退出0，包装358.789秒；原失败笔记用例及新增12项真实API专项全部通过。原超时、零重试和旧断言不变，后端1689／Windows405与1跳过、前端232／构建259均对应最终冻结源码。用户明确纠正手机定位，已在README／决定／需求状态与草稿中改成本机Windows／WSL／Linux采集和桌面浏览器；后续优先安装接入、会话保留及独立备份、真实采集与提取稳定性。
+- 本批精确29文件／预计567跟踪文件提交，维护已有未合并草稿；完整历史独立恢复、真实密钥及私有历史零匹配和同HEAD双CI以实际终态核对。Atlas48条候选参考仍没有正式人工验收回执，真实质量、成本、I/O、钩子性能、规模和两周使用保留，不宣布完整M0–M4完成。
+
+## 2026-10-13 · 本机原生会话独立归档
+
+- 上轮c21cd54已实际推送；PR38273881898与push38273876308同HEAD均成功，各30步骤／15标记。云端后端1689、固定案例1642、浏览器217通过；567跟踪文件全历史恢复逐字相同，真实密钥及私有历史0匹配，草稿正文一致且未合并。
+- 开始前读末40行、§2／6.7／12的M0／17及既有决定；复制并核验当前完整Git备份，SHA3f873f761252d9ec9c467dfb12a19423356ee98c973ff689303b2376b50936e2。按用户本机桌面定位，先执行实际备份，不新增前端功能。
+- 实测WSL的Claude保留期已经3650天，未修改已有配置。Windows默认用户目录没有Claude配置及projects，只捕获已有Codex目录；未伪造另一工具的安装或会话。
+- 私有捕获命令实际WSL843文件／4761186417字节／11.161秒、Windows31文件／29425326字节／0.875秒，均退出0；所有初始条目覆盖、链接0，逐文件SHA256与原生前缀相同。WSL复制后观察到追加4128字节，捕获版本不冒充实时同步。
+- 私有实际恢复命令WSL843文件／5.052秒、Windows31文件／0.531秒均退出0；再次归档校验WSL2.475秒、Windows0.078秒均退出0。恢复及复验禁止访问原生源目录，访问尝试0；完整文件集合、长度、SHA256一致。汇总首轮跨平台路径解释错误退出1，修正驱动器挂载映射后实际汇总退出0，失败不算通过。
+- 临时恢复目录确认位于本次独占用户目录，再次核对全部843／31文件后清理，两环境均实际退出0；正式归档、逐文件清单和验收回执保留，未删除原生源或其他用户文件。
+- 文件：更新README、PROGRESS、DECISIONS、REQUIREMENTS_STATUS和PR草稿，新增中文原生会话归档验收；运行代码／前端不变。原生文件树、逐文件清单及恢复目录在用户私有目录，验收脚本在私有缓存，均不入Git、不调模型。
+- 下一步：本机客户端钩子与持续采集接入，实测真实I/O及提示时刻性能；正式参考、问题、真实样本计数、质量／成本、规模和两周使用门槛保留，完整M0–M4未完成。
+
+## 2026-10-13 · 桌面入口精简与问答预览修复
+
+- 开始前读末40行、§2／9、问答及隐私相关章节和桌面决定；按用户“界面不要太复杂”调整。当前ff60539完整历史备份核验，SHA a957e8bce9e32851648654e2a99df052164763c5c2d76dae0e2a3935e817dce0。
+- 前端由已授权子代理完成，产品只改App和styles：默认研究问题／研究图／研究问答，八个低频工具收起，原文搜索与待复核提示可见。工具深链自动展开，局部图计数明确限定。十八个旧浏览器文件三十二处导航改共享展开方法，其余业务源码父独立逆向核对逐字相同；详情函数及唯一实例整行未变，不新增手机场景。
+- ff60539旧云端实际PR38279931061失败、push38279923603成功，包装1180.869秒退出1，未算双成功。发现问答privacy_policy_id摘要命中十八位数字形状后被二次遮盖；手机号也可稳定复现。前版4 failed／29 deselected in4.89s；仅增加qa程序根字段例外，同名正文／问题／范围仍遮盖。相关四组 `uv run pytest ... -q` 实际93 passed in40.43s，退出0。
+- 本轮文件：rg/extract/redact.py、两项黄金文件、App／styles、十八个旧浏览器文件、共享navigation与三个桌面场景、ci.yml；更新README、PROGRESS、DECISIONS、REQUIREMENTS_STATUS、PR草稿及新增中文桌面验收。完整CI整体从20调为30分钟，依据上一PR后端1149秒；Windows10分钟、单项浏览器30秒、零重试与全部验收步骤保留。
+- `uv run pytest -q` 实际1692 passed in626.59s，退出0，包装629.451秒；固定案例实际收集1645项。全量ruff实际All checks passed，pyright0／0／0，`uv run rg --help`退出0。163资源及287后端／夹具文件冻结一致，未调真实模型。
+- 仓库外原生Windows3.12.3 `-I` 安装二十组实际438 passed／1 skipped in129.33s，退出0；168成员／163资源与源码及安装逐字一致，CP936／utf8_mode0、真实密钥及私有文件0匹配。wheel SHA3395adf87e85fd5651c14a13c8539d0e4c4012e152966adf0cc9bc61e915b9f3。
+- 前端 `pnpm test` 实际232／24文件／1.17秒，独立tsc退出0，`pnpm build`实际259模块／1.16秒退出0；桌面专项3 passed(11.6s)、退出0，父看1440默认／展开截图。中途静态清单沿用App／CSS旧摘要，元数据核对退出1；已刷新最终文件及静态回执。二十二文件独立恢复逐字一致，六十六项稳定SHA核对退出0，首次截图及旧失败副本保留。
+- 后端与原生安装成功后串行 `pnpm test:browser` 实际220 passed(5.7m)、退出0，包装347.125秒；包含原217及新增3场景，没有改业务断言／超时／重试。26代码文件冻结一致。
+- 下一步：维护已有未合并草稿、核对当前提交完整历史恢复与云端实际终态，继续本机钩子／持续采集和真实科研质量验收；正式参考与问题、真实I/O、成本、规模及两周使用仍保留，完整M0–M4未完成。
+
+## 2026-10-13 · 已登记项目钩子安装与原生回调
+
+- 开始前读末40行、§2／6.7–6.8／14.8、M0–M2及现有决定；按用户自主开发授权继续，不新增界面入口。当前c3baf07完整Git备份核对，SHAdcf7714e02d14edfb19f3118e528100fbfb6f8d4ab784ea0efd8a66468a56ebb。上轮同HEAD的PR38283710986与push38283706109实际全部成功，各30步骤／15标记；云端后端1692、固定1645及浏览器220通过。
+- 文件：新增rg/hooks/install.py、launcher.py、黄金test_hook_install.py、原生check_native_hooks.py；修改CLI、hook入口、snapshot/config与Windows CI名单；更新README、需求状态、执行规格§6.8、决定、进度、草稿及新增中文项目钩子验收。前端源码与上一完整验收版本逐字一致，不重跑未受影响的前端。
+- hook-install检查唯一登记本机根，仅合并项目本地配置；原字段和其它钩子保留，重复运行不重写。同名定义冲突、无效JSON／重复字段、链接、超限及检测到并发修改均拒绝覆盖。固定隔离解释器不受工作区同名模块影响，导入／运行失败静默0；个人设置和持久信任不改，配置存在不等于生效。原生Windows Codex shell未验收，安装前明确拒绝，WSL可用。
+- 首轮两组实际2 failed／48 passed in14.52s，包装17.438秒退出1；一项案例错误重复登记唯一目录，另一项证实嵌套已登记其它项目没有被范围筛选排除。修正后最终两组50 passed in15.59s，包装18.278秒退出0；原文、超限、未知归属及已有快照行为保留。全量ruff实际All checks passed，pyright0／0／0，CLI帮助实际退出0，固定案例实际收集1672项。
+- 原生脚本首轮Store上下文用法错误实际退出1；修正后Codex异步Stop实测丢失，退出1、包装18.123秒。按原生行为改Stop／SessionEnd两秒同步落盘、后台扫描仍异步；规格、示例和安装定义一致更新。下一次Claude空MCP配置非法实际退出1，修正为空服务表。最终两个WSL原生客户端Codex0.162.0／Claude2.1.280实际均0，各一次回环固定请求、四类回调齐全、Git index及研究数据库逐字不变，包装15.181秒；远程模型0。只证明隔离基本回调，个人客户端生效、全八类及性能仍保留。
+- 五次真实CLI init／登记／检查／安装／重复均退出0，初始不安装、检查不创建客户端目录、首次八类、重复字节相同，activation仍unknown。验收第一次误用不存在的python -m rg入口退出1；改用实际提供的rg控制台入口后通过。合成目录与失败日志保留，不触碰Atlas配置或ResearchGraph开发钩子。
+- 165运行资源、115后端测试／夹具与八代码文件冻结一致；完整后端实际运行中，wheel构建及原生Windows安装实际均退出0，后续原生安装回归和交付审核另记。
+- 下一步：完整回归／交付恢复与草稿维护，实际工具调用、压缩、子会话、强杀、持续消费及提示耗时；Atlas正式参考、真实I/O、质量、成本、规模和两周使用继续保留，完整M0–M4未完成。
+
+- 本轮最终完整后端 `uv run pytest -q` 实际1719 passed in627.85s，退出0，包装630.598秒；包括1672固定案例。中断前Windows仅部分日志且没有退出回执，工具句柄缺失、Windows及Linux对应实际进程0后才重跑；保留日志，不能记通过。重跑原生Windows3.12.3仓库外安装二十一组实际463 passed／3 skipped in137.37s，退出0，包装139.169秒；新增两跳过为建立符号链接权限不足，另一本来跳过。
+- 170成员／165运行资源与当前源码、wheel及原生安装逐字一致，CP936／utf8_mode0、真实密钥和私有文件0匹配。wheel SHA115c988e2d7173a3b18fa253913faf17237df1ffa07e6ce8039bf5e71243d5d8；八代码文件、165资源及115测试／夹具冻结一致。私有试点当前只统计48候选、人核true为0、三个文件，未读正文进开发上下文；没有伪造正式参考。
+- 本批交付范围八代码／CI与七中文文档；全部本地验收终态通过，未改前端。后续完整Git恢复、真实私有历史零匹配、当前提交推送及未合并草稿正文按实际回执核对；新HEAD云端终态另记，不用c3绿灯代替。
+
+## 2026-10-13 · 日常启动、客户端安装与下游核对
+
+- 开始前读末40行、§2／7.11／8／9／10、关系语义及既有决定；按用户自主开发、简单桌面界面及减少重复测试的授权集中补功能。此前84a5220的PR38341459762与push38341455018实际成功，各30步骤／15标记；不代替新提交结果。
+- 文件：新增 rg/clients/install.py、rg/runtime.py、rg/query/impact.py、rg/hooks/commands.py 及三组黄金案例；修改CLI、HTTP、健康、钩子安装、原生脚本和Windows CI名单。已授权前端子代理新增ImpactPanel、impact、CSS及两测试文件，接入App／VersionsView／FileRunGraphView。更新README、需求状态、决定、进度及草稿，新增中文日常验收。
+- 功能：客户端项目技能和MCP无损合并／检查／幂等；start统一管理离线扫描、spool、派生、文件处理及明确开启后的模型流水线，空闲释放连接；impact返回双时间、范围和修订固定的只读下游对象／路径，报告依赖潜在、状态不变；详情折叠入口不增加主导航。Windows Codex固定系统PowerShell编码参数，工作区中文和shell符号实际支持，不改个人设置。
+- 阶段七组专项 `uv run pytest ... -q` 实际112 passed in44.62s；修复后最终三组 `uv run pytest tests/golden/test_client_install.py tests/golden/test_runtime.py tests/golden/test_impact.py -q` 实际28 passed in8.87s、退出0。完整后端及浏览器交现有CI，本地未再运行全量。
+- Windows仓库外安装四组初次2 failed／50 passed／3 skipped，修正测试UTF-8后仍1 failed。实际诊断为频繁状态读取阻止原子替换，错误回执二次写失败及缓冲stdin守护线程触发退出故障；共享删除读取、辅助回执隔离、非缓冲控制修正后实际52 passed／3 skipped in12.27s、退出0，CP936／utf8_mode0；原八秒断言不变。3跳过不算通过。
+- 原生Windows Codex0.162.0实际退出0、5.656秒、一次回环固定请求、四回调齐全、index及研究数据库不变、远程模型0。实际Linux CLI接入检查／安装／重复均0；start事件1到2、模型0、无效影响HTTP400、状态命令0、Ctrl+C退出0。全量ruff最终All checks passed，pyright0／0／0；wheel构建和原生安装实际0。
+- 前端实际 `pnpm test` 235 passed／25文件／1.58秒，tsc退出0，构建262模块／1.41秒退出0；仅影响专项浏览器2 passed／12.2秒退出0，验证固定分页、GET-only、图不变及迟到401隔离。首次缺pnpm与libasound的失败保留，使用已有固定环境后通过；未跑完整浏览器。
+- 下一步：提交并维护已有未合并草稿，读取新HEAD云端终态；推进剩余真实科研与个人接入验收。跨worktree身份、完整物理历史diff、全部工具版本和真实规模边界不冒充完成；参考、真实I/O、成本、p95及两周使用继续保留。
+
+## 2026-10-13 · 首次创建与可直接启动的桌面安装包
+
+- 开始前读末40行、§2／5／8／9／10及既有决定。上一9b57238的PR38372647304与push38372639625实际均成功；新功能继续采用相关检查，不重复本地完整回归。
+- 文件：新增rg/api/projects.py、static.py，修改server／CLI／pyproject及CI；新增build_desktop.py、hatch_web.py、check_desktop_install.py与两组黄金案例。已授权前端代理修改App，新增ProjectCreateDialog／projectCreate／CSS及两测试文件。更新README、需求状态、决定、进度与草稿，新增中文首次启动验收。
+- 功能：空库和项目选择旁可创建项目，仅名称、绝对目录、采集开关；加载／失败不冒充空库，失败保留输入。POST认证同源且拒绝重复字段，同名同根重放复用，重叠归属拒绝，项目与根事务发布；来源明确开启才登记默认共享目录，缺失／不可用单独回执，不读原文／改个人配置／开启外发。
+- 桌面wheel包含静态资源，普通后端安装仍轻量；默认使用安装包或同一源码树资源，缺少界面不启动后台／创建数据目录。构建脚本实际完成类型检查、265模块、1.08秒及wheel，退出0；Linux／Windows仓库外安装均实际请求全部9资源、项目重放一致、后台两进程退出0、模型0。
+- 首轮新专项1 failed／11 passed in4.46秒，HTTP测试误继承SOCKS代理；明确回环不走代理后12 passed in3.67秒，最终四组 `uv run pytest ... -q` 48 passed in17.99秒、退出0。全量ruff最终All checks passed，pyright0／0／0；相关Windows安装三组实际20 passed in6.04秒、退出0、utf8_mode0，没有增加跳过或超时。
+- Windows安装脚本首轮在自身临时cwd执行清理，断言通过但清理失败退出1，不算成功；使用恢复cwd的上下文后实际退出0。前端首次旧Empty无用导入导致构建失败，修正后实际238 passed／26文件／1.18秒，构建265模块／1.12秒退出0；仅创建项目浏览器2 passed／13.8秒退出0，实际空库HTTP覆盖登记／缺失来源／重放／503／400。完整后端与浏览器交CI。
+- 下一步：提交并更新已有未合并草稿，读取新HEAD完整CI；继续跨工作树路径检索及实际接入／科研使用验收。安装包不进Git；真实参考、I/O、质量／成本、p95、规模和两周使用边界继续保留。
+- 完整包实际3317250字节、SHA23d9f43d5ade03c51a40831d683473a204c77a0804b4a3d4d71030f50c9a8a08；十个静态文件及全部后端资源与当前文件逐字相同，真实凭据匹配0。安装与功能回执已实际终态通过，后续当前提交与云端结果另核对。
+
+## 2026-10-13 · 跨工作树路径召回与干净仓库入口修复
+
+- 开始前读末40行、§2／5／6.6／7.6–7.8及路径／普通取舍决定。上一dde2fa4的PR38383710007和push38383703299实际均failure；push Windows成功，PR后端1 failed／1758 passed in368.73s，旧review入口测试依赖未构建web/dist。修正测试自身临时页面，保留原断言与生产资源预检，不调整CI顺序掩盖问题。
+- 文件：新增rg/extract/path_context.py和黄金test_path_context.py，修改paths／working_set／worker／linker、共享公开对象用例助手和tests/test_api.py；Windows CI增加新路径专项。更新README、需求状态、决定、草稿，新增中文跨工作树验收；前端没有修改。
+- 功能：同项目已登记且唯一共同目录的仓库内路径参与提取工作集与跨会话候选对；相对路径取逐记录原生目录及固定工具参数，缺失／非法观测和跨来源／片段阻断。最长根、子目录前缀、data根、跨项目共同目录、Windows盘符／UNC和含空格路径分别核对。物理路径和版本保留，同版本继续要求算法／摘要相等；模型候选、完整范围和工作集预算不变。路径策略进入持久配置及非pass1／链接缓存身份，不探测当前研究目录或运行会话命令。
+- 初轮新专项2 failed／11 passed in4.44s，合成用例违反追加保护；改为创建时给定内容和追加缺失观测模拟，触发器保留。中间五组63 passed in17.94s、入口单独1 passed in0.93s；最终 `uv run pytest tests/golden/test_path_context.py tests/golden/test_working_selection.py tests/golden/test_links_overview.py tests/golden/test_scoped_working_context.py tests/test_worker.py tests/test_api.py::test_review_open_passes_review_entry_to_server -q` 实际64 passed in18.21s，退出0。全量ruff实际All checks passed，pyright0／0／0，均退出0；没有本地全量后端／浏览器重复回归。
+- 桌面wheel构建与原生Windows隔离环境安装实际退出0；仓库外Python3.12.3／CP936／utf8_mode0新路径及入口16 passed in8.32s、退出0，没有跳过。172后端资源／10静态资源与当前文件逐字相同，包3320246字节、SHA1c6e9d1a10a2e091687d4e14836a1ff8241d48843fc7d258f511f86e1e915963；生成包和临时测试不进Git，远程模型0。
+- 下一步：提交并维护已有未合并草稿，核对新HEAD完整CI；继续实际客户端／科研使用验收。历史根身份双时间账本、跨设备别名、符号链接目标及真实I/O尚有边界；正式参考、质量／成本、p95、规模和两周使用保留，完整M0–M4未完成。
+
+## 2026-10-13 · L1原生Windows路径与逐记录目录
+
+- 开始前读末40行、§2／8.3及路径与候选决定，按用户自主开发、中文文档和减少重复测试要求推进。此前1435b5396af24d91782b6d32702ff24f19a0c49a的PR38386504606／push38386498219实际均completed／success；不能代替本轮新HEAD结果。
+- 文件：新增rg/store/lexical_paths.py、tests/golden/test_l1_paths.py和中文原生路径验收；修改derive的records／native_patch／edits、ingest/project_context、extract/path_context、人工回执迁移合成测试及Windows CI。更新README、需求状态、设计决定和草稿；前端未改。
+- 功能：L1支持盘符／UNC／相对与POSIX路径，按明确工具字段和对应记录目录定位，未知／非法阻断且不借会话末尾cwd；最长完整根匹配，跨项目冲突拒绝，物理工作树与版本分开。Claude请求／报告不同文件只保留冲突及前像；Codex旧／原生回执允许相对／绝对等价，重复或不同文件不算成功。执行字段与正文分开，candidate及工具UTF-8依据保留；共享语法进入提取配置与缓存身份，不探测研究目录或执行会话命令。
+- 最终命令 `.tools/bin/uv run pytest tests/golden/test_l1_paths.py tests/golden/test_l1.py tests/golden/test_native_patch.py tests/golden/test_multiedit.py tests/golden/test_path_context.py tests/golden/test_science_migration.py -q` 实际190 passed in40.47s、退出0。此前六组1 failed／188 passed in41.95s证实机器墙钟倒退约26秒，只有人工回执迁移合成用例设递增时钟；生产墙钟、双截止、原迁移及零新确认断言保留。修正后189 passed in40.00s，再补本机当前文件与报告不同的案例；最终通过不抹掉此前失败。
+- 全量 `.tools/bin/uv run ruff check rg tests scripts` 实际All checks passed；`.tools/bin/uv run pyright` 实际0 errors／0 warnings／0 informations，均退出0。本地未重复完整后端、前端构建或浏览器，完整回归交现有CI。
+- `RG_PACKAGE_WEB=1 .tools/bin/uv build --wheel --out-dir .cache/l1-native-paths-20261013/wheel` 和原生Windowsuv安装实际退出0。最终 `.cache/native-windows/env-312/Scripts/python.exe -I D:/researchgraph/.cache/l1-native-paths-20261013/native_check.py` 在仓库外临时目录实际47 passed in10.02s、退出0，Python3.12.3／CP936／utf8_mode0，无跳过。已安装策略源码与当前逐字一致；第一次资源核对脚本写错成员前缀退出1，按实际rg/_web布局修正后退出0。173后端／10静态资源与当前逐字相同，3321025字节，SHA3a0a22de5ef37aedbff1a7c5de8204b901232ba3114d52e0997d8efa9154f850；测试、夹具及缓存不入包，生成物不进Git，远程模型0。
+- 下一步：提交并维护已有未合并草稿，核对新HEAD完整CI；追加旧L1路径审计证明及查询投影，不回写旧历史。实际客户端全事件／研究I/O、正式参考、质量／成本、p95、规模及两周使用继续保留，完整M0–M4未完成。
+
+## 2026-10-13 · 旧L1路径追加复核与历史读取
+
+- 开始前读末40行、§2／8.3及L1／路径决定；按用户自主开发、简单桌面界面及减少重复全量测试要求推进。此前85ceedf的PR38389861146／push38389854698实际均completed／success，不代替本轮新提交。
+- 文件：新增rg/derive/path_checks.py、rg/store/l1_path_schema.py与黄金test_l1_path_repair.py；修改编辑发布／原生补丁、worker／views／multiedit／edit_checks、逐记录目录读取、query的artifacts／l1／runs／reader、迁移36、固定清除表与科研依赖合同。修改公开MultiEdit夹具、两类旧迁移时间用例及Windows CI；更新README／状态／决定／草稿，新增中文旧L1验收，前端未改。
+- 功能：离线派生有界复核旧路径，保存原调用／结果、目录事件、根声明、算法和输入摘要；稳定重放幂等，输入或登记变化重新核对，不可用仅明确重试。严格可重建报告补登候选，保存点与事务保护半次候选／回执；旧事实、原生退出码与人工状态不回写。新版本按补登时间显示，旧候选保留后来复核提示；科学闭包、备份、整项目清除与原文窗口读取接通，缺原请求／缺根／歧义不补造成功。
+- 最终 `.tools/bin/uv run pytest tests/golden/test_l1_path_repair.py tests/golden/test_science_migration.py -q` 实际38 passed in16.94s、退出0；`.tools/bin/uv run pytest tests/golden/test_multiedit.py -q` 实际34 passed in12.20s、退出0。早期多步编辑身份与独立待核验标记缺陷已修正，原断言保留；合成清除字段／UUID、同会话歧义及根唯一性用例纠正。十二组初轮1 failed／321 passed in95.62s，第二轮3 failed／322 passed in96.85s；四组收尾1 failed／83 passed in24.42s均不记为全通过。
+- 扩大检查在旧规则／快照历史用例两次实测审核或原件时间晚于归属迁移约26秒；只固定合成审核、来源迁移、科学迁移和读取的完整先后，生产墙钟及双截止不改。新原生补丁用例继续要求native_patch_input_missing，不放宽原请求缺口。后续仅复验相关失败及新功能，未重复本地全量后端／前端／浏览器。
+- 全量ruff实际All checks passed，pyright0 errors／0 warnings／0 informations，均退出0。wheel构建及原生Windows安装实际0；原生 `python.exe -I .../native_check.py` 四组最终97 passed in15.29s、退出0，Python3.12.3／CP936／utf8_mode0，无跳过。首轮29 failed／68 passed in15.39s因旧MultiEdit夹具的无盘符POSIX路径不等于Windows登记根；仅将公开夹具改成本机原生绝对语法，产品规则及案例／断言／超时保留，CI增加该组。
+- 175后端／10静态资源与当前文件逐字相同，包3327104字节，SHAf348e78b7017a7e7452ab90141f7f967c53ba784f0144e3e2b36d4a8f329a531；测试／夹具／缓存不入包，生成物不入Git，远程模型0。只证明公开合成资料和安装工程验收，未读取个人原件来伪造科学参考。
+- 下一步：提交并维护已有未合并草稿，核对新HEAD完整CI；继续实际客户端全事件、完整研究I/O及历史根身份合同。正式参考、质量／成本、p95、规模与两周使用继续保留，完整M0–M4未完成。
+
+
+## 2026-10-13 · 根目录身份双时间账本与旧迁移CI设定修复
+
+- 开始前读末40行、§2／5／6.6／8.3／12与根身份决定；按用户自主推进、简单桌面界面、减少重复全量测试要求开发。上一47712f1两组CI实际均failure：PR38395347658后端4 failed／1821 passed in408.94s，Windows4 failed／568 passed／1 skipped in331.17s；push38395341417后端同四项失败／1821 passed in240.50s，Windows同四项失败／568 passed／1 skipped in371.30s。日志保留在忽略缓存，不能用前次定向通过冒充CI成功。
+- 文件：新增rg/store/root_history.py／root_history_schema.py与黄金test_root_history.py，迁移37；修改roots／worktrees／API创建的修订、Reader／artifacts／runs／L1及清除选择／来源回收、CLI双截止。修正旧alias_clear／automatic_assignment／L1路径升级／快照历史测试设定，Windows CI加入新登记黄金。更新README、需求状态、决定、草稿和中文账本验收；前端未改。
+- 功能：同事务追加登记／元数据变化，旧库不探测，仅建立发生时间未知的保存基线；根清单、版本／运行／编辑／快照按双截止提供登记证明，未知身份不借后来Git信息。原声明及科研状态不改，当前清单仍SQL分页；备份、共享根保留及最后引用整项目清除接通，不留自引用账本。
+- 新登记与旧登记初轮3 failed／35 passed in15.28s，公开合成2030登记遗漏另一当前截止；修正为明确双截止。六组相关2 failed／116 passed in49.12s，旧升级终点写死36及快照时钟补丁绑定了重复导入的另一模块；当前版本断言与显式历史常量修复，生产时钟／过滤和原字节断言保留。
+- 最终 `.tools/bin/uv run pytest tests/golden/test_root_history.py tests/golden/test_science_migration.py::test_native_snapshot_io_remains_readable_after_move_and_origin_clear tests/golden/test_l1_path_repair.py::test_v35_upgrade_preserves_records_and_appends_only_when_background_runs -q` 实际13 passed in5.74s，退出0；云端四项旧设定与新登记 `uv run pytest ...alias_clear::test_migration34_transaction_preserves_rows_views_indexes_and_protection ...automatic_assignment::test_migration35_rollback_then_preserve_original_records ...test_root_history.py -q` 实际14 passed in4.80s、退出0。旧版固定集合和终点设定修正，回滚／外键／原件／追加保护断言不放宽。
+- 全量ruff实际All checks passed，pyright0 errors／0 warnings／0 informations、退出0；类型初轮1 error已用明确字典类型修正。桌面wheel构建及原生Windows缓存环境重安装实际退出0；仓库外 `python.exe -I .../native_check.py` 五组实际28 passed in10.08s、退出0，Python3.12.3／cp936／utf8_mode0，无跳过。只复验相关失败与新功能，没有本地完整后端／前端／浏览器重复回归。
+- 177后端／10静态资源与当前逐字相同，包3330644字节、SHAa31c4c21f98d1af7dbbf10dd943b042259ceed6fc51562c2c8ec04223e0694e6；测试／夹具／缓存不入包，生成物不进Git，模型0。
+- 下一步：提交并维护已有未合并草稿，核对新HEAD完整CI；继续真实客户端、研究I/O和真实科研使用验收。登记账本不补造旧发生时间／跨设备身份；正式参考、质量／成本、p95、规模与两周使用继续保留，完整M0–M4尚未验收。
+
+## 2026-10-13 · 主分支合并准备与旧升级修订计数修复
+
+- 任务：按用户“你先弄到 main”授权完成已有 PR #1 的合并；先读末40行、§2／8.3及 GitHub／根登记决定。当前分支干净、PR 无冲突，账号具有合并权限；此前草稿策略由本次明确授权更新。
+- 文件：修改 tests/golden/test_l1_graph.py、test_multiedit.py、test_rule_reference_qualification.py，追加本文件及 DECISIONS.md，更新中文 PR 说明。产品代码和 CI 步骤未改。
+- 最新 c087e77 的 PR38399928554／push38399919710 均实际失败。PR 后端3 failed／1832 passed in352.01s，Windows2 failed／580 passed／1 skipped in275.38s；失败均为旧升级测试遗漏迁移37按根追加基线带来的修订。日志保存于忽略缓存，未将失败算作通过。
+- 首先复现 `.tools/bin/uv run pytest tests/golden/test_l1_graph.py::test_schema_v16_upgrade_is_atomic_retains_original_and_edit_revision_trigger tests/golden/test_multiedit.py::test_schema25_only_invalidates_old_multiedit_projection_atomically tests/golden/test_rule_reference_qualification.py::test_v26_migration_is_atomic_and_never_rewrites_proof_or_reads_raw -q`，实际3 failed／1 passed in3.95s、退出1。按升级前根数核对新增基线和修订；增加重复打开的原件及修订稳定断言，原失败回滚和完整性检查保留。
+- 最终同一命令追加 `tests/golden/test_root_history.py`，实际14 passed in5.81s、退出0。`.tools/bin/uv run ruff check tests/golden/test_l1_graph.py tests/golden/test_multiedit.py tests/golden/test_rule_reference_qualification.py` 实际 All checks passed!、退出0；`git diff --check` 无输出、退出0。本地只复验失败及相关登记功能，完整后端、Windows、前端、浏览器和安装验收交既有 CI。
+- 下一步：推送本次修复并等待当前提交全部 CI 成功，再解除草稿并通过 PR 合入 main，核对远端合并状态和本机主分支；真实科研质量及长期使用验收继续保留，不因合并补写通过。
+- 提交内容核对：合并范围内1739个历史 blob 和本次六个改动文件与本机凭据做内容匹配，实际匹配数0；当前禁止提交文件数0，退出0，凭据内容未输出。
+- 合并前发现并修复导出缺陷：d4f6012 的 push38402028203 实际 success；PR38402036511 的完整后端及 Windows 成功，但第二轮固定案例1 failed／1787 passed in370.30s。失败为程序生成的路径核验摘要偶含手机号形状，被导出当正文遮盖，导致图／导出核验不一致；不能用另一路成功掩盖该失败。
+- 后续文件：rg/export/build.py／privacy.py、tests/golden/test_export_version_references.py、Windows CI 及本次中文说明。仅在导出器固定生成位置标记摘要，用户同名字段继续遮盖；自定义规则涉及摘要时拒绝发布，数据库及原件不改。固定手机号形状先实测2 failed／5 passed in3.60s，之后相关四组 `.tools/bin/uv run pytest tests/golden/test_export_version_references.py tests/golden/test_multiedit.py tests/golden/test_exports.py tests/golden/test_root_history.py -q` 实际89 passed in27.90s、退出0；新增原生运行两种导出一致性及项目隐私规则共9 passed in3.06s、退出0。
+- `.tools/bin/uv run ruff check rg/export tests/golden/test_export_version_references.py` 修正新测试导入排序后实际 All checks passed!、退出0；`.tools/bin/uv run pyright rg` 实际0 errors／0 warnings／0 informations、退出0；`git diff --check` 无输出、退出0。完整回归仍交既有 CI，没有本地再跑全部后端或浏览器。
+- 当前桌面包：`RG_PACKAGE_WEB=1 .tools/bin/uv build --wheel --out-dir .cache/main-merge-20261013/wheel` 实际退出0，177后端及10静态资源与当前源码逐字一致，测试／夹具／缓存未入包；3331211字节，SHA256为bf8ff2d44b24b22d7a54ef35413832fffb6831a34c32be10d6923a884ddd72e6。没有重复本机原生Windows安装；当前安装与跨平台完整验证交新提交 CI，旧包检查不冒充本次验证。
+
+
+## 2026-10-13 · PR #1 已合入 main
+
+- 任务：按用户明确授权将现有开发成果合入主分支。PR #1 解除草稿后采用普通合并，保留开发提交；GitHub 实际 state=MERGED、isDraft=false，合并时刻2026-10-13T13:58:30Z，合并提交d8678f283ee0362eae42ef0f84115852e39552a9，代码提交55de1c336b5c5ab1af74c1ed7de12c7e6b1e4e45。
+- 验收：push38405168917 与 PR38405177991 实际均 success；合并前 PR 的四项检查均 COMPLETED／SUCCESS，mergeStateStatus=CLEAN。完整离线测试1838 passed in389.39s，固定案例1791 passed in361.86s，前端238 passed，浏览器224 passed (7.3m)；ruff 实际 All checks passed!，pyright 实际0 errors／0 warnings／0 informations。前端构建、完整 wheel 构建和仓库外安装均通过。
+- Windows：push 实际590 passed／1 skipped in365.09s。PR 首次任务触及10分钟时限，已完成部分566 passed／1 skipped后被取消，不能记为全通过；待流程结束只重跑 Windows，实际590 passed／1 skipped in386.03s、任务success，原后端没有重跑。时限、案例和产品合同均未放宽，前次失败／取消记录保留。
+- 发布命令：`gh pr ready 1`、`gh pr merge 1 --merge --match-head-commit 55de1c336b5c5ab1af74c1ed7de12c7e6b1e4e45 --subject '合并本机研究决定史与原生桌面采集' --body-file .cache/main-merge-20261013/merge-message.txt` 实际退出0；`gh pr view 1 --json state,isDraft,mergedAt,mergeCommit,url,headRefOid,baseRefName` 实际返回上述合并状态。
+- 本机：`git fetch origin main`、`git switch -c main --track origin/main` 实际退出0；`git diff --exit-code 55de1c336b5c5ab1af74c1ed7de12c7e6b1e4e45 HEAD` 无输出、退出0，证明合并树与验收树完全一致。切换后 `git status --short --branch` 实际仅 `## main...origin/main`，目录干净；开发分支保留。
+- 内容检查：先核对1739个既有历史 blob，再核对两个补充提交的13个 blob；实际识别1个本机凭据值，内容匹配均为0，禁止提交文件数0，未输出凭据。无真实材料／数据库／缓存／安装包入库，远程模型调用0。
+- 收尾文件：仅追加 PROGRESS.md／DECISIONS.md，并同步 docs/PR草稿.md 为已验收的最终 PR 说明。文档收尾提交使用 `[skip ci]`，避免中文纪要重复触发整套回归；提交前后另核对除这三个文档外的软件树与已验收提交完全一致，`git diff --check` 无输出、退出0。合并提交本身的 main CI 仍按既有流程自动运行，不把启动中的检查写为通过。
+- 下一步：从 main 开始实际试用和问题修复；正式 Atlas 参考、科研质量／成本、完整研究 I/O、规模及长期使用继续保留，完整 M0–M4 尚未验收。下一个开发任务使用新分支和新会话。
+
+
+## 2026-10-13 · 本机服务启动与 SSH 试用入口
+
+- 任务：按用户“启动一下，远程 SSH 访问”授权，将已合入 main 的桌面包实际安装并启动。开始前读末40行、§2／10／11及本地界面、日常入口和首次建库决定。
+- 部署：校验桌面 wheel 的 SHA256 为 bf8ff2d44b24b22d7a54ef35413832fffb6831a34c32be10d6923a884ddd72e6，使用 Python3.12.3 在 `~/.local/share/researchgraph/venv` 离线安装19个运行依赖；实际安装退出0。数据目录为 `~/.researchgraph`，与开发测试库分开，本次初始项目数为0。没有把合成验收库当成真实研究记录。
+- 服务：新增个人 `~/.config/systemd/user/researchgraph.service`，通过 `systemctl --user start researchgraph.service` 启动，实际 `ActiveState=active`、`SubState=running`、`ExecMainStatus=0`。统一入口 `rg --data-dir ~/.researchgraph start --port 8788` 管理界面与扫描／文件处理子进程；现有 linger=yes，未修改登录设置或启用开机自启。
+- 端口与访问：8787 已被 RStudio 占用，使用空闲8788；`ss -ltnp 'sport = :8788'` 实际仅监听127.0.0.1:8788，归属本次 rg 进程。已有WSL SSH服务 active／running，Tailscale在线；未改SSH认证、密钥或防火墙。远程电脑使用 `ssh -L 127.0.0.1:8788:127.0.0.1:8788 用户名@这台WSL的SSH地址`，浏览器保持相同127.0.0.1与端口，满足Host／Origin检查。用户电脑到本机的实际SSH连接需用户执行，未冒充远端连通验收。
+- 凭据：随机本机访问令牌仅保存在权限0600的启动日志及 `~/.researchgraph/access-url.txt`，不进入仓库或开发上下文。该链接属于本次启动，服务重启后从启动日志取得最新链接。生产数据根和日志目录权限0700；未读取或发送目录里的模型密钥，本次远程模型调用0，extract回执disabled。
+- 验收：独立已安装命令的 `runtime-status` 显示scan／files为idle、extract为disabled；保存回执的liveness仍unknown，另外实测主进程和两个子进程存在。Python真实HTTP请求：界面200，三个JS／CSS静态资源200，带本次令牌的 `/api/projects` 与 `/api/health` 均200，项目数0。
+- 浏览器：首次启动因未带本机已有libasound路径失败，退出1；只设置既有 `.tools/browser-libs/usr/lib/x86_64-linux-gnu` 的LD_LIBRARY_PATH后再次检查当前生产服务，实际 `browser_http=200`、`first_project_button_visible=true`、`hash_removed=true`、`page_errors=0`、`http_failures=0`，退出0。截图及无令牌JSON回执保存在个人数据目录，未运行完整回归或改产品代码。
+- 文件：仓库仅追加本文件及DECISIONS.md；实际虚拟环境、systemd配置、数据库、日志、访问链接、浏览器回执均在个人目录，不入Git。下一步由用户通过SSH隧道查看界面并创建实际项目；Atlas正式参考、科研质量及长期使用验收仍未完成。
