@@ -173,11 +173,14 @@ def test_api_key_is_saved_privately_and_never_returned(server):
     app, client = server
     response = client.post("/api/settings", json={"api_key": "sk-test123", "model": "m1"})
     assert "sk-test123" not in response.text
-    assert response.json()["model"] == {
-        "base_url": "https://api.deepseek.com/anthropic",
-        "model": "m1",
-        "has_key": True,
-    }
+    model = response.json()["model"]
+    assert (model["base_url"], model["model"], model["has_key"]) == (
+        "https://api.deepseek.com/anthropic",
+        "m1",
+        True,
+    )
+    # 旧版本只存一个模型：三个阶段都用它
+    assert {s["model"] for s in model["models"].values()} == {"m1"}
     mode = stat.S_IMODE((app.root / "api_key").stat().st_mode)
     assert mode == 0o600
 
@@ -206,17 +209,18 @@ def test_check_key_without_saving(server):
         "message": "还没有填写 API Key",
     }
     good = client.post("/api/settings/check", json={"api_key": "sk-good"}).json()
-    assert good == {"ok": True, "message": "可以使用（deepseek-flash）"}
+    # 新装时三个阶段用推荐设置：提取 flash，归类和复审 pro；同一个模型只试一次
+    assert (good["ok"], good["message"]) == (True, "可以使用（deepseek-flash、deepseek-v4-pro）")
     bad = client.post("/api/settings/check", json={"api_key": "sk-bad"}).json()
     assert bad["ok"] is False and "401" in bad["message"] and "sk-bad" not in bad["message"]
     assert not (app.root / "api_key").exists()  # 检测不保存
-    assert client.post(
-        "/api/settings/check", json={"api_key": "sk-x", "base_url": "http://evil"}
-    ).json() == {
-        "ok": False,
-        "message": "模型接口必须使用 HTTPS",
-    }
-    assert seen == ["sk-good", "sk-bad"]
+    assert (
+        client.post(
+            "/api/settings/check", json={"api_key": "sk-x", "base_url": "http://evil"}
+        ).json()["message"]
+        == "模型接口必须使用 HTTPS"
+    )
+    assert seen == ["sk-good", "sk-good", "sk-bad", "sk-bad"]
 
 
 def test_auto_update_settings_are_validated_before_anything_is_saved(server, tmp_path):
@@ -420,3 +424,83 @@ def test_event_outcome_and_importance_follow_the_kind(server, tmp_path):
     assert app.store.one("SELECT outcome FROM events WHERE id = ?", (attempt["id"],)) == {
         "outcome": "open"
     }
+
+
+def test_each_stage_can_use_its_own_model_and_thinking(server, tmp_path):
+    app, client = server
+    bad = client.post(
+        "/api/settings", json={"models": {"extract": {"model": "x", "thinking": "huge"}}}
+    )
+    assert bad.status_code == 400
+    saved = client.post(
+        "/api/settings",
+        json={
+            "models": {
+                "extract": {"model": "deepseek-flash", "thinking": "off"},
+                "threads": {"model": "deepseek-v4-pro", "thinking": "high"},
+            }
+        },
+    ).json()["model"]["models"]
+    assert saved["threads"] == {"model": "deepseek-v4-pro", "thinking": "high"}
+    assert saved["review"] == {"model": "deepseek-v4-pro", "thinking": "off"}  # 没填的阶段保持原样
+    (app.root / "api_key").write_text("sk-test", encoding="utf-8")
+    calls = app.model()
+    assert calls is not None and calls["extract"] is not calls["threads"]
+
+
+def test_model_list_and_per_model_check(server):
+    app, client = server
+    pinged: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/anthropic/v1/models":
+            return httpx.Response(404)
+        if request.url.path == "/models":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": "deepseek-flash",
+                            "name": "DeepSeek-V4.1-Flash",
+                            "context_window": 1048576,
+                            "effort": {
+                                "supported_levels": ["low", "high", "max"],
+                                "default_level": "high",
+                            },
+                        },
+                        {"id": "plain"},
+                    ]
+                },
+            )
+        body = json.loads(request.content)
+        pinged.append(body["model"])
+        if body["model"] == "missing":
+            return httpx.Response(400, json={"error": {"message": "Model Not Exist"}})
+        return httpx.Response(200, json={"model": body["model"]})
+
+    app.transport = httpx.MockTransport(handler)
+    listed = client.post("/api/settings/models", json={"api_key": "sk-x"}).json()
+    assert listed["error"] is None
+    assert listed["models"][0] == {
+        "id": "deepseek-flash",
+        "name": "DeepSeek-V4.1-Flash",
+        "context_window": 1048576,
+        "max_output_tokens": None,
+        "thinking": ["low", "high", "max"],
+        "default_thinking": "high",
+    }
+    assert listed["models"][1]["thinking"] == []
+    checked = client.post(
+        "/api/settings/check",
+        json={
+            "api_key": "sk-x",
+            "models": {
+                "extract": {"model": "deepseek-flash"},
+                "threads": {"model": "missing"},
+                "review": {"model": "deepseek-flash"},
+            },
+        },
+    ).json()
+    assert checked["ok"] is False and "missing" in checked["message"]
+    assert pinged == ["deepseek-flash", "missing"]  # 同一个模型只试一次

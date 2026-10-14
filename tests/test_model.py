@@ -85,3 +85,27 @@ def test_empty_tool_input_is_retried_and_never_cached(monkeypatch, store):
         cached(store, client, "t")("s", "other", schema, 10)
     # 空结果不会被缓存，下次还会真的去问
     assert store.one("SELECT COUNT(*) AS n FROM model_cache")["n"] == 1
+
+
+def test_thinking_lets_the_model_call_the_tool_itself():
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        tool = {"type": "tool_use", "name": "submit", "input": {"events": []}}
+        return httpx.Response(
+            200, json={"content": [{"type": "thinking"}, tool], "stop_reason": "tool_use"}
+        )
+
+    client = Model(
+        "https://api.example.com/anthropic",
+        "m1",
+        "sk-test",
+        httpx.MockTransport(handler),
+        thinking="high",
+    )
+    assert client("s", "u", {"type": "object", "required": ["events"]}, 1000) == {"events": []}
+    body = seen[0]
+    # 思考和强制调用工具不能同时用；思考的 token 另外预留
+    assert body["tool_choice"] == {"type": "auto"}
+    assert body["thinking"]["type"] == "enabled" and body["max_tokens"] > 1000

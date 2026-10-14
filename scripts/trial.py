@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from rg.config import DB_NAME, DEFAULT_BASE_URL, DEFAULT_MODEL, data_dir, read_key
-from rg.model import Model, cached
+from rg.model import Model, cached, metered
 from rg.organize import (
     KIND_LABEL,
     OUTCOME_LABEL,
@@ -26,6 +26,7 @@ from rg.organize import (
     sync_project,
 )
 from rg.store import Store
+from rg.usage import recorder
 
 MARK = {"success": "✓", "failed": "✗", "open": "…"}
 
@@ -67,6 +68,7 @@ def main() -> None:
     cli.add_argument("--sync", action="store_true", help="先按当前解析器重新读会话")
     cli.add_argument("--workers", type=int, default=8)
     cli.add_argument("--model", help="换一个模型试，默认用副本设置里的")
+    cli.add_argument("--thinking", default="off", choices=["off", "low", "high", "max"])
     args = cli.parse_args()
 
     root = data_dir(args.data_dir)
@@ -80,7 +82,11 @@ def main() -> None:
         raise SystemExit("没有找到 API Key")
     base_url = store.setting("base_url", DEFAULT_BASE_URL)
     model_name = args.model or store.setting("model", DEFAULT_MODEL)
-    call = cached(store, Model(base_url, model_name, key), f"{base_url}|{model_name}")
+    tag = f"{base_url}|{model_name}" + (f"|{args.thinking}" if args.thinking != "off" else "")
+    call = metered(
+        cached(store, Model(base_url, model_name, key, thinking=args.thinking), tag),
+        recorder(store, None, f"trial:{model_name}:{args.thinking}"),
+    )
 
     sessions = [int(s) for s in args.sessions.split(",") if s.strip()]
     chunks = pick_chunks(store, args.project, sessions, args.sample, args.seed)

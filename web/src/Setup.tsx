@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { api } from './api';
 import { Segmented, Switch } from './Controls';
-import type { AppState, AutoSettings } from './types';
+import { StageModels } from './ModelSettings';
+import type { AppState, AutoSettings, Stage, StageModel } from './types';
 import { TOOL_LABEL } from './types';
 import { UsagePanel } from './Usage';
 
@@ -22,10 +23,11 @@ export function Setup({ state, first, onDone, onCancel }: Props) {
   const [key, setKey] = useState('');
   const [advanced, setAdvanced] = useState(false);
   const [baseUrl, setBaseUrl] = useState(state.model.base_url);
-  const [model, setModel] = useState(state.model.model);
+  const [stages, setStages] = useState<Record<Stage, StageModel>>(state.model.models);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [check, setCheck] = useState<{ ok: boolean; message: string } | 'running' | null>(null);
+  const [keyShown, setKeyShown] = useState(false);
   const [auto, setAuto] = useState<AutoSettings>(state.auto);
   const [tab, setTab] = useState<'general' | 'usage'>('general');
   const changeAuto = (patch: Partial<AutoSettings>) => setAuto({ ...auto, ...patch });
@@ -37,7 +39,7 @@ export function Setup({ state, first, onDone, onCancel }: Props) {
         await api.checkModel({
           ...(key.trim() ? { api_key: key.trim() } : {}),
           base_url: baseUrl.trim(),
-          model: model.trim(),
+          models: stages,
         }),
       );
     } catch (e) {
@@ -68,7 +70,7 @@ export function Setup({ state, first, onDone, onCancel }: Props) {
         sources: [...chosen],
         ...(key.trim() ? { api_key: key.trim() } : {}),
         base_url: baseUrl.trim(),
-        model: model.trim(),
+        models: stages,
         ...(first ? {} : { auto }),
       });
       onDone(next);
@@ -168,7 +170,7 @@ export function Setup({ state, first, onDone, onCancel }: Props) {
               <div className="row">
                 <input
                   className="input"
-                  type="password"
+                  type={keyShown ? 'text' : 'password'}
                   autoComplete="off"
                   placeholder={state.model.has_key ? '••••••••' : 'sk-…'}
                   value={key}
@@ -177,50 +179,45 @@ export function Setup({ state, first, onDone, onCancel }: Props) {
                     setCheck(null);
                   }}
                 />
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={check === 'running' || (!key.trim() && !state.model.has_key)}
-                  onClick={test}
-                >
-                  {check === 'running' ? '检测中…' : '检测'}
+                <button type="button" className="btn ghost" onClick={() => setKeyShown(!keyShown)}>
+                  {keyShown ? '隐藏' : '显示'}
                 </button>
+                {first ? (
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={check === 'running' || (!key.trim() && !state.model.has_key)}
+                    onClick={test}
+                  >
+                    {check === 'running' ? '检测中…' : '检测'}
+                  </button>
+                ) : null}
               </div>
             </label>
-            {check && check !== 'running' ? (
+            {first && check && check !== 'running' ? (
               <div className={`small ${check.ok ? 'ok' : 'error'}`}>
                 {check.ok ? '✓ ' : '✗ '}
                 {check.message}
               </div>
             ) : null}
+            {first ? null : (
+              <StageModels hasKey={state.model.has_key} apiKey={key} baseUrl={baseUrl} stages={stages} onStages={setStages} />
+            )}
             <button type="button" className="link small" onClick={() => setAdvanced(!advanced)}>
-              {advanced ? '收起高级设置' : '高级设置（换接口或模型）'}
+              {advanced ? '收起高级设置' : '高级设置（换接口）'}
             </button>
             {advanced ? (
-              <>
-                <label className="field">
-                  <span>接口地址（Anthropic Messages 兼容）</span>
-                  <input
-                    className="input"
-                    value={baseUrl}
-                    onChange={(e) => {
-                      setBaseUrl(e.target.value);
-                      setCheck(null);
-                    }}
-                  />
-                </label>
-                <label className="field">
-                  <span>模型</span>
-                  <input
-                    className="input"
-                    value={model}
-                    onChange={(e) => {
-                      setModel(e.target.value);
-                      setCheck(null);
-                    }}
-                  />
-                </label>
-              </>
+              <label className="field">
+                <span>接口地址（Anthropic Messages 兼容）</span>
+                <input
+                  className="input"
+                  value={baseUrl}
+                  onChange={(e) => {
+                    setBaseUrl(e.target.value);
+                    setCheck(null);
+                  }}
+                />
+              </label>
             ) : null}
           </section>
 

@@ -11,7 +11,7 @@ import re
 import threading
 import time
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -1376,9 +1376,17 @@ def reset(store: Store, project_id: int) -> None:
         )
 
 
+# 每个阶段用哪个模型：可以是同一个，也可以按阶段分开（extract / threads / review）
+Calls = Call | Mapping[str, Call]
+
+
+def _stage(call: Calls, stage: str) -> Call:
+    return call[stage] if isinstance(call, Mapping) else call
+
+
 def organize(
     store: Store,
-    call: Call | None,
+    call: Calls | None,
     project_id: int,
     roots: list[str],
     progress: Progress,
@@ -1403,19 +1411,24 @@ def organize(
         progress.set("error")
         return
     try:
-        extract(store, metered(call, recorder(store, project_id, "extract")), project_id, progress)
-        place(store, metered(call, recorder(store, project_id, "threads")), project_id, progress)
-        consolidate_threads(
-            store, metered(call, recorder(store, project_id, "threads")), project_id, progress
-        )
-        review_threads(
-            store, metered(call, recorder(store, project_id, "review")), project_id, progress
-        )
+
+        def use(stage: str) -> Call:
+            return metered(_stage(call, stage), recorder(store, project_id, stage))
+
+        extract(store, use("extract"), project_id, progress)
+        place(store, use("threads"), project_id, progress)
+        consolidate_threads(store, use("threads"), project_id, progress)
+        review_threads(store, use("review"), project_id, progress)
     except AuthError as error:
         progress.error(f"{error}。请在设置里检测 Key，改好后点“重试”，已整理的部分不会丢")
         progress.estimate = estimate(store, project_id)
         progress.set("error")
         return
+    except Truncated:
+        progress.error(
+            "归入研究线失败：模型输出太长被截断。打开思考时容易这样，"
+            "可以在设置里把“归入研究线”的思考调低或关掉，再点“重试”"
+        )
     except ModelError as error:
         progress.error(f"归入研究线失败：{error}")
     with store.tx() as db:
@@ -1431,7 +1444,7 @@ class Jobs:
         self,
         store: Store,
         roots: Callable[[], list[str]],
-        model: Callable[[], Call | None],
+        model: Callable[[], Calls | None],
     ):
         self.store = store
         self.roots = roots

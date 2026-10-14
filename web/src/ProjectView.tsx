@@ -8,12 +8,24 @@ import { defaultZoom, filterDetail, rowNeighbors, ZOOM_LEVELS, type Align, type 
 import { EventPanel, LanePanel, OverviewPanel } from './Panel';
 import { SearchBox } from './Search';
 import { Timeline, type Selection } from './Timeline';
-import type { AppState, Pending, ProjectData, ProjectSummary, Status } from './types';
-import { KIND_LABEL, KINDS } from './types';
+import type { AppState, Pending, ProjectData, ProjectSummary, Stage, Status } from './types';
+import { KIND_LABEL, KINDS, THINKING_LABEL } from './types';
 
 // 这次打开页面期间点过“稍后”的项目：切到别的项目或设置再回来，不再追着问
 const dismissed = new Set<number>();
 const NO_EVENTS = new Set<number>();
+
+function describeModel(item: { model: string; thinking: keyof typeof THINKING_LABEL }): string {
+  return item.thinking === 'off' ? item.model : `${item.model}（思考：${THINKING_LABEL[item.thinking]}）`;
+}
+
+// 每个阶段用的是哪一类任务的模型
+const PHASE_STAGE: Partial<Record<Status['phase'], Stage>> = {
+  extract: 'extract',
+  threads: 'threads',
+  consolidate: 'threads',
+  review: 'review',
+};
 
 const PHASE: Record<Status['phase'], string> = {
   idle: '',
@@ -392,7 +404,7 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
             }}
           />
         ) : null}
-        <StatusPill status={status} data={data} pending={pending} auto={auto} quiet={state.auto.quiet} />
+        <StatusPill status={status} data={data} pending={pending} auto={auto} quiet={state.auto.quiet} models={state.model.models} />
         <button type="button" className="btn primary" disabled={running} onClick={() => organize()}>
           <Icon name="refresh" size={15} />
           {running ? '整理中' : '更新'}
@@ -404,7 +416,9 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
               hint: '保留手动改过的内容',
               disabled: running,
               onClick: () =>
-                window.confirm('清掉自动生成的研究线和事件，从头整理？你手动改过和删掉的内容会保留。') &&
+                window.confirm(
+                  `清掉自动生成的研究线和事件，从头整理？你手动改过和删掉的内容会保留。\n\n会重新调用模型：提取用 ${describeModel(state.model.models.extract)}，归类和复审用 ${describeModel(state.model.models.threads)}。模型可以在设置里换。`,
+                ) &&
                 organize({ full: true }),
             },
             { label: '项目设置', hint: '改名、增减会话、恢复删除的事件', onClick: onProjectSettings },
@@ -523,12 +537,17 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
             </span>
           ))}
           <span>
-            <KindGlyph kind="attempt" outcome="failed" />
-            失败的尝试
+            <span className="legend-card milestone" />
+            里程碑
           </span>
           <span>
-            <span className="legend-milestone" />
-            里程碑
+            <span className="legend-card" />
+            关键
+          </span>
+          <span>
+            <span className="legend-card failed" />
+            <KindGlyph kind="attempt" outcome="failed" />
+            失败的尝试
           </span>
         </div>
         {data ? (
@@ -602,21 +621,26 @@ function StatusPill({
   pending,
   auto,
   quiet,
+  models,
 }: {
   status: Status | null;
   data: ProjectData | null;
   pending: Pending | null;
   auto: AutoState;
   quiet: number;
+  models: AppState['model']['models'];
 }) {
   if (!status || !data) return null;
   if (status.running) {
+    const stage = PHASE_STAGE[status.phase];
+    const used = stage ? models[stage] : null;
     return (
-      <span className="pill">
+      <span className="pill" title={used ? `这一步用 ${used.model}${used.thinking !== 'off' ? `，思考：${THINKING_LABEL[used.thinking]}` : ''}` : ''}>
         <span className="spinner" />
         {status.auto ? '自动更新 · ' : ''}
         {PHASE[status.phase]}
         {status.total ? <span className="muted"> {status.done}/{status.total}</span> : null}
+        {used ? <span className="muted hide-narrow"> · {used.model}</span> : null}
       </span>
     );
   }
@@ -697,8 +721,9 @@ function Banner({
         <div className="banner-text">
           <strong>第一次整理这个项目</strong>
           <span>
-            会把 {estimate.sessions} 个会话中{fmtChars(estimate.chars)}的文字发送给 {model.model}，大约调用 {estimate.calls}{' '}
-            次。之后只发送新增的内容。
+            会把 {estimate.sessions} 个会话中{fmtChars(estimate.chars)}的文字发送给 {model.models.extract.model}
+            提取关键步骤（大约 {Math.max(estimate.calls - 1, 1)} 次调用），再用 {model.models.threads.model}{' '}
+            整理研究线。之后只发送新增的内容。模型可以在设置里换。
           </span>
         </div>
         {model.has_key ? (

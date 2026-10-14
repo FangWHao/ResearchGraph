@@ -92,6 +92,31 @@ export function UsagePanel() {
             </tbody>
           </table>
         </div>
+        <h2>按模型</h2>
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>模型</th>
+                <th className="num">调用</th>
+                <th className="num">输入</th>
+                <th className="num">输出</th>
+                <th className="num">合计</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.models.map((m) => (
+                <tr key={m.model}>
+                  <td className="mono">{m.model}</td>
+                  <td className="num">{m.calls}</td>
+                  <td className="num">{fmtTokens(m.input)}</td>
+                  <td className="num">{fmtTokens(m.output)}</td>
+                  <td className="num strong">{fmtTokens(total(m))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         <h2>按步骤</h2>
         <div className="table-wrap">
           <table className="table">

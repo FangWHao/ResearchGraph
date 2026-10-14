@@ -19,6 +19,9 @@
   --k-neutral: #52514e;
   --warn-bg: #fdf4e6;
   --mark: #f7e2a0;
+  --tint-minor: 3%;
+  --tint-key: 7%;
+  --tint-milestone: 16%;
   --warn-border: #f1d7a6;
   --warn-ink: #7a4500;
   --danger: #c43c3c;
@@ -49,6 +52,9 @@
     --k-neutral: #c3c2b7;
     --warn-bg: #2e2416;
     --mark: #5c4b1d;
+    --tint-minor: 5%;
+    --tint-key: 12%;
+    --tint-milestone: 20%;
     --warn-border: #5a4421;
     --warn-ink: #f4c983;
     --danger: #ff8a80;
@@ -79,6 +85,9 @@
   --k-neutral: #c3c2b7;
   --warn-bg: #2e2416;
   --mark: #5c4b1d;
+  --tint-minor: 5%;
+  --tint-key: 12%;
+  --tint-milestone: 20%;
   --warn-border: #5a4421;
   --warn-ink: #f4c983;
   --danger: #ff8a80;
@@ -99,6 +108,7 @@ body {
 }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
+input[type='checkbox'], input[type='radio'] { accent-color: var(--ink); }
 button:disabled { cursor: default; }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 h1, h2, h3, p { margin: 0; }
@@ -215,6 +225,27 @@ h2 { font-size: 16px; line-height: 1.4; font-weight: 600; }
 .card > p, .card-head p { color: var(--ink-2); font-size: 13px; }
 .card-head { display: flex; align-items: flex-start; gap: 16px; }
 .card-head > div { flex: 1; display: grid; gap: 6px; }
+.stage-models { display: grid; gap: 10px; padding-top: 4px; }
+.stage-head { display: flex; align-items: center; gap: 14px; }
+.field-label { font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+.stage-table { display: grid; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.stage-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) 178px 118px; gap: 10px; align-items: center;
+  padding: 10px 12px; background: var(--raised);
+}
+.stage-row + .stage-row { border-top: 1px solid var(--grid); }
+.stage-text { display: grid; gap: 2px; min-width: 0; }
+.stage-text strong { font-size: 13.5px; font-weight: 600; }
+.stage-row .select, .stage-row .input { width: 100%; }
+.stage-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.model-facts { flex: 1; display: grid; gap: 2px; min-width: 0; }
+.model-facts .ink { color: var(--ink); font-weight: 600; }
+.model-facts .fact { white-space: nowrap; }
+.check-results { display: grid; gap: 3px; }
+@media (max-width: 640px) {
+  .stage-row { grid-template-columns: minmax(0, 1fr) 1fr; }
+  .stage-text { grid-column: 1 / -1; }
+}
 .option {
   display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
   padding-top: 14px; border-top: 1px solid var(--grid);
@@ -434,22 +465,31 @@ h2 { font-size: 16px; line-height: 1.4; font-weight: 600; }
 .tl-time .tl-edge.next { stroke-width: 2; }
 .tl-edge.on { stroke: var(--ink); stroke-width: 2; }
 
+/* 卡片按事件种类上色：左边一道种类色，底色混进少量种类色；里程碑更深、整圈描边；细节几乎不着色 */
 .tl-card {
-  position: absolute; display: flex; flex-direction: column; gap: 5px; padding: 9px 11px 0 12px; text-align: left;
-  background: var(--raised); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-sm);
+  --kc: var(--k-neutral);
+  --tint: var(--tint-key);
+  --edge-w: 3px;
+  position: absolute; display: flex; flex-direction: column; gap: 5px; padding: 9px 11px 0 13px; text-align: left;
+  background: color-mix(in srgb, var(--kc) var(--tint), var(--raised));
+  border: 1px solid color-mix(in srgb, var(--kc) 30%, var(--border));
+  border-radius: 10px;
+  box-shadow: inset var(--edge-w) 0 0 var(--kc), var(--shadow-sm);
   transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s;
 }
-.tl-card:hover { border-color: var(--axis); box-shadow: var(--shadow-md); transform: translateY(-1px); }
-.tl-card.on { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink), var(--shadow-md); }
+.tl-card.k-attempt { --kc: var(--k-attempt); }
+.tl-card.k-decision { --kc: var(--k-decision); }
+.tl-card.k-result { --kc: var(--k-result); }
+.tl-card:hover { border-color: var(--kc); box-shadow: inset var(--edge-w) 0 0 var(--kc), var(--shadow-md); transform: translateY(-1px); }
+.tl-card.on { border-color: var(--ink); box-shadow: inset var(--edge-w) 0 0 var(--kc), 0 0 0 2px var(--ink), var(--shadow-md); }
 .tl-card-meta { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-2); line-height: 1; white-space: nowrap; overflow: hidden; }
-.tl-card-time { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tl-card-time { margin-left: auto; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .tl-card-edited, .tl-card-flag { color: var(--muted); display: inline-flex; }
-.tl-card.milestone { border-color: var(--border-strong); box-shadow: inset 3px 0 0 var(--ink), var(--shadow-sm); }
+.tl-card.milestone { --tint: var(--tint-milestone); --edge-w: 4px; border-color: var(--kc); }
 .tl-card.milestone .tl-card-title { font-weight: 650; }
-.tl-card.milestone.on { box-shadow: inset 3px 0 0 var(--ink), 0 0 0 1px var(--ink), var(--shadow-md); }
-.tl-card.failed { border-style: dashed; }
+.tl-card.failed { --tint: var(--tint-minor); border-style: dashed; border-color: var(--kc); }
 .tl-card.failed .tl-card-title { color: var(--ink-2); }
-.tl-card.minor { background: var(--surface); box-shadow: none; }
+.tl-card.minor { --tint: var(--tint-minor); --edge-w: 0px; box-shadow: none; }
 .tl-card.minor .tl-card-title { color: var(--ink-2); font-weight: 400; }
 .tl-outcome { font-weight: 600; color: var(--ink-2); }
 .tl-outcome.success { color: var(--muted); }
@@ -460,9 +500,32 @@ h2 { font-size: 16px; line-height: 1.4; font-weight: 600; }
 }
 .tl-more:hover, .tl-more:focus-visible { color: var(--ink); border-color: var(--ink); background: var(--raised); }
 .tl-more.open { min-width: 18px; text-align: center; color: var(--ink); border-color: var(--ink); }
-.tl-card.revealed { background: color-mix(in srgb, var(--surface) 70%, var(--page)); }
-.legend-milestone { display: inline-block; width: 3px; height: 12px; border-radius: 1px; background: var(--ink); }
+.tl-card.revealed { border-top-style: dotted; }
+.legend-card {
+  display: inline-block; width: 16px; height: 11px; border-radius: 3px;
+  background: color-mix(in srgb, var(--k-neutral) var(--tint-key), var(--raised));
+  border: 1px solid color-mix(in srgb, var(--k-neutral) 30%, var(--border)); box-shadow: inset 2px 0 0 var(--k-neutral);
+}
+.legend-card.milestone { background: color-mix(in srgb, var(--k-neutral) var(--tint-milestone), var(--raised)); border-color: var(--k-neutral); box-shadow: inset 3px 0 0 var(--k-neutral); }
+.legend-card.failed { border-style: dashed; box-shadow: none; }
 .tl-dot.milestone .tl-dot-label { font-weight: 650; }
+.tl-dot.k-attempt { --kc: var(--k-attempt); }
+.tl-dot.k-decision { --kc: var(--k-decision); }
+.tl-dot.k-result { --kc: var(--k-result); }
+.tl-dot.milestone:not(.on) .tl-dot-mark { background: color-mix(in srgb, var(--kc, var(--k-neutral)) 22%, transparent); }
+/* 事件面板的标题区和卡片同一套颜色 */
+.event-intro {
+  --kc: var(--k-neutral); --tint: var(--tint-key);
+  padding: 12px 14px 13px 16px; border-radius: 12px;
+  background: color-mix(in srgb, var(--kc) var(--tint), var(--raised));
+  box-shadow: inset 4px 0 0 var(--kc);
+  border: 1px solid color-mix(in srgb, var(--kc) 30%, var(--border));
+}
+.event-intro.k-attempt { --kc: var(--k-attempt); }
+.event-intro.k-decision { --kc: var(--k-decision); }
+.event-intro.k-result { --kc: var(--k-result); }
+.event-intro.milestone { --tint: var(--tint-milestone); border-color: var(--kc); }
+.event-intro.failed { border-style: dashed; border-color: var(--kc); --tint: var(--tint-minor); }
 .tl-card.dim, .tl-dot.dim { opacity: 0.28; }
 .tl-card.dim:hover, .tl-dot.dim:hover { opacity: 0.8; }
 .tl-new {
@@ -565,7 +628,11 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
 .branch-head { display: flex; align-items: center; gap: 8px; }
 .overview-line { display: grid; gap: 6px; padding-top: 14px; border-top: 1px solid var(--grid); }
 .overview-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.overview-head strong { font-size: 14.5px; }
+.overview-title {
+  border: none; background: none; padding: 0; font: inherit; font-size: 14.5px; font-weight: 650; color: var(--ink);
+  text-align: left; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 3px;
+}
+.overview-title:hover { text-decoration-color: currentColor; }
 .overview-head .small { margin-left: auto; }
 .overview-summary {
   font-size: 13px; line-height: 1.6; color: var(--ink-2); margin-bottom: 2px;

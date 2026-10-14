@@ -2,6 +2,9 @@ import type {
   AppState,
   AutoSettings,
   HiddenEvent,
+  ModelInfo,
+  Stage,
+  StageModel,
   Importance,
   Kind,
   Message,
@@ -39,7 +42,14 @@ export interface SettingsInput {
   api_key?: string;
   base_url?: string;
   model?: string;
+  models?: Partial<Record<Stage, StageModel>>;
   auto?: Partial<AutoSettings>;
+}
+
+export interface CheckResult {
+  ok: boolean;
+  message: string;
+  results?: { model: string; ok: boolean; message: string }[];
 }
 
 export interface NewProjectInput {
@@ -69,8 +79,9 @@ export interface EventPatch {
 export const api = {
   state: () => request<AppState>('GET', '/api/state'),
   saveSettings: (input: SettingsInput) => request<AppState>('POST', '/api/settings', input),
-  checkModel: (input: SettingsInput) =>
-    request<{ ok: boolean; message: string }>('POST', '/api/settings/check', input),
+  checkModel: (input: SettingsInput) => request<CheckResult>('POST', '/api/settings/check', input),
+  listModels: (input: { base_url?: string; api_key?: string }) =>
+    request<{ models: ModelInfo[]; error: string | null }>('POST', '/api/settings/models', input),
   sessions: () => request<{ sessions: SessionInfo[]; workspaces: Workspace[] }>('GET', '/api/sessions'),
   createProject: (input: NewProjectInput) => request<{ id: number }>('POST', '/api/projects', input),
   upload: (projectId: number, file: File) =>

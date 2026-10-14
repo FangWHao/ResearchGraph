@@ -189,7 +189,7 @@ export function EventPanel({
           }}
         />
       ) : (
-        <section className="panel-intro">
+        <section className={`panel-intro event-intro k-${event.kind}${event.importance === 3 ? ' milestone' : ''}${event.outcome === 'failed' ? ' failed' : ''}`}>
           <h2>{event.title}</h2>
           {event.summary ? <p>{event.summary}</p> : null}
         </section>
@@ -488,13 +488,22 @@ export function OverviewPanel({ data, onClose, onSelectEvent }: Common) {
       </section>
       {lines.map(({ thread, events }) => {
         const milestones = events.filter((e) => e.importance === 3);
+        const failed = events.filter((e) => e.outcome === 'failed').length;
         return (
           <section key={thread.id} className="overview-line">
             <div className="overview-head">
-              <strong>{thread.title}</strong>
+              <button
+                type="button"
+                className="overview-title"
+                title="在时间线上跳到这条线"
+                onClick={() => onSelectEvent((milestones[0] ?? events[0]).id)}
+              >
+                {thread.title}
+              </button>
               {thread.status ? <span className="chip muted">{STATUS_LABEL[thread.status]}</span> : null}
               <span className="muted small">
                 {span(events[0].ts, events[events.length - 1].ts)} · {events.length} 个事件
+                {failed ? ` · ${failed} 次失败的尝试` : ''}
               </span>
             </div>
             {thread.summary ? (

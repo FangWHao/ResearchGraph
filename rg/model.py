@@ -14,6 +14,9 @@ import httpx
 from rg.store import Store, now
 
 TOOL_NAME = "submit"
+# 打开思考时给思考预留的 token；思考和强制调用工具不能同时用，改成让模型自己调用 submit。
+# 预留要宽：实测模型的思考常常超过 budget_tokens（提取时中位 5.7k、P90 1.1 万）
+THINKING_BUDGET = {"low": 8_000, "high": 24_000, "max": 48_000}
 
 
 class Usage(NamedTuple):
@@ -95,6 +98,7 @@ class Model:
         key: str,
         transport: httpx.BaseTransport | None = None,
         retries: int = 2,
+        thinking: str = "off",
     ):
         address = urlparse(base_url)
         if address.scheme != "https" and address.hostname not in {"127.0.0.1", "localhost"}:
@@ -102,6 +106,7 @@ class Model:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.retries = retries
+        self.thinking = thinking if thinking in THINKING_BUDGET else "off"
         self.client = httpx.Client(
             timeout=httpx.Timeout(300, connect=20),
             transport=transport,
@@ -120,7 +125,7 @@ class Model:
     def body(
         self, system: str, user: str, schema: dict[str, Any], max_tokens: int
     ) -> dict[str, Any]:
-        return {
+        body: dict[str, Any] = {
             "model": self.model,
             "system": system,
             "messages": [{"role": "user", "content": user}],
@@ -129,6 +134,15 @@ class Model:
             "max_tokens": max_tokens,
             "thinking": {"type": "disabled"},
         }
+        if self.thinking != "off":
+            budget = THINKING_BUDGET[self.thinking]
+            body.update(
+                tool_choice={"type": "auto"},
+                max_tokens=max_tokens + budget,
+                thinking={"type": "enabled", "budget_tokens": budget},
+                output_config={"effort": self.thinking},
+            )
+        return body
 
     def _post(self, body: dict[str, Any]) -> dict[str, Any]:
         for attempt in range(self.retries + 1):
@@ -201,6 +215,54 @@ class Model:
             if attempt < self.retries:
                 time.sleep(1)
         raise ModelError("模型没有按格式返回结果")
+
+
+def list_models(
+    base_url: str, key: str, transport: httpx.BaseTransport | None = None
+) -> list[dict[str, Any]]:
+    """接口上能用的模型。先试 Anthropic 的 /v1/models，不行再试同一服务的 OpenAI 式 /models
+    （DeepSeek 的 /anthropic 下没有模型列表，但 /models 有，还带思考强度）。"""
+    base = base_url.rstrip("/")
+    urls = [base + "/v1/models"]
+    if base.endswith("/anthropic"):
+        urls.append(base[: -len("/anthropic")] + "/models")
+    headers = {
+        "x-api-key": key,
+        "Authorization": f"Bearer {key}",
+        "anthropic-version": "2023-06-01",
+    }
+    with httpx.Client(timeout=30, transport=transport, trust_env=False) as client:
+        for url in urls:
+            try:
+                response = client.get(url, headers=headers)
+            except httpx.HTTPError as error:
+                raise ModelError(f"连不上模型接口：{type(error).__name__}") from None
+            if response.status_code in {401, 403}:
+                raise _auth_error(response.status_code)
+            if not response.is_success:
+                continue
+            try:
+                data = response.json().get("data")
+            except (ValueError, AttributeError):
+                continue
+            if isinstance(data, list):
+                return [_model_info(m) for m in data if isinstance(m, dict) and m.get("id")]
+    raise ModelError("这个接口没有提供模型列表，可以直接填写模型名")
+
+
+def _model_info(raw: dict[str, Any]) -> dict[str, Any]:
+    effort: dict[str, Any] = raw["effort"] if isinstance(raw.get("effort"), dict) else {}
+    levels = [lv for lv in effort.get("supported_levels") or [] if lv in THINKING_BUDGET]
+    return {
+        "id": str(raw["id"]),
+        "name": str(raw.get("name") or raw.get("display_name") or raw["id"]),
+        "context_window": raw.get("context_window"),
+        "max_output_tokens": raw.get("max_output_tokens"),
+        "thinking": levels,
+        "default_thinking": effort.get("default_level")
+        if effort.get("default_level") in levels
+        else None,
+    }
 
 
 def cached(store: Store, call: Call, identity: str) -> Call:

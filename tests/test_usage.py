@@ -55,6 +55,7 @@ def test_report_groups_by_period_day_project_and_stage(store):
     assert by_name[None]["calls"] == 2  # 已删除的项目
     assert {s["stage"]: s["calls"] for s in data["stages"]} == {"extract": 3, "threads": 1}
     assert data["since"] is not None
+    assert [(m["model"], m["calls"]) for m in data["models"]] == [("m", 4)]  # 缓存命中不算
 
 
 def test_empty_report(store):

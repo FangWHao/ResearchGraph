@@ -18,8 +18,18 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
-from rg.config import DB_NAME, DEFAULT_BASE_URL, DEFAULT_MODEL, clean_key, read_key, save_key
-from rg.model import Call, Model, ModelError, cached
+from rg.config import (
+    DB_NAME,
+    DEFAULT_BASE_URL,
+    DEFAULT_MODEL,
+    RECOMMENDED_MODELS,
+    STAGES,
+    THINKING,
+    clean_key,
+    read_key,
+    save_key,
+)
+from rg.model import Call, Model, ModelError, cached, list_models
 from rg.organize import (
     IMPORTANCE,
     KINDS,
@@ -73,7 +83,7 @@ class App:
         self.root = root
         self.store = Store(root / DB_NAME)
         self.jobs = Jobs(self.store, self.roots, self.model)
-        self._model: tuple[tuple[str, str, str], Call] | None = None
+        self._clients: dict[tuple[str, str, str, str], Call] = {}
         self.transport: httpx.BaseTransport | None = None  # 测试时替换成假接口
         self._model_lock = threading.Lock()
 
@@ -86,24 +96,59 @@ class App:
         saved = self.store.setting("auto", {})
         return {**AUTO_DEFAULTS, **(saved if isinstance(saved, dict) else {})}
 
-    def model_settings(self) -> dict[str, str]:
+    def stage_models(self) -> dict[str, dict[str, str]]:
+        """每个阶段用的模型和思考强度。旧版本只存了一个 model，就三个阶段都用它。"""
+        legacy = self.store.setting("model")
+        saved = self.store.setting("models", {})
+        saved = saved if isinstance(saved, dict) else {}
+        base_url = self.store.setting("base_url", DEFAULT_BASE_URL)
+        stages = {}
+        for stage in STAGES:
+            item: dict[str, Any] = saved[stage] if isinstance(saved.get(stage), dict) else {}
+            if item:
+                default = {"model": DEFAULT_MODEL, "thinking": "off"}
+            elif legacy:  # 旧版本只存了一个模型，三个阶段都用它，不思考
+                default = {"model": str(legacy), "thinking": "off"}
+            elif base_url == DEFAULT_BASE_URL:
+                default = RECOMMENDED_MODELS[stage]
+            else:
+                default = {"model": DEFAULT_MODEL, "thinking": "off"}
+            stages[stage] = {
+                "model": str(item.get("model") or default["model"]),
+                "thinking": item.get("thinking")
+                if item.get("thinking") in THINKING
+                else default["thinking"],
+            }
+        return stages
+
+    def model_settings(self) -> dict[str, Any]:
+        stages = self.stage_models()
         return {
             "base_url": self.store.setting("base_url", DEFAULT_BASE_URL),
-            "model": self.store.setting("model", DEFAULT_MODEL),
+            "model": stages["extract"]["model"],
+            "models": stages,
         }
 
-    def model(self) -> Call | None:
+    def model(self) -> dict[str, Call] | None:
         key = read_key(self.root)
         if not key:
             return None
-        settings = self.model_settings()
-        identity = (settings["base_url"], settings["model"], key)
+        base_url = self.store.setting("base_url", DEFAULT_BASE_URL)
+        calls = {}
         with self._model_lock:
-            if self._model is None or self._model[0] != identity:
-                client = Model(settings["base_url"], settings["model"], key, self.transport)
-                tag = f"{settings['base_url']}|{settings['model']}"
-                self._model = (identity, cached(self.store, client, tag))
-            return self._model[1]
+            for stage, item in self.stage_models().items():
+                identity = (base_url, item["model"], item["thinking"], key)
+                if identity not in self._clients:
+                    client = Model(
+                        base_url, item["model"], key, self.transport, thinking=item["thinking"]
+                    )
+                    # 缓存按模型和思考强度区分；不思考时沿用旧的标识，旧缓存还能用
+                    tag = f"{base_url}|{item['model']}"
+                    if item["thinking"] != "off":
+                        tag += f"|{item['thinking']}"
+                    self._clients[identity] = cached(self.store, client, tag)
+                calls[stage] = self._clients[identity]
+        return calls
 
     # ----- 查询 -----
 
@@ -180,6 +225,26 @@ def get_state(app: App, m: re.Match[str], body: dict[str, Any], query: dict[str,
     }
 
 
+def _stage_models(value: Any) -> dict[str, dict[str, str]]:
+    if not isinstance(value, dict):
+        raise ApiError(400, "models 必须是对象")
+    cleaned = {}
+    for stage in STAGES:
+        item = value.get(stage)
+        if item is None:
+            continue
+        if not isinstance(item, dict):
+            raise ApiError(400, f"{stage} 的设置必须是对象")
+        model = item.get("model")
+        if not isinstance(model, str) or not model.strip() or len(model) > 200:
+            raise ApiError(400, f"{stage} 要填模型名")
+        thinking = item.get("thinking", "off")
+        if thinking not in THINKING:
+            raise ApiError(400, "思考强度只能是 off、low、high、max")
+        cleaned[stage] = {"model": model.strip(), "thinking": thinking}
+    return cleaned
+
+
 def _auto(value: Any, current: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ApiError(400, "auto 必须是对象")
@@ -212,6 +277,7 @@ def post_settings(
     app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
 ) -> Any:
     auto = _auto(body["auto"], app.auto_settings()) if "auto" in body else None
+    models = _stage_models(body["models"]) if "models" in body else None
     if "sources" in body:
         sources = body["sources"]
         if not isinstance(sources, list) or not all(isinstance(s, str) for s in sources):
@@ -236,6 +302,8 @@ def post_settings(
             raise ApiError(400, str(error)) from None
     if auto is not None:
         app.store.set_setting("auto", auto)
+    if models is not None:
+        app.store.set_setting("models", {**app.stage_models(), **models})
     return get_state(app, m, {}, {})
 
 
@@ -243,25 +311,57 @@ def post_settings(
 def check_model(
     app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
 ) -> Any:
-    """用填写中（或已保存）的 Key、接口和模型发一条极短的消息，不保存任何设置。"""
+    """用填写中（或已保存）的 Key、接口和各阶段的模型各发一条极短的消息，不保存任何设置。"""
     settings = app.model_settings()
     base_url = _text(body, "base_url", 200) or settings["base_url"]
-    model = _text(body, "model", 200) or settings["model"]
     typed = _text(body, "api_key", 500)
     key = clean_key(typed) if typed else read_key(app.root)
     if not key:
         return {"ok": False, "message": "API Key 格式不对" if typed else "还没有填写 API Key"}
+    if "models" in body:
+        stages = {**settings["models"], **_stage_models(body["models"])}
+    elif _text(body, "model", 200):
+        stages = {"extract": {"model": _text(body, "model", 200), "thinking": "off"}}
+    else:
+        stages = settings["models"]
+    names = list(dict.fromkeys(str(item["model"]) for item in stages.values()))
+    results = []
+    for name in names:
+        try:
+            client = Model(base_url.rstrip("/"), name, key, app.transport, retries=0)
+        except ValueError as error:
+            return {"ok": False, "message": str(error), "results": []}
+        try:
+            reported = client.check()
+            results.append({"model": name, "ok": True, "message": f"可以使用（{reported}）"})
+        except ModelError as error:
+            results.append({"model": name, "ok": False, "message": str(error)})
+        finally:
+            client.close()
+    bad = [r for r in results if not r["ok"]]
+    if not bad:
+        message = "可以使用（" + "、".join(names) + "）"
+    else:
+        message = "；".join(f"{r['model']}：{r['message']}" for r in bad)
+    return {"ok": not bad, "message": message, "results": results}
+
+
+@route("POST", "/api/settings/models")
+def get_model_list(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    """接口上能用的模型和它们支持的思考强度。用 POST，免得填写中的 Key 出现在网址里。"""
+    base_url = _text(body, "base_url", 200) or app.model_settings()["base_url"]
+    typed = _text(body, "api_key", 500)
+    key = clean_key(typed) if typed else read_key(app.root)
+    if not key:
+        return {"models": [], "error": "还没有填写 API Key"}
     try:
-        client = Model(base_url.rstrip("/"), model, key, app.transport, retries=0)
+        return {"models": list_models(base_url.rstrip("/"), key, app.transport), "error": None}
     except ValueError as error:
-        return {"ok": False, "message": str(error)}
-    try:
-        name = client.check()
+        return {"models": [], "error": str(error)}
     except ModelError as error:
-        return {"ok": False, "message": str(error)}
-    finally:
-        client.close()
-    return {"ok": True, "message": f"可以使用（{name}）"}
+        return {"models": [], "error": str(error)}
 
 
 @route("GET", "/api/sessions")

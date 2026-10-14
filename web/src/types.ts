@@ -30,10 +30,31 @@ export interface DetectedDir {
   files: number;
 }
 
+// 三类任务分开选模型：提取调用最多、看一段对话；归类和复审调用少、要看整个项目
+export type Stage = 'extract' | 'threads' | 'review';
+export const STAGES: Stage[] = ['extract', 'threads', 'review'];
+export type Thinking = 'off' | 'low' | 'high' | 'max';
+export const THINKING_LABEL: Record<Thinking, string> = { off: '不思考', low: '低', high: '高', max: '最高' };
+export interface StageModel {
+  model: string;
+  thinking: Thinking;
+}
+
 export interface ModelSettings {
   base_url: string;
-  model: string;
+  model: string; // 提取用的模型，旧界面文字里用
+  models: Record<Stage, StageModel>;
   has_key: boolean;
+}
+
+// 接口返回的模型
+export interface ModelInfo {
+  id: string;
+  name: string;
+  context_window: number | null;
+  max_output_tokens: number | null;
+  thinking: Thinking[];
+  default_thinking: Thinking | null;
 }
 
 export interface ProjectSummary {
@@ -219,5 +240,6 @@ export interface UsageReport {
   periods: Record<'today' | 'week' | 'month' | 'all', UsageBucket>;
   days: (UsageBucket & { day: string })[];
   projects: (UsageBucket & { id: number | null; name: string | null; last: string })[];
-  stages: (UsageBucket & { stage: 'extract' | 'threads' | 'review' })[];
+  stages: (UsageBucket & { stage: Stage })[];
+  models: (UsageBucket & { model: string })[];
 }

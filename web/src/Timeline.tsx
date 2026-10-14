@@ -289,6 +289,7 @@ function Card(props: NodeProps) {
   const { event } = node;
   const classes = [
     'tl-card',
+    `k-${event.kind}`,
     on ? 'on' : '',
     dim ? 'dim' : '',
     event.importance === 3 ? 'milestone' : '',
@@ -350,7 +351,7 @@ function Dot(props: NodeProps) {
   return (
     <button
       type="button"
-      className={`tl-dot${on ? ' on' : ''}${fresh ? ' fresh' : ''}${dim ? ' dim' : ''}${milestone ? ' milestone' : ''}`}
+      className={`tl-dot k-${event.kind}${on ? ' on' : ''}${fresh ? ' fresh' : ''}${dim ? ' dim' : ''}${milestone ? ' milestone' : ''}`}
       style={{ left: node.x - DOT_HIT / 2, top: node.y - DOT_HIT / 2 }}
       aria-label={`${eventLabel(event)}：${event.title}`}
       {...handlers(props)}

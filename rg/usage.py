@@ -64,6 +64,7 @@ def report(store: Store, today: date | None = None) -> dict[str, Any]:
     days = {today - timedelta(days=n): _bucket() for n in range(DAYS - 1, -1, -1)}
     projects: dict[int | None, dict[str, Any]] = {}
     stages: dict[str, dict[str, int]] = defaultdict(_bucket)
+    models: dict[str, dict[str, int]] = defaultdict(_bucket)
     for row in rows:
         day = local_day(row["at"])
         age = (today - day).days
@@ -79,6 +80,8 @@ def report(store: Store, today: date | None = None) -> dict[str, Any]:
         _add(project, row)
         project["last"] = row["at"]
         _add(stages[row["stage"]], row)
+        if not row["cached"]:  # 命中本地缓存的没有发请求，不算到哪个模型上
+            _add(models[row["model"] or "未知"], row)
     return {
         "since": rows[0]["at"] if rows else None,
         "periods": periods,
@@ -87,4 +90,9 @@ def report(store: Store, today: date | None = None) -> dict[str, Any]:
             projects.values(), key=lambda p: (p["input"] + p["output"], p["cached"]), reverse=True
         ),
         "stages": [{"stage": s, **stages[s]} for s in STAGES if s in stages],
+        "models": sorted(
+            ({"model": name, **bucket} for name, bucket in models.items()),
+            key=lambda m: m["input"] + m["output"],
+            reverse=True,
+        ),
     }

@@ -9,6 +9,16 @@ from pathlib import Path
 DEFAULT_DATA_DIR = Path.home() / ".researchgraph"
 DEFAULT_BASE_URL = "https://api.deepseek.com/anthropic"
 DEFAULT_MODEL = "deepseek-flash"
+# 三类任务分开选模型：提取调用最多、看一段对话；归类和复审调用少、要看整个项目
+STAGES = ("extract", "threads", "review")
+# 新装时的默认值，和界面上的“推荐设置”一致；只有 DeepSeek 的默认接口才用得上。
+# 归类一次要安排几百个事件，打开思考后输出总被截断（实测），所以归类和复审不思考。
+RECOMMENDED_MODELS = {
+    "extract": {"model": "deepseek-flash", "thinking": "high"},
+    "threads": {"model": "deepseek-v4-pro", "thinking": "off"},
+    "review": {"model": "deepseek-v4-pro", "thinking": "off"},
+}
+THINKING = ("off", "low", "high", "max")
 DB_NAME = "timeline.db"
 KEY_NAME = "api_key"
 
