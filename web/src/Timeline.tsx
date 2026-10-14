@@ -36,9 +36,27 @@ interface Props {
   matches: Set<number> | null;
   // 详略过滤后，每个可见事件后面藏着几个细节
   hidden: Map<number, number>;
+  // 已经展开的卡片、因为展开才露出来的卡片
+  opened: Set<number>;
+  revealed: Set<number>;
+  onToggle: (eventId: number) => void;
 }
 
-export function Timeline({ data, view, align, pxPerHour, selection, onSelect, jump, fresh, matches, hidden }: Props) {
+export function Timeline({
+  data,
+  view,
+  align,
+  pxPerHour,
+  selection,
+  onSelect,
+  jump,
+  fresh,
+  matches,
+  hidden,
+  opened,
+  revealed,
+  onToggle,
+}: Props) {
   const layout = useMemo(() => computeLayout(data, { view, align, pxPerHour }), [data, view, align, pxPerHour]);
   const scroller = useRef<HTMLDivElement>(null);
   const labels = useRef<HTMLDivElement>(null);
@@ -211,6 +229,9 @@ export function Timeline({ data, view, align, pxPerHour, selection, onSelect, ju
                 fresh={fresh.has(node.event.id)}
                 dim={matches !== null && !matches.has(node.event.id)}
                 more={hidden.get(node.event.id) ?? 0}
+                open={opened.has(node.event.id)}
+                revealed={revealed.has(node.event.id)}
+                onToggle={onToggle}
                 on={node.event.id === selectedEvent}
                 onSelect={onSelect}
                 onHover={setHovered}
@@ -242,6 +263,9 @@ interface NodeProps {
   fresh?: boolean;
   dim?: boolean;
   more?: number;
+  open?: boolean;
+  revealed?: boolean;
+  onToggle?: (eventId: number) => void;
   onSelect: (selection: Selection) => void;
   onHover: (id: number | null) => void;
 }
@@ -261,7 +285,7 @@ function handlers({ node, onSelect, onHover }: NodeProps) {
 }
 
 function Card(props: NodeProps) {
-  const { node, on, cross, fresh, dim, more = 0 } = props;
+  const { node, on, cross, fresh, dim, more = 0, open, revealed, onToggle } = props;
   const { event } = node;
   const classes = [
     'tl-card',
@@ -270,6 +294,7 @@ function Card(props: NodeProps) {
     event.importance === 3 ? 'milestone' : '',
     event.outcome === 'failed' ? 'failed' : '',
     event.importance === 1 ? 'minor' : '',
+    revealed ? 'revealed' : '',
   ];
   return (
     <button
@@ -288,9 +313,17 @@ function Card(props: NodeProps) {
           </span>
         ) : null}
         {fresh ? <span className="tl-new">新</span> : null}
-        {more ? (
-          <span className="tl-more" title={`这里还藏着 ${more} 个细节，切到“全部”能看到`}>
-            +{more}
+        {more || open ? (
+          // 卡片本身是按钮，里面不能再套可聚焦的按钮；键盘用户用面板里的“在时间线上展开”
+          <span
+            className={`tl-more${open ? ' open' : ''}`}
+            title={open ? '收起这一段' : `展开这一段：还有 ${more} 个事件`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle?.(event.id);
+            }}
+          >
+            {open ? '−' : `+${more}`}
           </span>
         ) : null}
         <span className="tl-card-time">{fmtTime(event.ts)}</span>

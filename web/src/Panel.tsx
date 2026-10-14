@@ -81,10 +81,23 @@ export function EventPanel({
   event,
   focus,
   terms,
+  segment = [],
+  opened = false,
+  onToggle,
+  onReveal,
   onChanged,
   onClose,
   onSelectEvent,
-}: Common & { event: TimelineEvent; focus?: number; terms?: string[] }) {
+}: Common & {
+  event: TimelineEvent;
+  focus?: number;
+  terms?: string[];
+  // 这张卡片代表的那一段：当前详略下藏在它前后的事件
+  segment?: TimelineEvent[];
+  opened?: boolean;
+  onToggle?: () => void;
+  onReveal?: (eventId: number) => void;
+}) {
   const [editing, setEditing] = useState(false);
   const quotes = useRef<HTMLElement>(null);
   const [context, setContext] = useState(0);
@@ -241,6 +254,24 @@ export function EventPanel({
               <span className="relation-label"><Icon name="merge" size={13} />「{branchName(b, data.branches)}」汇入</span>
               <EventLink event={last!} onSelect={onSelectEvent} />
             </div>
+          ))}
+        </section>
+      ) : null}
+
+      {segment.length || opened ? (
+        <section className="event-list">
+          <div className="section-row">
+            <span className="section-title">这一段的经过 · {segment.length}</span>
+            {onToggle ? (
+              <button type="button" className="link small" onClick={onToggle}>
+                {opened ? '在时间线上收起' : '在时间线上展开'}
+              </button>
+            ) : null}
+          </div>
+          {[...segment].sort(compareEvents).map((e) => (
+            <EventLink key={e.id} event={e} onSelect={(id) => (onReveal ? onReveal(id) : onSelectEvent(id))}>
+              <span className="event-link-time">{fmtTime(e.ts)}</span>
+            </EventLink>
           ))}
         </section>
       ) : null}

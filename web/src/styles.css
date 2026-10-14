@@ -456,7 +456,11 @@ h2 { font-size: 16px; line-height: 1.4; font-weight: 600; }
 .tl-more {
   padding: 0 4px; border-radius: 4px; border: 1px solid var(--border-strong);
   font-size: 10.5px; line-height: 14px; color: var(--muted); font-variant-numeric: tabular-nums;
+  cursor: pointer;
 }
+.tl-more:hover, .tl-more:focus-visible { color: var(--ink); border-color: var(--ink); background: var(--raised); }
+.tl-more.open { min-width: 18px; text-align: center; color: var(--ink); border-color: var(--ink); }
+.tl-card.revealed { background: color-mix(in srgb, var(--surface) 70%, var(--page)); }
 .legend-milestone { display: inline-block; width: 3px; height: 12px; border-radius: 1px; background: var(--ink); }
 .tl-dot.milestone .tl-dot-label { font-weight: 650; }
 .tl-card.dim, .tl-dot.dim { opacity: 0.28; }

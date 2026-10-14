@@ -260,6 +260,25 @@ describe('详略', () => {
     expect(layout.lanes.find((l) => l.threadId === 1)!.subtitle).toContain('2 / 6 个事件');
   });
 
+  it('展开一张卡片，它这一段往下露出一档；露出来的还能再展开，收起后回到原样', () => {
+    const sum = (f: ReturnType<typeof filterDetail>) =>
+      f.input.events.length + [...f.hidden.values()].reduce((a, b) => a + b, 0);
+    const once = filterDetail(input, 'milestone', 'threads', new Set([1]));
+    // 1 后面藏着 2(细节)、3(关键)、4(细节)，以及整条藏起来的分支 2（事件 6，关键）
+    expect(once.input.events.map((e) => e.id).sort((a, b) => a - b)).toEqual([1, 3, 5, 6, 8]);
+    expect(once.opened.has(1) && once.revealed.has(3) && once.revealed.has(6)).toBe(true);
+    expect(once.segments.get(3)).toEqual([2, 4]); // 3 前后的细节都挂在 3 上
+    expect(once.hidden.get(3)).toBe(2);
+    expect(sum(once)).toBe(input.events.length);
+    const side = once.input.branches.find((b) => b.id === 2)!;
+    expect([side.from_event, side.into_event]).toEqual([1, 5]); // 分出点 2 还藏着，移到 1 上
+
+    const twice = filterDetail(input, 'milestone', 'threads', new Set([1, 3]));
+    expect(twice.input.events.map((e) => e.id)).toEqual(expect.arrayContaining([2, 4]));
+    expect(sum(twice)).toBe(input.events.length);
+    expect(filterDetail(input, 'milestone', 'threads').input.events.length).toBe(3);
+  });
+
   it('全部时原样返回', () => {
     expect(filterDetail(input, 'all', 'threads').input).toBe(input);
   });

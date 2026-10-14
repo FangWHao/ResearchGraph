@@ -235,9 +235,11 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
     [pxPerHour],
   );
 
+  const [expanded, setExpanded] = useState<Set<number>>(() => new Set()); // 在时间线上展开了哪些卡片
   const changeView = (next: ViewMode) => {
     setView(next);
     setSelection(null);
+    setExpanded(new Set());
     remember('rg.view', next);
   };
   const changeAlign = (next: Align) => {
@@ -246,10 +248,34 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
   };
   const changeDetail = (next: Detail) => {
     setDetail(next);
+    setExpanded(new Set());
     remember('rg.detail', next);
   };
   // 详略只影响时间线上画哪些事件；面板、搜索、前后关系仍然用全部事件
-  const shown = useMemo(() => (data ? filterDetail(data, detail, view) : null), [data, detail, view]);
+  const shown = useMemo(() => (data ? filterDetail(data, detail, view, expanded) : null), [data, detail, view, expanded]);
+  // 不展开时每张卡片代表的那一段，面板里“这一段的经过”用
+  const plain = useMemo(() => (data ? filterDetail(data, detail, view) : null), [data, detail, view]);
+  const toggle = useCallback((id: number) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  // 让一个被藏着的事件出现在时间线上：一层层展开它所在的那一段
+  const reveal = (id: number) => {
+    if (!data) return;
+    const next = new Set(expanded);
+    for (let i = 0; i < 4; i++) {
+      const f = filterDetail(data, detail, view, next);
+      if (f.input.events.some((e) => e.id === id)) break;
+      const owner = [...f.segments].find(([, ids]) => ids.includes(id))?.[0];
+      if (owner === undefined) break;
+      next.add(owner);
+    }
+    setExpanded(next);
+  };
 
   // 键盘：Esc 关闭，←/→ 同一行的前后事件，+/− 缩放
   useEffect(() => {
@@ -360,7 +386,7 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
             onMatches={setMatches}
             onPick={(id, idx, terms) => {
               // 搜到的事件在当前详略下被藏着，就临时切到“全部”，好在时间线上看到它
-              if (shown && !shown.input.events.some((e) => e.id === id)) setDetail('all');
+              reveal(id);
               setSelection({ type: 'event', id });
               setFocus({ event: id, idx, terms });
             }}
@@ -439,6 +465,9 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
               fresh={fresh}
               matches={matches}
               hidden={shown!.hidden}
+              opened={shown!.opened}
+              revealed={shown!.revealed}
+              onToggle={toggle}
             />
             {selectedEvent ? (
               <EventPanel
@@ -446,6 +475,15 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
                 event={selectedEvent}
                 focus={focus?.event === selectedEvent.id ? focus.idx : undefined}
                 terms={focus?.event === selectedEvent.id ? focus.terms : undefined}
+                segment={(shown!.segments.get(selectedEvent.id) ?? plain!.segments.get(selectedEvent.id) ?? [])
+                  .map((id) => data.events.find((e) => e.id === id)!)
+                  .filter(Boolean)}
+                opened={shown!.opened.has(selectedEvent.id)}
+                onToggle={() => toggle(selectedEvent.id)}
+                onReveal={(id) => {
+                  reveal(id);
+                  selectEvent(id);
+                }}
                 onChanged={load}
                 onClose={() => setSelection(null)}
                 onSelectEvent={selectEvent}

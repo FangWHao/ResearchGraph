@@ -446,23 +446,39 @@ export interface Filtered {
   input: TimelineInput;
   // 每个可见事件代表着几个被藏起来的事件（同一分支里，到下一个可见事件为止）
   hidden: Map<number, number>;
+  // 这些被藏起来的事件本身，按时间排好；面板里“这一段的经过”用
+  segments: Map<number, number[]>;
+  // 展开过、确实带着一段内容的事件（卡片上显示“收起”）
+  opened: Set<number>;
+  // 因为展开才露出来的事件
+  revealed: Set<number>;
 }
 
 /**
  * 按详略过滤事件。每条研究线（按会话看时是每个会话）至少留下它最高的一档，整条泳道不会消失。
+ * 被藏起来的事件挂在同一分支里前面最近的可见事件上（开头的挂在第一个可见事件上）；
+ * expanded 里的事件把它这一段往下展开一档，展开出来的事件又可以再展开。
+ * 整条分支都被藏起来时挂在它的分出点上，展开分出点时一起出来。
  * 被藏起来的分出点、汇入点移到同一分支里最近的可见事件上，连线不断。
  */
-export function filterDetail(input: TimelineInput, detail: Detail, view: ViewMode): Filtered {
+export function filterDetail(
+  input: TimelineInput,
+  detail: Detail,
+  view: ViewMode,
+  expanded: ReadonlySet<number> = new Set(),
+): Filtered {
   const hidden = new Map<number, number>();
-  if (detail === 'all') return { input, hidden };
+  const segments = new Map<number, number[]>();
+  const opened = new Set<number>();
+  const revealed = new Set<number>();
+  if (detail === 'all') return { input, hidden, segments, opened, revealed };
   const threadOf = new Map(input.branches.map((b) => [b.id, b.thread_id]));
   const group = (e: TimelineEvent) =>
     view === 'sessions' ? `s${e.session_id}` : `t${e.branch_id === null ? 'misc' : threadOf.get(e.branch_id)}`;
   const top = new Map<string, number>();
   for (const e of input.events) top.set(group(e), Math.max(top.get(group(e)) ?? 0, e.importance));
-  const keep = (e: TimelineEvent) => e.importance >= Math.min(DETAIL_MIN[detail], top.get(group(e)) ?? 0);
+  const base = (e: TimelineEvent) => Math.min(DETAIL_MIN[detail], top.get(group(e)) ?? 0);
 
-  // 按分支（会话视图按会话）排好，统计每个可见事件前后藏了几个
   const lineOf = (e: TimelineEvent) => (view === 'sessions' ? `s${e.session_id}` : `b${e.branch_id ?? 'misc'}`);
   const lines = new Map<string, TimelineEvent[]>();
   for (const e of [...input.events].sort(compareEvents)) {
@@ -470,47 +486,82 @@ export function filterDetail(input: TimelineInput, detail: Detail, view: ViewMod
     list.push(e);
     lines.set(lineOf(e), list);
   }
-  const nearest = new Map<number, { before: number | null; after: number | null }>();
-  const orphans = new Map<string, number>(); // 整条分支都藏起来了：算到它的分出点上
-  for (const [line, list] of lines) {
-    let last: number | null = null;
-    let pending = 0;
+
+  const keep = new Set<number>();
+  const hide = (owner: number, seg: TimelineEvent[]) => {
+    segments.set(owner, [...(segments.get(owner) ?? []), ...seg.map((e) => e.id)]);
+    hidden.set(owner, (hidden.get(owner) ?? 0) + seg.length);
+  };
+  // 在一段按时间排好的事件里挑出门槛以上的，其余挂到前面最近的可见事件上；展开过的再往下一档挑。
+  // 一个都挑不出来时返回 false（整条分支都藏起来了）。
+  const pick = (list: TimelineEvent[], min: number, nested: boolean): boolean => {
+    const m = nested ? Math.min(min, Math.max(...list.map((e) => e.importance))) : min;
+    if (!list.some((e) => e.importance >= m)) return false;
+    const segs = new Map<number, TimelineEvent[]>();
+    const lead: TimelineEvent[] = [];
+    let owner: number | null = null;
     for (const e of list) {
-      if (keep(e)) {
-        hidden.set(e.id, (hidden.get(e.id) ?? 0) + (last === null ? pending : 0));
-        if (last === null) pending = 0;
-        last = e.id;
-      } else if (last === null) {
-        pending += 1;
+      if (e.importance >= m) {
+        keep.add(e.id);
+        if (nested) revealed.add(e.id);
+        if (owner === null && lead.length) segs.set(e.id, [...lead]);
+        owner = e.id;
+      } else if (owner === null) {
+        lead.push(e);
       } else {
-        hidden.set(last, (hidden.get(last) ?? 0) + 1);
+        segs.set(owner, [...(segs.get(owner) ?? []), e]);
       }
     }
-    if (last === null && pending) orphans.set(line, pending);
-    let before: number | null = null;
-    for (const e of list) {
-      if (keep(e)) before = e.id;
-      nearest.set(e.id, { before, after: null });
+    for (const [id, seg] of segs) {
+      if (expanded.has(id) && m > 1) {
+        opened.add(id);
+        pick(seg, m - 1, true);
+      } else {
+        hide(id, seg);
+      }
     }
-    let after: number | null = null;
-    for (const e of [...list].reverse()) {
-      if (keep(e)) after = e.id;
-      nearest.get(e.id)!.after = after;
-    }
-  }
-  const visible = new Set(input.events.filter(keep).map((e) => e.id));
-  const remap = (id: number | null, prefer: 'before' | 'after'): number | null => {
-    if (id === null || visible.has(id)) return id;
-    const near = nearest.get(id);
-    if (!near) return null;
-    return prefer === 'before' ? near.before ?? near.after : near.after ?? near.before;
+    return true;
   };
-  for (const b of input.branches) {
-    const count = orphans.get(`b${b.id}`);
-    const host = count ? remap(b.from_event, 'before') : null;
-    if (count && host !== null) hidden.set(host, (hidden.get(host) ?? 0) + count);
+  const orphans = new Map<string, TimelineEvent[]>();
+  for (const [line, list] of lines) {
+    if (!pick(list, base(list[0]), false)) orphans.set(line, list);
   }
-  for (const [id, n] of hidden) if (n === 0) hidden.delete(id);
+
+  const nearestOf = () => {
+    const nearest = new Map<number, { before: number | null; after: number | null }>();
+    for (const list of lines.values()) {
+      let before: number | null = null;
+      for (const e of list) {
+        if (keep.has(e.id)) before = e.id;
+        nearest.set(e.id, { before, after: null });
+      }
+      let after: number | null = null;
+      for (const e of [...list].reverse()) {
+        if (keep.has(e.id)) after = e.id;
+        nearest.get(e.id)!.after = after;
+      }
+    }
+    return (id: number | null, prefer: 'before' | 'after'): number | null => {
+      if (id === null || keep.has(id)) return id;
+      const near = nearest.get(id);
+      if (!near) return null;
+      return prefer === 'before' ? near.before ?? near.after : near.after ?? near.before;
+    };
+  };
+  // 整条藏起来的分支挂在分出点上；分出点展开过就往下一档露出来
+  let remap = nearestOf();
+  for (const b of input.branches) {
+    const list = orphans.get(`b${b.id}`);
+    const host = list ? remap(b.from_event, 'before') : null;
+    if (!list || host === null) continue;
+    if (expanded.has(host)) {
+      opened.add(host);
+      pick(list, base(list[0]) - 1, true);
+    } else {
+      hide(host, list);
+    }
+  }
+  remap = nearestOf();
   const branches = input.branches.map((b) => ({
     ...b,
     from_event: remap(b.from_event, 'before'),
@@ -521,5 +572,6 @@ export function filterDetail(input: TimelineInput, detail: Detail, view: ViewMod
     const lane = view === 'sessions' ? `s${e.session_id}` : `t${e.branch_id === null ? 'misc' : threadOf.get(e.branch_id)}`;
     totals.set(lane, (totals.get(lane) ?? 0) + 1);
   }
-  return { input: { ...input, events: input.events.filter(keep), branches, totals }, hidden };
+  const events = input.events.filter((e) => keep.has(e.id));
+  return { input: { ...input, events, branches, totals }, hidden, segments, opened, revealed };
 }
