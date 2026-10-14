@@ -152,6 +152,32 @@ export interface Message {
   ts: string | null;
   text: string;
   ref: boolean;
+  focus?: boolean; // 从搜索结果点进来时命中的那条
+}
+
+export interface HiddenEvent {
+  id: number;
+  kind: Kind;
+  title: string;
+  summary: string;
+  ts: string | null;
+  session_title: string | null;
+}
+
+export interface SearchHit {
+  event: number;
+  session_id: number;
+  idx: number;
+  role: Message['role'];
+  ts: string | null;
+  snippet: string;
+}
+
+export interface SearchResult {
+  terms: string[];
+  events: number[];
+  messages: SearchHit[];
+  more: boolean;
 }
 
 // 只看文件大小和修改时间得到的“有没有新内容”
@@ -159,6 +185,7 @@ export interface Pending {
   changed: number;
   new: number;
   chars: number;
+  unplaced: number; // 已提取、还没归入研究线的事件
   quiet: number | null;
 }
 

@@ -468,7 +468,13 @@ def test_pending_sees_new_content_without_parsing(store, tmp_path):
     found = pending(store, pid, roots)
     assert (found["changed"], found["new"]) == (0, 1)  # 跟随的工作目录里出现了会话
     organize(store, FakeModel(batch_story), pid, roots, Progress())
-    assert pending(store, pid, roots) == {"changed": 0, "new": 0, "chars": 0, "quiet": None}
+    assert pending(store, pid, roots) == {
+        "changed": 0,
+        "new": 0,
+        "chars": 0,
+        "unplaced": 0,
+        "quiet": None,
+    }
 
     with first.open("a", encoding="utf-8") as handle:
         handle.write(
@@ -525,3 +531,50 @@ def test_chunk_ranges_cover_every_message_once():
 def _no_real_sessions(monkeypatch):
     # 测试里绝不扫描真实的会话目录。
     monkeypatch.setattr("rg.sources._homes", lambda: [])
+
+
+def test_each_placement_batch_only_shows_placed_steps_and_its_own(store, copy_fixture, monkeypatch):
+    # 还没轮到的步骤如果也列出来，模型会把它们一起安排，输出超长被截断。
+    monkeypatch.setattr("rg.organize.PLACE_BATCH", 2)
+    prompts: list[str] = []
+
+    def one_line(user: str) -> dict:
+        prompts.append(user)
+        return {
+            "threads": [
+                {
+                    "id": None,
+                    "title": "一条线",
+                    "summary": "",
+                    "branches": [
+                        {
+                            "id": None,
+                            "title": "",
+                            "from": None,
+                            "into": None,
+                            "events": [f"E{i}" for i in new_events(user).values()],
+                        }
+                    ],
+                }
+            ]
+        }
+
+    pid = new_project(store, [copy_fixture("claude/research-synthetic.jsonl")])
+    assert run(store, FakeModel(one_line), pid).phase == "done"
+    assert len(prompts) == 2
+    first_listed = re.findall(r"^[★ ] E\d+ ", prompts[0], re.M)
+    assert len(first_listed) == 2  # 第一批只看到自己的两个
+    assert len(re.findall(r"^  E\d+ ", prompts[1], re.M)) == 2  # 第二批看到已放好的两个
+    assert len(re.findall(r"^★ ", prompts[1], re.M)) == 2
+    assert all(r["branch_id"] for r in events(store, pid).values())
+
+
+def test_events_left_unplaced_by_a_failed_run_count_as_pending(store, copy_fixture):
+    def truncated(user: str) -> dict:
+        raise Truncated("太长")
+
+    pid = new_project(store, [copy_fixture("claude/research-synthetic.jsonl")])
+    assert run(store, FakeModel(truncated), pid).phase == "error"
+    assert pending(store, pid, [])["unplaced"] == 4  # 重启后错误状态没了，也要能看出来
+    assert run(store, FakeModel(batch_story), pid).phase == "done"
+    assert pending(store, pid, [])["unplaced"] == 0

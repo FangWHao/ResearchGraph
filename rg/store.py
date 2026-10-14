@@ -62,6 +62,9 @@ CREATE TABLE IF NOT EXISTS usage(
   cache_read_tokens INTEGER NOT NULL DEFAULT 0, cache_write_tokens INTEGER NOT NULL DEFAULT 0,
   cached INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS usage_at ON usage(at);
+CREATE TABLE IF NOT EXISTS excluded(
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  path TEXT NOT NULL, PRIMARY KEY(project_id, path));
 """
 
 

@@ -265,7 +265,139 @@ def test_auto_update_needs_consent_and_respects_the_limit(server, tmp_path):
         "changed": 0,
         "new": 0,
         "chars": 0,
+        "unplaced": 0,
         "quiet": None,
     }
     usage = client.get("/api/usage").json()
     assert usage["projects"][0]["name"] == "demo" and usage["periods"]["today"]["calls"] > 0
+
+
+def organized_demo(app: App, client: httpx.Client, tmp_path) -> tuple[int, dict]:
+    root = sessions_dir(tmp_path)
+    client.post("/api/settings", json={"sources": [str(root)]})
+    project_id = client.post(
+        "/api/projects", json={"name": "demo", "sessions": [str(root / "claude.jsonl")]}
+    ).json()["id"]
+    wait(app, project_id)
+    app.jobs.model = lambda: FakeModel(batch_story)
+    client.post(f"/api/projects/{project_id}/organize", json={"consent": True})
+    wait(app, project_id)
+    return project_id, client.get(f"/api/projects/{project_id}").json()
+
+
+def test_merge_research_lines_and_delete_branches_keep_every_event(server, tmp_path):
+    app, client = server
+    project_id, data = organized_demo(app, client, tmp_path)
+    before = {e["id"] for e in data["events"]}
+    main_thread = data["threads"][0]["id"]
+    scvi = next(e for e in data["events"] if e["title"].startswith("也试试"))
+    created = client.post(f"/api/projects/{project_id}/threads", json={"title": "新方向"}).json()
+    client.patch(f"/api/events/{scvi['id']}", json={"branch_id": created["branch_id"]})
+
+    merged = client.post(f"/api/threads/{created['thread_id']}/merge", json={"into": main_thread})
+    assert merged.status_code == 200
+    data = client.get(f"/api/projects/{project_id}").json()
+    assert [t["id"] for t in data["threads"]] == [main_thread]
+    moved = next(b for b in data["branches"] if b["id"] == created["branch_id"])
+    assert (moved["thread_id"], moved["title"]) == (main_thread, "新方向")
+    assert {e["id"] for e in data["events"]} == before
+
+    # 删除分支：事件并入排在最前的分支，一个都不丢
+    assert client.delete(f"/api/branches/{created['branch_id']}").status_code == 200
+    data = client.get(f"/api/projects/{project_id}").json()
+    assert {e["id"] for e in data["events"]} == before
+    first = min(data["branches"], key=lambda b: b["position"])
+    assert next(e for e in data["events"] if e["id"] == scvi["id"])["branch_id"] == first["id"]
+    for branch in data["branches"][1:]:
+        client.delete(f"/api/branches/{branch['id']}")
+    assert client.delete(f"/api/branches/{first['id']}").status_code == 409  # 唯一的一条
+
+    foreign = client.post("/api/projects", json={"name": "other", "start": False}).json()["id"]
+    other = client.post(f"/api/projects/{foreign}/threads", json={"title": "别处"}).json()
+    response = client.post(f"/api/threads/{other['thread_id']}/merge", json={"into": main_thread})
+    assert response.status_code == 400
+
+
+def test_hiding_a_fork_point_clears_the_link(server, tmp_path):
+    app, client = server
+    project_id, data = organized_demo(app, client, tmp_path)
+    branch = next(b for b in data["branches"] if b["from_event"])
+    client.patch(f"/api/events/{branch['from_event']}", json={"hidden": True})
+    row = app.store.one("SELECT from_event FROM branches WHERE id = ?", (branch["id"],))
+    assert row["from_event"] is None
+
+
+def test_search_finds_events_and_the_quotes_behind_them(server, tmp_path):
+    app, client = server
+    project_id, data = organized_demo(app, client, tmp_path)
+    by_title = {e["title"]: e["id"] for e in data["events"]}
+    text = {e["id"]: (e["title"] + e["summary"]).lower() for e in data["events"]}
+
+    def find(q: str) -> dict:
+        return client.get(f"/api/projects/{project_id}/search", params={"q": q}).json()
+
+    found = find("harmony")  # 英文不区分大小写
+    assert set(found["events"]) == {i for i, t in text.items() if "harmony" in t}
+    quote = next(h for h in found["messages"] if h["role"] == "user" and "先试" in h["snippet"])
+    assert quote["event"] == next(i for t, i in by_title.items() if t.startswith("先试"))
+
+    both = find("Harmony 采用")  # 几个词都要出现
+    assert both["events"] == [i for i, t in text.items() if "harmony" in t and "采用" in t]
+    assert find("%")["messages"] == [] and find("%")["events"] == []  # 通配符按字面匹配
+    assert find("  ") == {"terms": [], "events": [], "messages": [], "more": False}
+
+    shown = client.get(
+        f"/api/events/{quote['event']}/messages", params={"focus": quote["idx"] + 1}
+    ).json()["messages"]
+    assert [m["idx"] for m in shown if m["focus"]] == [quote["idx"] + 1]
+
+
+def test_project_sessions_can_be_added_removed_and_stay_removed(server, tmp_path):
+    app, client = server
+    root = sessions_dir(tmp_path)
+    client.post("/api/settings", json={"sources": [str(root)]})
+    project_id = client.post(
+        "/api/projects", json={"name": "demo", "workspace": "/workspace/demo"}
+    ).json()["id"]
+    wait(app, project_id)
+    app.jobs.model = lambda: FakeModel(batch_story)
+    client.post(f"/api/projects/{project_id}/organize", json={"consent": True})
+    wait(app, project_id)
+    data = client.get(f"/api/projects/{project_id}").json()
+    codex = next(s for s in data["sessions"] if s["tool"] == "codex")
+
+    assert client.patch(f"/api/projects/{project_id}", json={"name": "改名了"}).json()["name"] == (
+        "改名了"
+    )
+    removed = client.delete(f"/api/projects/{project_id}/sessions/{codex['id']}")
+    assert removed.status_code == 200
+    data = client.get(f"/api/projects/{project_id}").json()
+    assert [s["tool"] for s in data["sessions"]] == ["claude"]
+    assert all(e["session_id"] != codex["id"] for e in data["events"])
+    # 跟随工作目录也不会自动加回来，也不算“有新内容”
+    assert client.get(f"/api/projects/{project_id}/pending").json()["new"] == 0
+    client.post(f"/api/projects/{project_id}/organize", json={})
+    wait(app, project_id)
+    assert len(client.get(f"/api/projects/{project_id}").json()["sessions"]) == 1
+
+    added = client.post(f"/api/projects/{project_id}/sessions", json={"paths": [codex["path"]]})
+    assert added.json() == {"added": 1}
+    assert (
+        client.post(
+            f"/api/projects/{project_id}/sessions", json={"paths": [str(tmp_path / "nope.jsonl")]}
+        ).status_code
+        == 400
+    )
+
+
+def test_deleted_events_can_be_restored(server, tmp_path):
+    app, client = server
+    project_id, data = organized_demo(app, client, tmp_path)
+    victim = data["events"][0]
+    client.patch(f"/api/events/{victim['id']}", json={"hidden": True})
+    hidden = client.get(f"/api/projects/{project_id}/hidden").json()["events"]
+    assert [e["id"] for e in hidden] == [victim["id"]]
+    assert client.post(f"/api/events/{victim['id']}/restore").json()["branch_id"] is not None
+    events = client.get(f"/api/projects/{project_id}").json()["events"]
+    assert victim["id"] in {e["id"] for e in events}
+    assert client.post(f"/api/events/{victim['id']}/restore").status_code == 404

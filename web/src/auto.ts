@@ -4,7 +4,7 @@ import type { AutoSettings, Pending, Status } from './types';
 export const POLL_MS = 20_000;
 
 export function hasNew(pending: Pending | null | undefined): boolean {
-  return !!pending && (pending.changed > 0 || pending.new > 0 || pending.chars > 0);
+  return !!pending && (pending.changed > 0 || pending.new > 0 || pending.chars > 0 || pending.unplaced > 0);
 }
 
 export interface AutoInput {
@@ -47,5 +47,6 @@ export function describePending(pending: Pending): string {
   if (pending.changed) parts.push(`${pending.changed} 个会话有新的对话`);
   if (pending.new) parts.push(`多了 ${pending.new} 个新会话`);
   if (!parts.length && pending.chars) parts.push('上次还有一部分没整理完');
+  if (!parts.length && pending.unplaced) parts.push(`上次有 ${pending.unplaced} 个事件还没归入研究线`);
   return parts.join('，');
 }

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from './api';
 import { fmtFull, fmtTime } from './format';
 import { Icon, KindGlyph } from './Icons';
 import { compareEvents, type Lane } from './layout';
+import { highlight } from './Search';
 import type { Branch, Kind, Message, ProjectData, TimelineEvent } from './types';
 import { KIND_LABEL, KINDS, TOOL_LABEL } from './types';
 
@@ -75,8 +76,17 @@ function EventLink({ event, onSelect, children }: { event: TimelineEvent; onSele
 
 // ---------- 事件 ----------
 
-export function EventPanel({ data, event, onChanged, onClose, onSelectEvent }: Common & { event: TimelineEvent }) {
+export function EventPanel({
+  data,
+  event,
+  focus,
+  terms,
+  onChanged,
+  onClose,
+  onSelectEvent,
+}: Common & { event: TimelineEvent; focus?: number; terms?: string[] }) {
   const [editing, setEditing] = useState(false);
+  const quotes = useRef<HTMLElement>(null);
   const [context, setContext] = useState(0);
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -92,13 +102,18 @@ export function EventPanel({ data, event, onChanged, onClose, onSelectEvent }: C
     setMessages(null);
     setLoadError('');
     api
-      .messages(event.id, context)
+      .messages(event.id, context, focus)
       .then((r) => alive && setMessages(r.messages))
       .catch((e) => alive && setLoadError(e instanceof Error ? e.message : String(e)));
     return () => {
       alive = false;
     };
-  }, [event.id, context]);
+  }, [event.id, context, focus]);
+
+  // 从搜索结果点进来：把命中的那条原话滚到眼前
+  useEffect(() => {
+    quotes.current?.querySelector('.quote.focus')?.scrollIntoView({ block: 'center' });
+  }, [messages]);
 
   const relations = useMemo(() => {
     const byId = new Map(data.events.map((e) => [e.id, e]));
@@ -221,7 +236,7 @@ export function EventPanel({ data, event, onChanged, onClose, onSelectEvent }: C
         </section>
       ) : null}
 
-      <section className="quotes">
+      <section className="quotes" ref={quotes}>
         <div className="section-row">
           <span className="section-title">原话</span>
           <button type="button" className="link small" onClick={() => setContext(context ? 0 : 3)}>
@@ -231,13 +246,14 @@ export function EventPanel({ data, event, onChanged, onClose, onSelectEvent }: C
         {loadError ? <div className="error small">{loadError}</div> : null}
         {messages === null && !loadError ? <div className="muted small">读取中…</div> : null}
         {messages?.map((m) => (
-          <div key={m.idx} className={`quote ${m.role}${m.ref ? ' ref' : ''}`}>
+          <div key={m.idx} className={`quote ${m.role}${m.ref ? ' ref' : ''}${m.focus ? ' focus' : ''}`}>
             <div className="quote-head">
               <span>{ROLE[m.role]}</span>
               <span>{fmtTime(m.ts)}</span>
               <span className="muted">#{m.idx}</span>
+              {m.focus ? <span className="quote-tag">搜索命中</span> : null}
             </div>
-            <div className="quote-text">{m.text}</div>
+            <div className="quote-text">{terms?.length ? highlight(m.text, terms) : m.text}</div>
           </div>
         ))}
       </section>
@@ -449,6 +465,14 @@ function ThreadPanel({
   const branches = data.branches.filter((b) => b.thread_id === threadId).sort((a, b) => a.position - b.position);
   const events = useMemo(() => [...data.events].sort(compareEvents), [data.events]);
   const count = events.filter((e) => branches.some((b) => b.id === e.branch_id)).length;
+  const others = data.threads.filter((t) => t.id !== threadId);
+  const [into, setInto] = useState('');
+  const merge = async () => {
+    const target = others.find((t) => t.id === Number(into));
+    if (!target) return;
+    if (!window.confirm(`把「${thread.title}」并入「${target.title}」？它的 ${count} 个事件都保留，原来的主线成为「${target.title}」的一条分支。`)) return;
+    if (await run(() => api.mergeThread(threadId, target.id))) onClose();
+  };
 
   return (
     <Shell
@@ -496,8 +520,16 @@ function ThreadPanel({
       )}
       <section className="branches">
         <div className="section-title">分支</div>
-        {branches.map((b) => (
-          <BranchRow key={b.id} data={data} branch={b} events={events} onChanged={onChanged} onSelectEvent={onSelectEvent} />
+        {branches.map((b, i) => (
+          <BranchRow
+            key={b.id}
+            data={data}
+            branch={b}
+            heir={i === 0 ? null : branches[0]}
+            events={events}
+            onChanged={onChanged}
+            onSelectEvent={onSelectEvent}
+          />
         ))}
         <button
           type="button"
@@ -512,6 +544,25 @@ function ThreadPanel({
           新建分支
         </button>
       </section>
+      {others.length ? (
+        <section className="merge">
+          <div className="section-title">并入另一条研究线</div>
+          <p className="muted small">两条线其实是同一个方向时用。事件都保留，这条线的主线成为对方的一条分支。</p>
+          <div className="row">
+            <select className="select" value={into} disabled={busy} onChange={(e) => setInto(e.target.value)} aria-label="并入哪条研究线">
+              <option value="">选择研究线…</option>
+              {others.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title}
+                </option>
+              ))}
+            </select>
+            <button type="button" className="btn" disabled={busy || !into} onClick={merge}>
+              并入
+            </button>
+          </div>
+        </section>
+      ) : null}
       {error ? <div className="error small">{error}</div> : null}
     </Shell>
   );
@@ -520,12 +571,14 @@ function ThreadPanel({
 function BranchRow({
   data,
   branch,
+  heir,
   events,
   onChanged,
   onSelectEvent,
 }: {
   data: ProjectData;
   branch: Branch;
+  heir: Branch | null; // 删掉这条分支后事件并入哪条；主线没有，不能删
   events: TimelineEvent[];
   onChanged: () => void;
   onSelectEvent: (id: number) => void;
@@ -560,6 +613,17 @@ function BranchRow({
         <span className="muted small">{own.length} 个事件</span>
         <span className="spacer" />
         <IconButton icon="edit" label="编辑分支" active={editing} onClick={() => setEditing(!editing)} />
+        {heir ? (
+          <IconButton
+            icon="trash"
+            label="删除分支"
+            onClick={() => {
+              const name = branchName(branch, data.branches);
+              const to = branchName(heir, data.branches);
+              if (window.confirm(`删除分支「${name}」？它的 ${own.length} 个事件会并入「${to}」。`)) void run(() => api.deleteBranch(branch.id));
+            }}
+          />
+        ) : null}
       </div>
       {!editing ? (
         <div className="branch-links">

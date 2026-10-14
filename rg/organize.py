@@ -58,12 +58,13 @@ EVENT_SYSTEM = """你在帮一位研究者整理他和编程 Agent（Claude Code
 用 submit 工具提交。"""
 
 THREAD_SYSTEM = """下面是一个研究项目里按时间排列的关键步骤，来自多个对话。请把它们整理成几条研究线。
-- 研究线是一个相对独立的研究方向或问题，比如“细胞注释”“生存分析”“论文图 3”。通常 2 到 8 条；内容少时 1 条也可以。
+- 研究线是一个相对独立的研究方向或问题，比如“细胞注释”“生存分析”“论文图 3”。
+- 按研究问题划分，不按对话划分：同一个方向常常跨好几个对话、好几天，一个对话也可能涉及几条线。不要每个对话单开一条研究线。
+- 研究线通常 3 到 8 条，内容少时 1 条也可以。只有一两个步骤的小方向，放进最相关的研究线当分支，不要单开研究线。
 - 每条研究线的第一条分支是主线，按时间推进。
 - 研究中同时试另一种做法，或者临时岔开处理一个子问题时，开一个分支：from 填它从哪个步骤分出来；如果后来结果被合并、比较后采用或者回到了主线，into 填汇入的步骤；没有汇回就填 null。
 - from 和 into 可以指向别的研究线里的步骤，表示跨研究线的分出或汇合。
 - 每个步骤只能放在一个分支里。
-- 从别的对话 fork 出来的对话是一条新分支，from 填原对话里 fork 之前的步骤。
 - 已有的研究线和分支带编号（T…、B…），要保留编号；已经放好的步骤不要移动。只为标了 ★ 的新步骤安排位置：可以放进已有分支，也可以新建分支或研究线（新建的 id 填 null）。已有分支的 events 只写新放进去的步骤。尚未汇回的已有分支可以补上 into。
 - events、from、into 只写编号（例如 E12），不要抄写步骤内容。
 - 研究线和分支的标题要短（12 个字以内），用步骤的主要语言。
@@ -229,13 +230,26 @@ def add_sessions(store: Store, project_id: int, infos: list[SessionInfo]) -> int
         return db.total_changes - before
 
 
+def followed(store: Store, project: dict[str, Any], roots: list[str]) -> list[SessionInfo]:
+    """跟随的工作目录里的会话，去掉用户移出过项目的。"""
+    if not (project["follow"] and project["workspace"]):
+        return []
+    excluded = {
+        r["path"]
+        for r in store.q("SELECT path FROM excluded WHERE project_id = ?", (project["id"],))
+    }
+    return [
+        i
+        for i in scan(store, roots)
+        if under(i.cwd, project["workspace"]) and i.path not in excluded
+    ]
+
+
 def sync_project(store: Store, project_id: int, roots: list[str]) -> None:
     project = store.one("SELECT * FROM projects WHERE id = ?", (project_id,))
     if project is None:
         raise KeyError(project_id)
-    if project["follow"] and project["workspace"]:
-        infos = [i for i in scan(store, roots) if under(i.cwd, project["workspace"])]
-        add_sessions(store, project_id, infos)
+    add_sessions(store, project_id, followed(store, project, roots))
     rows = store.q(
         "SELECT * FROM sessions WHERE project_id = ? ORDER BY started_at, id", (project_id,)
     )
@@ -392,6 +406,7 @@ def pending(store: Store, project_id: int, roots: list[str]) -> dict[str, Any]:
 
     changed：已导入的会话文件变了；new：跟随的工作目录里出现了新会话；
     chars：已经读入但还没提取的字数（比如上次整理中途出错）；
+    unplaced：已经提取、还没归入研究线的事件数（比如归类时出错）；
     quiet：最近一次文件改动距今的秒数，没有改动时为 None。
     """
     project = store.one("SELECT * FROM projects WHERE id = ?", (project_id,))
@@ -407,18 +422,21 @@ def pending(store: Store, project_id: int, roots: list[str]) -> dict[str, Any]:
             stat = Path(row["path"]).stat()
         except OSError:
             continue
-        if (stat.st_size, stat.st_mtime) != (row["parsed_size"], row["parsed_mtime"]):
+        if row["parsed_size"] < 0:  # 刚加进项目、还没读过的会话
+            new += 1
+            latest = max(latest, stat.st_mtime)
+        elif (stat.st_size, stat.st_mtime) != (row["parsed_size"], row["parsed_mtime"]):
             changed += 1
             latest = max(latest, stat.st_mtime)
-    if project["follow"] and project["workspace"]:
-        for info in scan(store, roots):
-            if info.path not in known and under(info.cwd, project["workspace"]):
-                new += 1
-                latest = max(latest, info.mtime)
+    for info in followed(store, project, roots):
+        if info.path not in known:
+            new += 1
+            latest = max(latest, info.mtime)
     return {
         "changed": changed,
         "new": new,
         "chars": estimate(store, project_id)["chars"],
+        "unplaced": len(_unplaced(store, project_id)),
         "quiet": max(0, round(time.time() - latest)) if latest else None,
     }
 
@@ -579,11 +597,17 @@ def _visible_events(store: Store, project_id: int) -> list[dict[str, Any]]:
 
 
 def render_structure(store: Store, project_id: int, new_ids: set[int]) -> str:
-    events = sorted(_visible_events(store, project_id), key=event_key)
-    sessions = store.q(
-        "SELECT id, tool, title, started_at, fork_of FROM sessions WHERE project_id = ? "
-        "ORDER BY started_at",
-        (project_id,),
+    # 不写步骤来自哪个对话：写了以后模型几乎总是一个对话一条研究线（本机实测 25 个对话分成
+    # 15 条线，每个对话只落在一条线上）。fork 由程序接上，也不需要对话信息。
+    # 只列已经放好的步骤和这一批新步骤。还没轮到的步骤不能列出来：它们不在任何分支里，
+    # 模型会顺手把它们全部安排一遍，输出超长被截断（2490 个事件的项目上实际发生过）。
+    events = sorted(
+        (
+            e
+            for e in _visible_events(store, project_id)
+            if e["branch_id"] is not None or e["id"] in new_ids
+        ),
+        key=event_key,
     )
     threads = store.q("SELECT * FROM threads WHERE project_id = ? ORDER BY id", (project_id,))
     branches = store.q(
@@ -595,14 +619,7 @@ def render_structure(store: Store, project_id: int, new_ids: set[int]) -> str:
     for e in events:
         if e["branch_id"] is not None and e["id"] not in new_ids:
             members[e["branch_id"]].append(e["id"])
-    lines = ["对话："]
-    for s in sessions:
-        tool = "Claude Code" if s["tool"] == "claude" else "Codex"
-        fork = f"（从 S{s['fork_of']} fork 出来）" if s["fork_of"] else ""
-        lines.append(
-            f"S{s['id']} {tool}「{s['title'] or '无标题'}」{short_time(s['started_at'])}{fork}"
-        )
-    lines += ["", "已有研究线："]
+    lines = ["已有研究线："]
     if not threads:
         lines.append("（还没有研究线）")
     for t in threads:
@@ -618,7 +635,7 @@ def render_structure(store: Store, project_id: int, new_ids: set[int]) -> str:
     lines += ["", "步骤（按时间排列；★ 是需要安排位置的新步骤）："]
     for e in events:
         new = e["id"] in new_ids
-        text = f"E{e['id']} {short_time(e['ts'])} S{e['session_id']} {KIND_LABEL[e['kind']]}｜{e['title']}"
+        text = f"E{e['id']} {short_time(e['ts'])} {KIND_LABEL[e['kind']]}｜{e['title']}"
         if new or detailed:
             text += f"｜{e['summary']}"
         lines.append(("★ " if new else "  ") + text)
@@ -760,6 +777,14 @@ def cleanup(db: Any, project_id: int) -> None:
         "(SELECT id FROM branches)",
         (project_id,),
     )
+    # 分出点、汇入点被删掉（或随会话移出项目）后，连线没有意义了。
+    for column in ("from_event", "into_event"):
+        db.execute(
+            f"UPDATE branches SET {column} = NULL WHERE {column} IS NOT NULL AND thread_id IN "
+            "(SELECT id FROM threads WHERE project_id = ?) AND "
+            f"{column} NOT IN (SELECT id FROM events WHERE hidden = 0)",
+            (project_id,),
+        )
 
 
 def _unplaced(store: Store, project_id: int) -> list[dict[str, Any]]:
@@ -845,7 +870,7 @@ def _place_batches(
         progress.set("threads", (len(todo) + size - 1) // size)
     while todo:
         batch = {e["id"] for e in todo[:size]}
-        tokens = min(32_000, 2_000 + 16 * len(batch))
+        tokens = min(32_000, 4_000 + 24 * len(batch))
         try:
             output = call(
                 THREAD_SYSTEM, render_structure(store, project_id, batch), THREAD_SCHEMA, tokens
@@ -865,6 +890,82 @@ def place(store: Store, call: Call, project_id: int, progress: Progress) -> None
     _place_batches(store, call, project_id, progress, exclude=waiting)
     attach_forks(store, project_id)
     _place_batches(store, call, project_id, progress, exclude=set())
+
+
+# ---------- 搜索 ----------
+
+SEARCH_TERMS = 5
+SEARCH_MESSAGES = 60
+
+
+def _like(term: str) -> str:
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def snippet(text: str, terms: list[str], before: int = 30, after: int = 70) -> str:
+    flat = " ".join(text.split())
+    lower = flat.lower()
+    hits = [i for i in (lower.find(t.lower()) for t in terms) if i >= 0]
+    start = max(0, min(hits, default=0) - before)
+    end = min(len(flat), start + before + after)
+    return ("…" if start else "") + flat[start:end] + ("…" if end < len(flat) else "")
+
+
+def search(store: Store, project_id: int, query: str) -> dict[str, Any]:
+    """按空格分开的几个词都要出现（不区分英文大小写）。事件看标题和摘要；原话命中时，
+    找它所属的事件：引用了这条消息的事件，否则是它之前最近的一个事件。"""
+    terms = [t for t in query.split() if t][:SEARCH_TERMS]
+    if not terms:
+        return {"terms": [], "events": [], "messages": [], "more": False}
+    likes = [_like(t) for t in terms]
+    where = " AND ".join(["(e.title || ' ' || e.summary) LIKE ? ESCAPE '\\'"] * len(terms))
+    matched = store.q(
+        f"SELECT e.id FROM events e WHERE e.project_id = ? AND e.hidden = 0 AND {where} "
+        "ORDER BY e.ts, e.id",
+        (project_id, *likes),
+    )
+    where = " AND ".join(["m.text LIKE ? ESCAPE '\\'"] * len(terms))
+    # fork 会话开头复制自原会话的部分不重复列出
+    rows = store.q(
+        "SELECT m.session_id, m.idx, m.role, m.ts, m.text FROM messages m "
+        "JOIN sessions s ON s.id = m.session_id "
+        f"WHERE s.project_id = ? AND m.idx >= s.copied AND {where} "
+        "ORDER BY m.ts, m.session_id, m.idx LIMIT ?",
+        (project_id, *likes, SEARCH_MESSAGES + 1),
+    )
+    owners: dict[int, list[dict[str, Any]]] = {}
+    hits = []
+    for row in rows[:SEARCH_MESSAGES]:
+        sid = row["session_id"]
+        if sid not in owners:
+            owners[sid] = store.q(
+                "SELECT id, anchor, refs FROM events WHERE session_id = ? AND hidden = 0 "
+                "ORDER BY anchor, id",
+                (sid,),
+            )
+        candidates = owners[sid]
+        owner = next((e for e in candidates if row["idx"] in json.loads(e["refs"])), None)
+        owner = owner or next((e for e in reversed(candidates) if e["anchor"] <= row["idx"]), None)
+        owner = owner or (candidates[0] if candidates else None)
+        if owner is None:
+            continue
+        hits.append(
+            {
+                "event": owner["id"],
+                "session_id": sid,
+                "idx": row["idx"],
+                "role": row["role"],
+                "ts": row["ts"],
+                "snippet": snippet(row["text"], terms),
+            }
+        )
+    return {
+        "terms": terms,
+        "events": [r["id"] for r in matched],
+        "messages": hits,
+        "more": len(rows) > SEARCH_MESSAGES,
+    }
 
 
 # ---------- 重新整理 ----------

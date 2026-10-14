@@ -20,7 +20,16 @@ import httpx
 
 from rg.config import DB_NAME, DEFAULT_BASE_URL, DEFAULT_MODEL, clean_key, read_key, save_key
 from rg.model import Call, Model, ModelError, cached
-from rg.organize import KINDS, Jobs, add_sessions, cleanup, estimate, fork_point, pending
+from rg.organize import (
+    KINDS,
+    Jobs,
+    add_sessions,
+    cleanup,
+    estimate,
+    fork_point,
+    pending,
+    search,
+)
 from rg.parse import NotASession
 from rg.sources import default_dirs, read_info, scan, under, workspaces
 from rg.store import Store, now
@@ -311,6 +320,78 @@ def upload(app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, li
     return {"added": added, "title": info.title}
 
 
+@route("PATCH", r"/api/projects/(\d+)")
+def patch_project(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    project = app.project(int(m[1]))
+    name = _text(body, "name", 80, required="name" in body)
+    follow = project["follow"]
+    if "follow" in body:
+        if not isinstance(body["follow"], bool):
+            raise ApiError(400, "follow 必须是 true 或 false")
+        if body["follow"] and not project["workspace"]:
+            raise ApiError(400, "这个项目没有工作目录，没法跟随")
+        follow = 1 if body["follow"] else 0
+    with app.store.tx() as db:
+        db.execute(
+            "UPDATE projects SET name = COALESCE(?, name), follow = ? WHERE id = ?",
+            (name, follow, project["id"]),
+        )
+    return app.project(project["id"])
+
+
+@route("POST", r"/api/projects/(\d+)/sessions")
+def add_project_sessions(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    """把已发现的会话加进已有项目。手动加回来的会话不再算“移出过”。"""
+    project_id = app.project(int(m[1]))["id"]
+    paths = body.get("paths")
+    if not isinstance(paths, list) or not paths or not all(isinstance(p, str) for p in paths):
+        raise ApiError(400, "paths 必须是非空的路径列表")
+    infos = []
+    for path in paths:
+        try:
+            infos.append(read_info(Path(path)))
+        except (NotASession, OSError, UnicodeError):
+            raise ApiError(400, f"不是可识别的会话文件：{path}") from None
+    with app.store.tx() as db:
+        db.executemany(
+            "DELETE FROM excluded WHERE project_id = ? AND path = ?",
+            [(project_id, i.path) for i in infos],
+        )
+    return {"added": add_sessions(app.store, project_id, infos)}
+
+
+@route("DELETE", r"/api/projects/(\d+)/sessions/(\d+)")
+def remove_project_session(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    """把会话移出项目：它的消息和事件一起删掉，会话文件不动；跟随目录时也不会自动加回来。"""
+    project_id = app.project(int(m[1]))["id"]
+    session = app.store.one(
+        "SELECT id, path FROM sessions WHERE id = ? AND project_id = ?", (int(m[2]), project_id)
+    )
+    if session is None:
+        raise ApiError(404, "会话不在这个项目里")
+    if app.jobs.status(project_id)["running"]:
+        raise ApiError(409, "正在整理，稍后再移出")
+    with app.store.tx() as db:
+        db.execute(
+            "INSERT OR IGNORE INTO excluded(project_id, path) VALUES (?, ?)",
+            (project_id, session["path"]),
+        )
+        # 从它 fork 出来的会话失去了原会话，不再当作 fork
+        db.execute(
+            "UPDATE sessions SET fork_of = NULL, fork_branch = NULL WHERE fork_of = ?",
+            (session["id"],),
+        )
+        db.execute("DELETE FROM sessions WHERE id = ?", (session["id"],))
+        cleanup(db, project_id)
+    return {"ok": True}
+
+
 @route("DELETE", r"/api/projects/(\d+)")
 def delete_project(
     app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
@@ -381,6 +462,14 @@ def get_pending(
     return pending(app.store, int(m[1]), app.roots())
 
 
+@route("GET", r"/api/projects/(\d+)/search")
+def get_search(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    app.project(int(m[1]))
+    return search(app.store, int(m[1]), (query.get("q") or [""])[0][:200])
+
+
 @route("POST", r"/api/projects/(\d+)/organize")
 def post_organize(
     app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
@@ -438,6 +527,44 @@ def patch_event(
     return {"ok": True}
 
 
+@route("GET", r"/api/projects/(\d+)/hidden")
+def hidden_events(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    project_id = app.project(int(m[1]))["id"]
+    return {
+        "events": app.store.q(
+            "SELECT e.id, e.kind, e.title, e.summary, e.ts, s.title AS session_title "
+            "FROM events e JOIN sessions s ON s.id = e.session_id "
+            "WHERE e.project_id = ? AND e.hidden = 1 ORDER BY e.ts DESC, e.id DESC",
+            (project_id,),
+        )
+    }
+
+
+@route("POST", r"/api/events/(\d+)/restore")
+def restore_event(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    """恢复删掉的事件。原来的分支还在就回原处，否则跟着同一会话里最近的事件走，都没有就等下次归类。"""
+    event = app.store.one("SELECT * FROM events WHERE id = ? AND hidden = 1", (int(m[1]),))
+    if event is None:
+        raise ApiError(404, "没有这个已删除的事件")
+    branch = event["branch_id"]
+    if branch is None:
+        near = app.store.one(
+            "SELECT branch_id FROM events WHERE session_id = ? AND hidden = 0 "
+            "AND branch_id IS NOT NULL ORDER BY ABS(anchor - ?), id LIMIT 1",
+            (event["session_id"], event["anchor"]),
+        )
+        branch = near["branch_id"] if near else None
+    with app.store.tx() as db:
+        db.execute(
+            "UPDATE events SET hidden = 0, branch_id = ? WHERE id = ?", (branch, event["id"])
+        )
+    return {"ok": True, "branch_id": branch}
+
+
 @route("GET", r"/api/events/(\d+)/messages")
 def event_messages(
     app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
@@ -445,12 +572,15 @@ def event_messages(
     event = app.event(int(m[1]))
     try:
         context = max(0, min(20, int((query.get("context") or ["0"])[0])))
+        focus = int(query["focus"][0]) if query.get("focus") else None
     except ValueError:
-        context = 0
+        context, focus = 0, None
     refs = sorted(json.loads(event["refs"]))
     wanted: set[int] = set()
     for ref in refs:
         wanted.update(range(ref - context, ref + context + 1))
+    if focus is not None:  # 从搜索结果点进来：把命中的那条和它前后各一条也带上
+        wanted.update(range(focus - 1, focus + 2))
     rows = app.store.q(
         "SELECT idx, role, ts, text FROM messages WHERE session_id = ? ORDER BY idx",
         (event["session_id"],),
@@ -460,7 +590,11 @@ def event_messages(
     )
     return {
         "session": session,
-        "messages": [{**r, "ref": r["idx"] in refs} for r in rows if r["idx"] in wanted],
+        "messages": [
+            {**r, "ref": r["idx"] in refs, "focus": r["idx"] == focus}
+            for r in rows
+            if r["idx"] in wanted
+        ],
     }
 
 
@@ -476,6 +610,37 @@ def patch_thread(
             "edited = 1 WHERE id = ?",
             (title, summary, int(m[1])),
         )
+    return {"ok": True}
+
+
+@route("POST", r"/api/threads/(\d+)/merge")
+def merge_thread(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    """把一条研究线并入另一条：它的各条分支搬过去，原来的主线成为一条以原名命名的分支。"""
+    source = app.store.one("SELECT * FROM threads WHERE id = ?", (int(m[1]),))
+    target = app.store.one("SELECT * FROM threads WHERE id = ?", (body.get("into"),))
+    if source is None or target is None:
+        raise ApiError(404, "研究线不存在")
+    if source["project_id"] != target["project_id"] or source["id"] == target["id"]:
+        raise ApiError(400, "只能并入同一个项目里的另一条研究线")
+    with app.store.tx() as db:
+        start = db.execute(
+            "SELECT COALESCE(MAX(position) + 1, 0) FROM branches WHERE thread_id = ?",
+            (target["id"],),
+        ).fetchone()[0]
+        moved = db.execute(
+            "SELECT id, title FROM branches WHERE thread_id = ? ORDER BY position, id",
+            (source["id"],),
+        ).fetchall()
+        for offset, branch in enumerate(moved):
+            title = branch["title"] or (source["title"] if offset == 0 else "")
+            db.execute(
+                "UPDATE branches SET thread_id = ?, position = ?, title = ?, edited = 1 WHERE id = ?",
+                (target["id"], start + offset, title[:30], branch["id"]),
+            )
+        db.execute("DELETE FROM threads WHERE id = ?", (source["id"],))
+        db.execute("UPDATE threads SET edited = 1 WHERE id = ?", (target["id"],))
     return {"ok": True}
 
 
@@ -542,6 +707,32 @@ def patch_branch(
             "edited = 1 WHERE id = ?",
             (title, source, target, row["id"]),
         )
+    return {"ok": True}
+
+
+@route("DELETE", r"/api/branches/(\d+)")
+def delete_branch(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    """删掉一条分支，它的事件并入同一研究线里排在最前的另一条分支。"""
+    row = app.store.one(
+        "SELECT b.*, t.project_id FROM branches b JOIN threads t ON t.id = b.thread_id "
+        "WHERE b.id = ?",
+        (int(m[1]),),
+    )
+    if row is None:
+        raise ApiError(404, "分支不存在")
+    heir = app.store.one(
+        "SELECT id FROM branches WHERE thread_id = ? AND id != ? ORDER BY position, id LIMIT 1",
+        (row["thread_id"], row["id"]),
+    )
+    if heir is None:
+        raise ApiError(409, "这是研究线里唯一的一条，不能删；可以把整条研究线并入别的研究线")
+    with app.store.tx() as db:
+        db.execute("UPDATE events SET branch_id = ? WHERE branch_id = ?", (heir["id"], row["id"]))
+        db.execute("UPDATE branches SET edited = 1 WHERE id = ?", (heir["id"],))
+        db.execute("DELETE FROM branches WHERE id = ?", (row["id"],))
+        cleanup(db, row["project_id"])
     return {"ok": True}
 
 

@@ -1,10 +1,13 @@
 import type {
   AppState,
   AutoSettings,
+  HiddenEvent,
   Kind,
   Message,
   Pending,
   ProjectData,
+  ProjectSummary,
+  SearchResult,
   SessionInfo,
   Status,
   UsageReport,
@@ -71,6 +74,15 @@ export const api = {
       `/api/projects/${projectId}/upload?name=${encodeURIComponent(file.name)}`,
       file,
     ),
+  patchProject: (projectId: number, patch: { name?: string; follow?: boolean }) =>
+    request<ProjectSummary>('PATCH', `/api/projects/${projectId}`, patch),
+  addSessions: (projectId: number, paths: string[]) =>
+    request<{ added: number }>('POST', `/api/projects/${projectId}/sessions`, { paths }),
+  removeSession: (projectId: number, sessionId: number) =>
+    request<{ ok: boolean }>('DELETE', `/api/projects/${projectId}/sessions/${sessionId}`),
+  hidden: (projectId: number) => request<{ events: HiddenEvent[] }>('GET', `/api/projects/${projectId}/hidden`),
+  restoreEvent: (eventId: number) =>
+    request<{ ok: boolean; branch_id: number | null }>('POST', `/api/events/${eventId}/restore`),
   deleteProject: (projectId: number) => request<{ ok: boolean }>('DELETE', `/api/projects/${projectId}`),
   project: (projectId: number) => request<ProjectData>('GET', `/api/projects/${projectId}`),
   status: (projectId: number) => request<Status>('GET', `/api/projects/${projectId}/status`),
@@ -80,10 +92,12 @@ export const api = {
   usage: () => request<UsageReport>('GET', '/api/usage'),
   patchEvent: (eventId: number, patch: EventPatch) =>
     request<{ ok: boolean }>('PATCH', `/api/events/${eventId}`, patch),
-  messages: (eventId: number, context: number) =>
+  search: (projectId: number, q: string) =>
+    request<SearchResult>('GET', `/api/projects/${projectId}/search?q=${encodeURIComponent(q)}`),
+  messages: (eventId: number, context: number, focus?: number) =>
     request<{ session: { id: number; title: string | null; tool: string; missing: number }; messages: Message[] }>(
       'GET',
-      `/api/events/${eventId}/messages?context=${context}`,
+      `/api/events/${eventId}/messages?context=${context}${focus === undefined ? '' : `&focus=${focus}`}`,
     ),
   patchThread: (threadId: number, patch: { title?: string; summary?: string }) =>
     request<{ ok: boolean }>('PATCH', `/api/threads/${threadId}`, patch),
@@ -94,6 +108,9 @@ export const api = {
       title,
       from_event: fromEvent,
     }),
+  mergeThread: (threadId: number, into: number) =>
+    request<{ ok: boolean }>('POST', `/api/threads/${threadId}/merge`, { into }),
+  deleteBranch: (branchId: number) => request<{ ok: boolean }>('DELETE', `/api/branches/${branchId}`),
   patchBranch: (
     branchId: number,
     patch: { title?: string; from_event?: number | null; into_event?: number | null },

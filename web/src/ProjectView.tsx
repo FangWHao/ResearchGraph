@@ -6,6 +6,7 @@ import { fmtChars, fmtTime, fmtWan } from './format';
 import { Icon, KindGlyph, Logo } from './Icons';
 import { defaultZoom, rowNeighbors, ZOOM_LEVELS, type Align, type ViewMode } from './layout';
 import { EventPanel, LanePanel } from './Panel';
+import { SearchBox } from './Search';
 import { Timeline, type Selection } from './Timeline';
 import type { AppState, Pending, ProjectData, ProjectSummary, Status } from './types';
 import { KIND_LABEL, KINDS } from './types';
@@ -56,10 +57,11 @@ interface Props {
   onSwitch: (projectId: number) => void;
   onNew: () => void;
   onSettings: () => void;
+  onProjectSettings: () => void;
   onDeleted: () => void;
 }
 
-export function ProjectView({ project, state, onSwitch, onNew, onSettings, onDeleted }: Props) {
+export function ProjectView({ project, state, onSwitch, onNew, onSettings, onProjectSettings, onDeleted }: Props) {
   const [data, setData] = useState<ProjectData | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [view, setView] = useState<ViewMode>(() => remembered('rg.view', ['threads', 'sessions'], 'threads'));
@@ -73,6 +75,8 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onDel
   const [paused, setPaused] = useState(() => dismissed.has(project.id));
   const [fresh, setFresh] = useState<Set<number>>(NO_EVENTS);
   const [notice, setNotice] = useState<{ added: number[]; auto: boolean } | null>(null);
+  const [matches, setMatches] = useState<Set<number> | null>(null); // 搜索结果里的事件
+  const [focus, setFocus] = useState<{ event: number; idx?: number; terms: string[] } | null>(null);
   const known = useRef<Set<number> | null>(null); // 上次加载时已有的事件
   const markNew = useRef(false); // 这次整理结束后要标出新增的事件
 
@@ -329,6 +333,16 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onDel
           </div>
         ) : null}
         <span className="spacer" />
+        {data && data.events.length ? (
+          <SearchBox
+            data={data}
+            onMatches={setMatches}
+            onPick={(id, idx, terms) => {
+              setSelection({ type: 'event', id });
+              setFocus({ event: id, idx, terms });
+            }}
+          />
+        ) : null}
         <StatusPill status={status} data={data} pending={pending} auto={auto} quiet={state.auto.quiet} />
         <button type="button" className="btn primary" disabled={running} onClick={() => organize()}>
           <Icon name="refresh" size={15} />
@@ -344,7 +358,8 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onDel
                 window.confirm('清掉自动生成的研究线和事件，从头整理？你手动改过和删掉的内容会保留。') &&
                 organize({ full: true }),
             },
-            { label: '设置', onClick: onSettings },
+            { label: '项目设置', hint: '改名、增减会话、恢复删除的事件', onClick: onProjectSettings },
+            { label: '设置', hint: '会话目录、模型、自动更新、用量', onClick: onSettings },
             { label: '删除项目', danger: true, onClick: remove },
           ]}
         />
@@ -399,9 +414,18 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onDel
               onSelect={setSelection}
               jump={jump}
               fresh={fresh}
+              matches={matches}
             />
             {selectedEvent ? (
-              <EventPanel data={data} event={selectedEvent} onChanged={load} onClose={() => setSelection(null)} onSelectEvent={selectEvent} />
+              <EventPanel
+                data={data}
+                event={selectedEvent}
+                focus={focus?.event === selectedEvent.id ? focus.idx : undefined}
+                terms={focus?.event === selectedEvent.id ? focus.terms : undefined}
+                onChanged={load}
+                onClose={() => setSelection(null)}
+                onSelectEvent={selectEvent}
+              />
             ) : null}
             {selection?.type === 'lane' ? (
               <LanePanel data={data} lane={selection.lane} onChanged={load} onClose={() => setSelection(null)} onSelectEvent={selectEvent} />

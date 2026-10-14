@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from './api';
 import { NewProject } from './NewProject';
+import { ProjectSettings } from './ProjectSettings';
 import { ProjectView } from './ProjectView';
 import { Setup } from './Setup';
 import type { AppState } from './types';
@@ -12,7 +13,7 @@ function hashProject(): number | null {
 
 export function App() {
   const [state, setState] = useState<AppState | null>(null);
-  const [view, setView] = useState<'main' | 'setup' | 'new'>('main');
+  const [view, setView] = useState<'main' | 'setup' | 'new' | 'project'>('main');
   const [projectId, setProjectId] = useState<number | null>(hashProject);
   const [error, setError] = useState('');
 
@@ -64,6 +65,17 @@ export function App() {
     );
   }
   const current = state.projects.find((p) => p.id === projectId) ?? state.projects[state.projects.length - 1];
+  if (view === 'project') {
+    return (
+      <ProjectSettings
+        projectId={current.id}
+        onBack={async () => {
+          await refresh();
+          setView('main');
+        }}
+      />
+    );
+  }
   return (
     <ProjectView
       key={current.id}
@@ -72,6 +84,7 @@ export function App() {
       onSwitch={setProjectId}
       onNew={() => setView('new')}
       onSettings={() => setView('setup')}
+      onProjectSettings={() => setView('project')}
       onDeleted={async () => {
         setProjectId(null);
         await refresh();

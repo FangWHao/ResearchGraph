@@ -32,9 +32,11 @@ interface Props {
   jump: { n: number; latest: boolean };
   // 刚才更新新增的事件，加个标记
   fresh: Set<number>;
+  // 正在搜索时，结果里的事件；其余的变淡
+  matches: Set<number> | null;
 }
 
-export function Timeline({ data, view, align, pxPerHour, selection, onSelect, jump, fresh }: Props) {
+export function Timeline({ data, view, align, pxPerHour, selection, onSelect, jump, fresh, matches }: Props) {
   const layout = useMemo(() => computeLayout(data, { view, align, pxPerHour }), [data, view, align, pxPerHour]);
   const scroller = useRef<HTMLDivElement>(null);
   const labels = useRef<HTMLDivElement>(null);
@@ -109,7 +111,7 @@ export function Timeline({ data, view, align, pxPerHour, selection, onSelect, ju
       <div className="tl-inner" style={{ width: `calc(var(--label-w) + ${layout.width}px)` }}>
         <div className="tl-head" style={{ height: AXIS_H }}>
         <div className="tl-corner">
-          {view === 'threads' ? `${layout.lanes.length} 条研究线` : `${layout.lanes.length} 个会话`}
+          {view === 'threads' ? `${layout.lanes.filter((l) => l.threadId !== undefined).length} 条研究线` : `${layout.lanes.length} 个会话`}
         </div>
         <div className="tl-axis" style={{ width: layout.width }}>
           {align === 'compact' ? (
@@ -190,6 +192,7 @@ export function Timeline({ data, view, align, pxPerHour, selection, onSelect, ju
                 node={node}
                 cross={crossLinked.has(node.event.id)}
                 fresh={fresh.has(node.event.id)}
+                dim={matches !== null && !matches.has(node.event.id)}
                 on={node.event.id === selectedEvent}
                 onSelect={onSelect}
                 onHover={setHovered}
@@ -199,6 +202,7 @@ export function Timeline({ data, view, align, pxPerHour, selection, onSelect, ju
                 key={node.event.id}
                 node={node}
                 fresh={fresh.has(node.event.id)}
+                dim={matches !== null && !matches.has(node.event.id)}
                 on={node.event.id === selectedEvent}
                 onSelect={onSelect}
                 onHover={setHovered}
@@ -218,6 +222,7 @@ interface NodeProps {
   on: boolean;
   cross?: boolean;
   fresh?: boolean;
+  dim?: boolean;
   onSelect: (selection: Selection) => void;
   onHover: (id: number | null) => void;
 }
@@ -237,12 +242,12 @@ function handlers({ node, onSelect, onHover }: NodeProps) {
 }
 
 function Card(props: NodeProps) {
-  const { node, on, cross, fresh } = props;
+  const { node, on, cross, fresh, dim } = props;
   const { event } = node;
   return (
     <button
       type="button"
-      className={`tl-card${on ? ' on' : ''}`}
+      className={`tl-card${on ? ' on' : ''}${dim ? ' dim' : ''}`}
       style={{ left: node.x, top: node.y, width: CARD_W, height: CARD_H }}
       aria-label={`${KIND_LABEL[event.kind]}：${event.title}`}
       {...handlers(props)}
@@ -269,12 +274,12 @@ function Card(props: NodeProps) {
 }
 
 function Dot(props: NodeProps) {
-  const { node, on, fresh } = props;
+  const { node, on, fresh, dim } = props;
   const { event } = node;
   return (
     <button
       type="button"
-      className={`tl-dot${on ? ' on' : ''}${fresh ? ' fresh' : ''}`}
+      className={`tl-dot${on ? ' on' : ''}${fresh ? ' fresh' : ''}${dim ? ' dim' : ''}`}
       style={{ left: node.x - DOT_HIT / 2, top: node.y - DOT_HIT / 2 }}
       aria-label={`${KIND_LABEL[event.kind]}：${event.title}`}
       {...handlers(props)}
