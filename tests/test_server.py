@@ -217,3 +217,55 @@ def test_check_key_without_saving(server):
         "message": "模型接口必须使用 HTTPS",
     }
     assert seen == ["sk-good", "sk-bad"]
+
+
+def test_auto_update_settings_are_validated_before_anything_is_saved(server, tmp_path):
+    app, client = server
+    defaults = client.get("/api/state").json()["auto"]
+    assert defaults == {"enabled": True, "quiet": 3, "limit": 200_000, "on_open": "ask"}
+    root = sessions_dir(tmp_path)
+    bad = client.post("/api/settings", json={"sources": [str(root)], "auto": {"quiet": 0}})
+    assert bad.status_code == 400 and app.roots() == []
+    for wrong in ({"enabled": "yes"}, {"limit": 10}, {"on_open": "later"}):
+        assert client.post("/api/settings", json={"auto": wrong}).status_code == 400
+    saved = client.post(
+        "/api/settings", json={"auto": {"enabled": False, "limit": None, "on_open": "auto"}}
+    ).json()["auto"]
+    assert saved == {"enabled": False, "quiet": 3, "limit": None, "on_open": "auto"}
+
+
+def test_auto_update_needs_consent_and_respects_the_limit(server, tmp_path):
+    app, client = server
+    root = sessions_dir(tmp_path)
+    client.post("/api/settings", json={"sources": [str(root)]})
+    app.store.set_setting("auto", {"limit": 100})  # 合成会话很短，界面上最小只能选 1000
+    project_id = client.post(
+        "/api/projects", json={"name": "demo", "workspace": "/workspace/demo"}
+    ).json()["id"]
+    wait(app, project_id)
+    model = FakeModel(batch_story)
+    app.jobs.model = lambda: model
+
+    # 没同意过的项目，自动更新不能顺带同意。
+    refused = client.post(
+        f"/api/projects/{project_id}/organize", json={"auto": True, "consent": True}
+    )
+    assert refused.status_code == 409
+    assert client.get(f"/api/projects/{project_id}").json()["project"]["model_allowed"] == 0
+
+    with app.store.tx() as db:
+        db.execute("UPDATE projects SET model_allowed = 1")
+    client.post(f"/api/projects/{project_id}/organize", json={"auto": True})
+    status = wait(app, project_id)
+    assert status["phase"] == "confirm" and status["auto"] is True and not model.calls
+
+    client.post(f"/api/projects/{project_id}/organize", json={})  # 用户点“更新”，不受上限约束
+    assert wait(app, project_id)["phase"] == "done"
+    assert client.get(f"/api/projects/{project_id}/pending").json() == {
+        "changed": 0,
+        "new": 0,
+        "chars": 0,
+        "quiet": None,
+    }
+    usage = client.get("/api/usage").json()
+    assert usage["projects"][0]["name"] == "demo" and usage["periods"]["today"]["calls"] > 0

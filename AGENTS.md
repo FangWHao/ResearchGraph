@@ -30,7 +30,7 @@ cd web && pnpm i && pnpm test && pnpm build
 ## 硬规则
 
 - 会话文件只读，从不修改。
-- 没有经过用户在界面上确认发送量（`projects.model_allowed`），不调用模型。
+- 没有经过用户在界面上确认发送量（`projects.model_allowed`），不调用模型。自动更新只对已确认的项目生效，新内容超过单次上限时先问，出错后不自动重试。
 - 模型输出被截断（`stop_reason = max_tokens`）就作废，不能把半截结果写进库。
 - 模型只提议；编号、时间先后、每个事件只放一处，都由程序校验。
 - 人工改过（`edited = 1`）或删掉（`hidden = 1`）的内容，自动整理和重新整理都不能覆盖或加回来。
@@ -55,11 +55,12 @@ rg/config.py    数据目录、API Key
 rg/sources.py   发现会话目录，读会话元数据
 rg/parse.py     会话解析与瘦身
 rg/store.py     SQLite
-rg/model.py     模型调用与缓存
+rg/model.py     模型调用与缓存，报告 token 用量
+rg/usage.py     用量记录与汇总
 rg/organize.py  提取事件、归入研究线、fork、增量更新
 rg/server.py    本机 HTTP 服务
 rg/cli.py       rg start / organize / sessions
-web/src/        React 界面；layout.ts 是时间线布局（纯函数）
+web/src/        React 界面；layout.ts 是时间线布局，auto.ts 是自动更新的判断（纯函数）
 fixtures/transcripts/  合成会话样本
 tests/  web/tests/
 ```

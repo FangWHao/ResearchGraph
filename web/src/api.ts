@@ -1,10 +1,13 @@
 import type {
   AppState,
+  AutoSettings,
   Kind,
   Message,
+  Pending,
   ProjectData,
   SessionInfo,
   Status,
+  UsageReport,
   Workspace,
 } from './types';
 
@@ -30,6 +33,7 @@ export interface SettingsInput {
   api_key?: string;
   base_url?: string;
   model?: string;
+  auto?: Partial<AutoSettings>;
 }
 
 export interface NewProjectInput {
@@ -38,6 +42,12 @@ export interface NewProjectInput {
   follow?: boolean;
   sessions?: string[];
   start?: boolean;
+}
+
+export interface OrganizeOptions {
+  consent?: boolean;
+  full?: boolean;
+  auto?: boolean;
 }
 
 export interface EventPatch {
@@ -64,8 +74,10 @@ export const api = {
   deleteProject: (projectId: number) => request<{ ok: boolean }>('DELETE', `/api/projects/${projectId}`),
   project: (projectId: number) => request<ProjectData>('GET', `/api/projects/${projectId}`),
   status: (projectId: number) => request<Status>('GET', `/api/projects/${projectId}/status`),
-  organize: (projectId: number, options: { consent?: boolean; full?: boolean } = {}) =>
+  pending: (projectId: number) => request<Pending>('GET', `/api/projects/${projectId}/pending`),
+  organize: (projectId: number, options: OrganizeOptions = {}) =>
     request<Status>('POST', `/api/projects/${projectId}/organize`, options),
+  usage: () => request<UsageReport>('GET', '/api/usage'),
   patchEvent: (eventId: number, patch: EventPatch) =>
     request<{ ok: boolean }>('PATCH', `/api/events/${eventId}`, patch),
   messages: (eventId: number, context: number) =>

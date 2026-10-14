@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from rg.model import Meter, Usage
 from rg.organize import EVENT_SYSTEM
 from rg.store import Store
 
@@ -41,10 +42,17 @@ class FakeModel:
         self.calls: list[tuple[str, str]] = []
 
     def __call__(
-        self, system: str, user: str, schema: dict[str, Any], max_tokens: int
+        self,
+        system: str,
+        user: str,
+        schema: dict[str, Any],
+        max_tokens: int,
+        meter: Meter | None = None,
     ) -> dict[str, Any]:
         kind = "events" if system == EVENT_SYSTEM else "threads"
         self.calls.append((kind, user))
+        if meter is not None:
+            meter(Usage("fake", len(user), 10, cache_read_tokens=5))
         if kind == "events":
             return {
                 "events": [

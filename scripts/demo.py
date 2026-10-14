@@ -391,6 +391,44 @@ def build(store: Store, name: str) -> int:
     return int(project_id)
 
 
+def usage(store: Store, project_id: int) -> None:
+    """合成的模型用量：近三周断断续续地整理，给设置页的“用量”看。"""
+    rng = random.Random(11)
+    now = datetime.now(UTC)
+    rows = []
+    for days_ago in range(21):
+        if rng.random() < 0.3:
+            continue
+        for _ in range(rng.randint(1, 10)):
+            at = now - timedelta(days=days_ago, minutes=rng.randint(0, 600))
+            if days_ago == 0:
+                at = now - timedelta(minutes=rng.randint(1, 120))
+            stage = "threads" if rng.random() < 0.2 else "extract"
+            cached = rng.random() < 0.1
+            prompt = (
+                rng.randint(8_000, 30_000) if stage == "threads" else rng.randint(15_000, 60_000)
+            )
+            hit = rng.randint(0, prompt // 3)
+            rows.append(
+                (
+                    at.isoformat(timespec="seconds"),
+                    project_id,
+                    stage,
+                    "deepseek-flash",
+                    0 if cached else prompt - hit,
+                    0 if cached else rng.randint(300, 6_000),
+                    0 if cached else hit,
+                    1 if cached else 0,
+                )
+            )
+    with store.tx() as db:
+        db.executemany(
+            "INSERT INTO usage(at, project_id, stage, model, input_tokens, output_tokens, "
+            "cache_read_tokens, cached) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            sorted(rows),
+        )
+
+
 def main() -> None:
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("--data-dir", required=True)
@@ -401,6 +439,7 @@ def main() -> None:
     if not store.setting("sources"):
         store.set_setting("sources", [str(root)])  # 跳过首次引导页
     project_id = build(store, args.name)
+    usage(store, project_id)
     count = store.one("SELECT COUNT(*) AS n FROM events WHERE project_id = ?", (project_id,))
     print(f"项目 {project_id}：{count['n'] if count else 0} 个事件")
 

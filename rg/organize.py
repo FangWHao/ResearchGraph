@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+import time
 from collections import defaultdict
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -17,10 +18,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from rg.model import AuthError, Call, ModelError, Truncated
+from rg.model import AuthError, Call, ModelError, Truncated, metered
 from rg.parse import Message, NotASession, clip, parse_file
 from rg.sources import SessionInfo, normalize_cwd, scan, under
 from rg.store import Store, now
+from rg.usage import recorder
 
 KINDS = ("question", "attempt", "finding", "decision", "output")
 KIND_LABEL = {
@@ -136,10 +138,11 @@ Key = tuple[str, int, int, int]
 
 @dataclass
 class Progress:
-    phase: str = "idle"  # idle / sync / consent / extract / threads / done / error
+    phase: str = "idle"  # idle / sync / consent / confirm / extract / threads / done / error
     done: int = 0
     total: int = 0
     running: bool = False
+    auto: bool = False
     errors: list[str] = field(default_factory=list)
     estimate: dict[str, int] | None = None
     finished_at: str | None = None
@@ -164,6 +167,7 @@ class Progress:
                 "done": self.done,
                 "total": self.total,
                 "running": self.running,
+                "auto": self.auto,
                 "errors": list(self.errors[-5:]),
                 "estimate": self.estimate,
                 "finished_at": self.finished_at,
@@ -262,13 +266,17 @@ def sync_session(store: Store, row: dict[str, Any]) -> None:
     try:
         session = parse_file(path, row["tool"] or None)
     except (NotASession, OSError, UnicodeError):
+        # 记下大小和时间：文件不再变化时，自动更新不会反复来读它。
         with store.tx() as db:
-            db.execute("UPDATE sessions SET missing = 1 WHERE id = ?", (row["id"],))
+            db.execute(
+                "UPDATE sessions SET missing = 1, parsed_size = ?, parsed_mtime = ? WHERE id = ?",
+                (stat.st_size, stat.st_mtime, row["id"]),
+            )
         return
     messages = session.messages
     times = _fill_times([m.ts for m in messages], session.started_at)
     copied, fork_of = row["copied"], row["fork_of"]
-    if row["parsed_size"] < 0:
+    if row["parsed_size"] < 0 or row["message_count"] == 0:
         copied, fork_of = find_fork(store, row, session.forked_from, messages)
     upto = min(max(row["extracted_upto"], copied), len(messages))
     with store.tx() as db:
@@ -377,6 +385,42 @@ def estimate(store: Store, project_id: int) -> dict[str, int]:
             calls += len(ranges)
             chars += sum(sizes[row["extracted_upto"] :])
     return {"sessions": sessions, "chars": chars, "calls": calls + (1 if calls else 0)}
+
+
+def pending(store: Store, project_id: int, roots: list[str]) -> dict[str, Any]:
+    """有没有新内容。只看文件大小和修改时间，不解析会话，可以频繁调用。
+
+    changed：已导入的会话文件变了；new：跟随的工作目录里出现了新会话；
+    chars：已经读入但还没提取的字数（比如上次整理中途出错）；
+    quiet：最近一次文件改动距今的秒数，没有改动时为 None。
+    """
+    project = store.one("SELECT * FROM projects WHERE id = ?", (project_id,))
+    if project is None:
+        raise KeyError(project_id)
+    rows = store.q(
+        "SELECT path, parsed_size, parsed_mtime FROM sessions WHERE project_id = ?", (project_id,)
+    )
+    known = {r["path"] for r in rows}
+    changed, new, latest = 0, 0, 0.0
+    for row in rows:
+        try:
+            stat = Path(row["path"]).stat()
+        except OSError:
+            continue
+        if (stat.st_size, stat.st_mtime) != (row["parsed_size"], row["parsed_mtime"]):
+            changed += 1
+            latest = max(latest, stat.st_mtime)
+    if project["follow"] and project["workspace"]:
+        for info in scan(store, roots):
+            if info.path not in known and under(info.cwd, project["workspace"]):
+                new += 1
+                latest = max(latest, info.mtime)
+    return {
+        "changed": changed,
+        "new": new,
+        "chars": estimate(store, project_id)["chars"],
+        "quiet": max(0, round(time.time() - latest)) if latest else None,
+    }
 
 
 def render_chunk(session: dict[str, Any], messages: list[dict[str, Any]], a: int, b: int) -> str:
@@ -854,7 +898,9 @@ def organize(
     roots: list[str],
     progress: Progress,
     full: bool = False,
+    limit: int | None = None,
 ) -> None:
+    """limit：自动更新的单次上限（字数）。新内容超过它就停在 confirm，等用户点头。"""
     progress.set("sync")
     if full:
         reset(store, project_id)
@@ -864,13 +910,16 @@ def organize(
     if not project or not project["model_allowed"]:
         progress.set("consent")
         return
+    if limit is not None and progress.estimate["chars"] > limit:
+        progress.set("confirm")
+        return
     if call is None:
         progress.error("还没有设置 API Key")
         progress.set("error")
         return
     try:
-        extract(store, call, project_id, progress)
-        place(store, call, project_id, progress)
+        extract(store, metered(call, recorder(store, project_id, "extract")), project_id, progress)
+        place(store, metered(call, recorder(store, project_id, "threads")), project_id, progress)
     except AuthError as error:
         progress.error(f"{error}。请在设置里检测 Key，改好后点“重试”，已整理的部分不会丢")
         progress.estimate = estimate(store, project_id)
@@ -904,20 +953,24 @@ class Jobs:
             progress = self.progress.get(project_id)
         return progress.view() if progress else Progress().view()
 
-    def start(self, project_id: int, full: bool = False) -> bool:
+    def start(
+        self, project_id: int, full: bool = False, auto: bool = False, limit: int | None = None
+    ) -> bool:
         with self.lock:
             current = self.progress.get(project_id)
             if current and current.running:
                 return False
-            progress = Progress(running=True)
+            progress = Progress(running=True, auto=auto)
             self.progress[project_id] = progress
-        thread = threading.Thread(target=self._run, args=(project_id, full, progress), daemon=True)
+        thread = threading.Thread(
+            target=self._run, args=(project_id, full, limit, progress), daemon=True
+        )
         thread.start()
         return True
 
-    def _run(self, project_id: int, full: bool, progress: Progress) -> None:
+    def _run(self, project_id: int, full: bool, limit: int | None, progress: Progress) -> None:
         try:
-            organize(self.store, self.model(), project_id, self.roots(), progress, full)
+            organize(self.store, self.model(), project_id, self.roots(), progress, full, limit)
         except Exception as error:  # 后台任务的任何失败都要显示给用户，而不是静默结束。
             progress.error(f"整理中断：{type(error).__name__}: {error}")
             progress.set("error")

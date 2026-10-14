@@ -6,13 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from rg.model import AuthError, ModelError, Truncated
+from rg.model import AuthError, ModelError, Truncated, cached
 from rg.organize import (
     EVENT_SYSTEM,
     Progress,
     add_sessions,
     chunk_ranges,
     organize,
+    pending,
     validate_events,
 )
 from rg.sources import read_info
@@ -271,7 +272,7 @@ def test_full_reorganize_keeps_manual_edits_and_deletions(store, copy_fixture):
 def test_truncated_output_splits_the_chunk(store, copy_fixture):
     base = FakeModel(batch_story)
 
-    def picky(system, user, schema, tokens):
+    def picky(system, user, schema, tokens, meter=None):
         if system == EVENT_SYSTEM and len(re.findall(r"^#\d+ \[", user, re.M)) > 2:
             raise Truncated("太长")
         return base(system, user, schema, tokens)
@@ -285,7 +286,7 @@ def test_truncated_output_splits_the_chunk(store, copy_fixture):
 def test_model_failure_keeps_progress_for_retry(store, copy_fixture):
     calls = {"n": 0}
 
-    def flaky(system, user, schema, tokens):
+    def flaky(system, user, schema, tokens, meter=None):
         if system == EVENT_SYSTEM and "Harmony 的结果" in user:
             calls["n"] += 1
             raise ModelError("HTTP 500")
@@ -314,7 +315,7 @@ def test_model_failure_keeps_progress_for_retry(store, copy_fixture):
 def test_invalid_key_stops_everything_with_one_message(store, copy_fixture):
     calls = []
 
-    def unauthorized(system, user, schema, tokens):
+    def unauthorized(system, user, schema, tokens, meter=None):
         calls.append(system)
         raise AuthError("API Key 无效或没有权限（HTTP 401）")
 
@@ -420,6 +421,83 @@ def test_deleted_session_file_keeps_imported_messages(store, copy_fixture):
     row = store.one("SELECT missing, message_count FROM sessions")
     assert row == {"missing": 1, "message_count": 5}
     assert store.one("SELECT COUNT(*) AS n FROM messages")["n"] == 5
+
+
+def usage_rows(store: Store) -> list[dict]:
+    return store.q("SELECT project_id, stage, input_tokens, cached FROM usage ORDER BY id")
+
+
+def test_every_model_call_is_metered_by_project_and_stage(store, copy_fixture):
+    pid = new_project(store, [copy_fixture("claude/research-synthetic.jsonl")])
+    model = cached(store, FakeModel(batch_story), "fake")
+    assert run(store, model, pid).phase == "done"
+    rows = usage_rows(store)
+    assert {r["stage"] for r in rows} == {"extract", "threads"}
+    assert all(r["project_id"] == pid and r["cached"] == 0 and r["input_tokens"] for r in rows)
+
+    # 重新整理时，提取请求和上次一模一样，命中本地缓存：记一笔，但不算 token。
+    assert run(store, model, pid, full=True).phase == "done"
+    again = [r for r in usage_rows(store)[len(rows) :] if r["stage"] == "extract"]
+    assert again and all(r["cached"] == 1 and r["input_tokens"] == 0 for r in again)
+
+
+def test_auto_update_over_the_limit_waits_for_the_user(store, copy_fixture):
+    pid = new_project(store, [copy_fixture("claude/research-synthetic.jsonl")])
+    model = FakeModel(batch_story)
+    progress = Progress()
+    organize(store, model, pid, [], progress, limit=100)
+    assert progress.phase == "confirm" and not model.calls
+    assert progress.estimate and progress.estimate["chars"] > 100
+    assert store.one("SELECT extracted_upto FROM sessions")["extracted_upto"] == 0
+    progress = Progress()
+    organize(store, model, pid, [], progress, limit=1_000_000)
+    assert progress.phase == "done" and model.calls
+
+
+def test_pending_sees_new_content_without_parsing(store, tmp_path):
+    root = tmp_path / "sessions"
+    root.mkdir()
+    first = root / "claude.jsonl"
+    first.write_bytes(CLAUDE.read_bytes())
+    with store.tx() as db:
+        pid = db.execute(
+            "INSERT INTO projects(name, workspace, follow, model_allowed, created_at) "
+            "VALUES ('p', '/workspace/demo', 1, 1, 'now')"
+        ).lastrowid
+    roots = [str(root)]
+    found = pending(store, pid, roots)
+    assert (found["changed"], found["new"]) == (0, 1)  # 跟随的工作目录里出现了会话
+    organize(store, FakeModel(batch_story), pid, roots, Progress())
+    assert pending(store, pid, roots) == {"changed": 0, "new": 0, "chars": 0, "quiet": None}
+
+    with first.open("a", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "type": "user",
+                    "sessionId": "synthetic-claude-research",
+                    "timestamp": "2026-10-03T08:00:00Z",
+                    "message": {"content": "再补一个对照。"},
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+    found = pending(store, pid, roots)
+    assert found["changed"] == 1 and found["quiet"] is not None and found["quiet"] < 60
+    assert store.one("SELECT message_count FROM sessions")["message_count"] == 9  # 没有解析
+
+
+def test_unreadable_session_does_not_stay_pending(store, copy_fixture):
+    path = copy_fixture("claude/research-synthetic.jsonl")
+    pid = new_project(store, [path])
+    run(store, FakeModel(batch_story), pid)
+    path.write_text("这不是会话\n" * 30, encoding="utf-8")
+    assert pending(store, pid, [])["changed"] == 1
+    run(store, FakeModel(batch_story), pid)
+    assert store.one("SELECT missing FROM sessions")["missing"] == 1
+    # 否则自动更新会每隔几十秒重读一次这个文件。
+    assert pending(store, pid, [])["changed"] == 0
 
 
 def test_validate_events_drops_refs_outside_chunk_and_bad_kinds():

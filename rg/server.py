@@ -20,12 +20,16 @@ import httpx
 
 from rg.config import DB_NAME, DEFAULT_BASE_URL, DEFAULT_MODEL, clean_key, read_key, save_key
 from rg.model import Call, Model, ModelError, cached
-from rg.organize import KINDS, Jobs, add_sessions, cleanup, estimate, fork_point
+from rg.organize import KINDS, Jobs, add_sessions, cleanup, estimate, fork_point, pending
 from rg.parse import NotASession
 from rg.sources import default_dirs, read_info, scan, under, workspaces
 from rg.store import Store, now
+from rg.usage import report
 
 MAX_UPLOAD = 1024 * 1024 * 1024
+# 自动更新：打开的项目在会话安静 quiet 分钟后整理新内容；新内容超过 limit 字先问（None 表示不限）；
+# 进入项目时发现离开期间的新内容，on_open = ask 先问，auto 直接更新。
+AUTO_DEFAULTS: dict[str, Any] = {"enabled": True, "quiet": 3, "limit": 200_000, "on_open": "ask"}
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
@@ -64,6 +68,10 @@ class App:
 
     def roots(self) -> list[str]:
         return list(self.store.setting("sources", []))
+
+    def auto_settings(self) -> dict[str, Any]:
+        saved = self.store.setting("auto", {})
+        return {**AUTO_DEFAULTS, **(saved if isinstance(saved, dict) else {})}
 
     def model_settings(self) -> dict[str, str]:
         return {
@@ -154,14 +162,43 @@ def get_state(app: App, m: re.Match[str], body: dict[str, Any], query: dict[str,
         "sources": app.roots(),
         "detected": default_dirs(),
         "model": {**app.model_settings(), "has_key": read_key(app.root) is not None},
+        "auto": app.auto_settings(),
         "projects": projects,
     }
+
+
+def _auto(value: Any, current: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ApiError(400, "auto 必须是对象")
+    merged = dict(current)
+    if "enabled" in value:
+        if not isinstance(value["enabled"], bool):
+            raise ApiError(400, "enabled 必须是 true 或 false")
+        merged["enabled"] = value["enabled"]
+    if "quiet" in value:
+        quiet = value["quiet"]
+        if not isinstance(quiet, int) or isinstance(quiet, bool) or not 1 <= quiet <= 120:
+            raise ApiError(400, "quiet 必须是 1 到 120 分钟")
+        merged["quiet"] = quiet
+    if "limit" in value:
+        limit = value["limit"]
+        if limit is not None and (
+            not isinstance(limit, int) or isinstance(limit, bool) or limit < 1000
+        ):
+            raise ApiError(400, "limit 必须是不少于 1000 的字数，或 null 表示不限")
+        merged["limit"] = limit
+    if "on_open" in value:
+        if value["on_open"] not in ("ask", "auto"):
+            raise ApiError(400, "on_open 只能是 ask 或 auto")
+        merged["on_open"] = value["on_open"]
+    return merged
 
 
 @route("POST", "/api/settings")
 def post_settings(
     app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
 ) -> Any:
+    auto = _auto(body["auto"], app.auto_settings()) if "auto" in body else None
     if "sources" in body:
         sources = body["sources"]
         if not isinstance(sources, list) or not all(isinstance(s, str) for s in sources):
@@ -184,6 +221,8 @@ def post_settings(
             save_key(app.root, key)
         except ValueError as error:
             raise ApiError(400, str(error)) from None
+    if auto is not None:
+        app.store.set_setting("auto", auto)
     return get_state(app, m, {}, {})
 
 
@@ -334,18 +373,38 @@ def get_status(
     return status(app, int(m[1]))
 
 
+@route("GET", r"/api/projects/(\d+)/pending")
+def get_pending(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    app.project(int(m[1]))
+    return pending(app.store, int(m[1]), app.roots())
+
+
 @route("POST", r"/api/projects/(\d+)/organize")
 def post_organize(
     app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
 ) -> Any:
     project_id = int(m[1])
-    app.project(project_id)
+    project = app.project(project_id)
+    if body.get("auto") is True:
+        # 自动更新只用于已经同意过发送的项目，并受单次上限约束；不能顺带同意或重新整理。
+        if not project["model_allowed"]:
+            raise ApiError(409, "这个项目还没有同意发送给模型")
+        if not app.jobs.start(project_id, auto=True, limit=app.auto_settings()["limit"]):
+            raise ApiError(409, "这个项目正在整理")
+        return status(app, project_id)
     if body.get("consent") is True:
         with app.store.tx() as db:
             db.execute("UPDATE projects SET model_allowed = 1 WHERE id = ?", (project_id,))
     if not app.jobs.start(project_id, full=body.get("full") is True):
         raise ApiError(409, "这个项目正在整理")
     return status(app, project_id)
+
+
+@route("GET", "/api/usage")
+def get_usage(app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]) -> Any:
+    return report(app.store)
 
 
 @route("PATCH", r"/api/events/(\d+)")

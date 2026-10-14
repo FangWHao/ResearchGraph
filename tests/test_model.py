@@ -5,7 +5,7 @@ import json
 import httpx
 import pytest
 
-from rg.model import AuthError, Model, ModelError
+from rg.model import AuthError, Model, ModelError, Truncated, Usage
 
 
 def model(handler, retries: int = 2) -> tuple[Model, list[httpx.Request]]:
@@ -51,3 +51,17 @@ def test_auth_failure_is_not_retried(monkeypatch):
     with pytest.raises(AuthError):
         client("s", "u", {"type": "object"}, 10)
     assert len(seen) == 1
+
+
+def test_truncated_reply_still_reports_tokens():
+    reply = {
+        "model": "m1-2026",
+        "stop_reason": "max_tokens",
+        "content": [],
+        "usage": {"input_tokens": 1200, "output_tokens": 4000, "cache_read_input_tokens": 300},
+    }
+    client, _ = model(lambda r: httpx.Response(200, json=reply))
+    seen: list[Usage | None] = []
+    with pytest.raises(Truncated):
+        client("s", "u", {"type": "object"}, 4000, seen.append)
+    assert seen == [Usage("m1-2026", 1200, 4000, 300, 0)]

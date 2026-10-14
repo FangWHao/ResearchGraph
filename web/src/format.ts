@@ -43,3 +43,14 @@ export function fmtSize(bytes: number): string {
 export function basename(path: string): string {
   return path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path;
 }
+
+export function fmtTokens(n: number): string {
+  if (n < 10_000) return n.toLocaleString('zh-CN');
+  if (n < 1_000_000) return `${(n / 10_000).toFixed(1)} 万`;
+  if (n < 100_000_000) return `${Math.round(n / 10_000).toLocaleString('zh-CN')} 万`;
+  return `${(n / 100_000_000).toFixed(2)} 亿`;
+}
+
+export function fmtWan(chars: number): string {
+  return chars >= 10_000 ? `${chars / 10_000} 万字` : `${chars} 字`;
+}

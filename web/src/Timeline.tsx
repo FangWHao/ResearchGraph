@@ -30,9 +30,11 @@ interface Props {
   onSelect: (selection: Selection) => void;
   // n 变化时滚动：latest 为真滚到最新的事件，否则回到左上角
   jump: { n: number; latest: boolean };
+  // 刚才更新新增的事件，加个标记
+  fresh: Set<number>;
 }
 
-export function Timeline({ data, view, align, pxPerHour, selection, onSelect, jump }: Props) {
+export function Timeline({ data, view, align, pxPerHour, selection, onSelect, jump, fresh }: Props) {
   const layout = useMemo(() => computeLayout(data, { view, align, pxPerHour }), [data, view, align, pxPerHour]);
   const scroller = useRef<HTMLDivElement>(null);
   const labels = useRef<HTMLDivElement>(null);
@@ -187,6 +189,7 @@ export function Timeline({ data, view, align, pxPerHour, selection, onSelect, ju
                 key={node.event.id}
                 node={node}
                 cross={crossLinked.has(node.event.id)}
+                fresh={fresh.has(node.event.id)}
                 on={node.event.id === selectedEvent}
                 onSelect={onSelect}
                 onHover={setHovered}
@@ -195,6 +198,7 @@ export function Timeline({ data, view, align, pxPerHour, selection, onSelect, ju
               <Dot
                 key={node.event.id}
                 node={node}
+                fresh={fresh.has(node.event.id)}
                 on={node.event.id === selectedEvent}
                 onSelect={onSelect}
                 onHover={setHovered}
@@ -213,6 +217,7 @@ interface NodeProps {
   node: PlacedNode;
   on: boolean;
   cross?: boolean;
+  fresh?: boolean;
   onSelect: (selection: Selection) => void;
   onHover: (id: number | null) => void;
 }
@@ -232,7 +237,7 @@ function handlers({ node, onSelect, onHover }: NodeProps) {
 }
 
 function Card(props: NodeProps) {
-  const { node, on, cross } = props;
+  const { node, on, cross, fresh } = props;
   const { event } = node;
   return (
     <button
@@ -245,6 +250,7 @@ function Card(props: NodeProps) {
       <span className="tl-card-meta">
         <KindGlyph kind={event.kind} />
         <span>{KIND_LABEL[event.kind]}</span>
+        {fresh ? <span className="tl-new">新</span> : null}
         <span className="tl-card-time">{fmtTime(event.ts)}</span>
         {cross ? (
           <span className="tl-card-flag" title="和别的泳道有分出或汇入关系，选中后显示连线">
@@ -263,12 +269,12 @@ function Card(props: NodeProps) {
 }
 
 function Dot(props: NodeProps) {
-  const { node, on } = props;
+  const { node, on, fresh } = props;
   const { event } = node;
   return (
     <button
       type="button"
-      className={`tl-dot${on ? ' on' : ''}`}
+      className={`tl-dot${on ? ' on' : ''}${fresh ? ' fresh' : ''}`}
       style={{ left: node.x - DOT_HIT / 2, top: node.y - DOT_HIT / 2 }}
       aria-label={`${KIND_LABEL[event.kind]}：${event.title}`}
       {...handlers(props)}

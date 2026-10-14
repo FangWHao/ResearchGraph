@@ -34,10 +34,20 @@ export interface ProjectSummary {
   events?: number;
 }
 
+// 自动更新：打开的项目在会话安静 quiet 分钟后整理新内容；新内容超过 limit 字先问（null 不限）；
+// 进入项目时发现离开期间的新内容，on_open = ask 先问，auto 直接更新。
+export interface AutoSettings {
+  enabled: boolean;
+  quiet: number;
+  limit: number | null;
+  on_open: 'ask' | 'auto';
+}
+
 export interface AppState {
   sources: string[];
   detected: DetectedDir[];
   model: ModelSettings;
+  auto: AutoSettings;
   projects: ProjectSummary[];
 }
 
@@ -108,7 +118,7 @@ export interface TimelineEvent {
   edited: number;
 }
 
-export type Phase = 'idle' | 'sync' | 'consent' | 'extract' | 'threads' | 'done' | 'error';
+export type Phase = 'idle' | 'sync' | 'consent' | 'confirm' | 'extract' | 'threads' | 'done' | 'error';
 
 export interface Estimate {
   sessions: number;
@@ -121,6 +131,7 @@ export interface Status {
   done: number;
   total: number;
   running: boolean;
+  auto: boolean;
   errors: string[];
   estimate: Estimate | null;
   finished_at: string | null;
@@ -141,4 +152,28 @@ export interface Message {
   ts: string | null;
   text: string;
   ref: boolean;
+}
+
+// 只看文件大小和修改时间得到的“有没有新内容”
+export interface Pending {
+  changed: number;
+  new: number;
+  chars: number;
+  quiet: number | null;
+}
+
+export interface UsageBucket {
+  calls: number;
+  cached: number;
+  input: number;
+  output: number;
+  cache_read: number;
+}
+
+export interface UsageReport {
+  since: string | null;
+  periods: Record<'today' | 'week' | 'month' | 'all', UsageBucket>;
+  days: (UsageBucket & { day: string })[];
+  projects: (UsageBucket & { id: number | null; name: string | null; last: string })[];
+  stages: (UsageBucket & { stage: 'extract' | 'threads' })[];
 }

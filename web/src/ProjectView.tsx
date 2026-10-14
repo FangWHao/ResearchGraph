@@ -1,17 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api } from './api';
-import { fmtChars, fmtTime } from './format';
+import { api, type OrganizeOptions } from './api';
+import { autoState, describePending, hasNew, POLL_MS, type AutoState } from './auto';
+import { Segmented } from './Controls';
+import { fmtChars, fmtTime, fmtWan } from './format';
 import { Icon, KindGlyph, Logo } from './Icons';
 import { defaultZoom, rowNeighbors, ZOOM_LEVELS, type Align, type ViewMode } from './layout';
 import { EventPanel, LanePanel } from './Panel';
 import { Timeline, type Selection } from './Timeline';
-import type { AppState, ProjectData, ProjectSummary, Status } from './types';
+import type { AppState, Pending, ProjectData, ProjectSummary, Status } from './types';
 import { KIND_LABEL, KINDS } from './types';
+
+// 这次打开页面期间点过“稍后”的项目：切到别的项目或设置再回来，不再追着问
+const dismissed = new Set<number>();
+const NO_EVENTS = new Set<number>();
 
 const PHASE: Record<Status['phase'], string> = {
   idle: '',
   sync: '读取会话',
   consent: '等待确认',
+  confirm: '等你确认',
   extract: '提取关键步骤',
   threads: '整理研究线',
   done: '整理完成',
@@ -61,15 +68,43 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onDel
   const [selection, setSelection] = useState<Selection>(null);
   const [jump, setJump] = useState({ n: 0, latest: false });
   const [error, setError] = useState('');
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [paused, setPaused] = useState(() => dismissed.has(project.id));
+  const [fresh, setFresh] = useState<Set<number>>(NO_EVENTS);
+  const [notice, setNotice] = useState<{ added: number[]; auto: boolean } | null>(null);
+  const known = useRef<Set<number> | null>(null); // 上次加载时已有的事件
+  const markNew = useRef(false); // 这次整理结束后要标出新增的事件
 
   const load = useCallback(async () => {
     try {
       const next = await api.project(project.id);
+      const before = known.current;
+      known.current = new Set(next.events.map((e) => e.id));
+      if (markNew.current && !next.status.running) {
+        markNew.current = false;
+        // 第一次整理时全部都是新的，不用标
+        const added = before && before.size ? next.events.filter((e) => !before.has(e.id)).map((e) => e.id) : [];
+        if (added.length) {
+          setFresh(new Set(added));
+          setNotice({ added, auto: next.status.auto });
+        }
+      }
       setData(next);
       setStatus(next.status);
       setError('');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [project.id]);
+
+  const checkPending = useCallback(async () => {
+    try {
+      const next = await api.pending(project.id);
+      setPending(next);
+      return next;
+    } catch {
+      return null; // 下一次再看
     }
   }, [project.id]);
 
@@ -83,13 +118,100 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onDel
       try {
         const next = await api.status(project.id);
         setStatus(next);
-        if (!next.running) void load();
+        if (!next.running) {
+          void load();
+          void checkPending();
+        }
       } catch {
         // 下一次轮询再试
       }
     }, 1500);
     return () => window.clearInterval(timer);
-  }, [status?.running, project.id, load]);
+  }, [status?.running, project.id, load, checkPending]);
+
+  const organize = async (options: OrganizeOptions = {}) => {
+    if (!options.auto) {
+      // 用户自己点了更新：之前的“稍后”作废，自动更新恢复
+      dismissed.delete(project.id);
+      setPaused(false);
+      setAsking(false);
+    }
+    markNew.current = !options.full;
+    try {
+      const next = await api.organize(project.id, options);
+      setStatus(next);
+      if (!next.running) {
+        // 任务在请求返回前就做完了（比如没有新消息），轮询不会启动，这里直接刷新
+        void load();
+        void checkPending();
+      }
+    } catch (e) {
+      markNew.current = false;
+      // 自动更新失败（比如另一个窗口已经在整理）不打断用户，下一轮再看
+      if (!options.auto) setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const later = () => {
+    dismissed.add(project.id);
+    setPaused(true);
+    setAsking(false);
+  };
+
+  const allowed = !!data?.project.model_allowed;
+  const auto: AutoState = autoState({
+    settings: state.auto,
+    allowed,
+    hasKey: state.model.has_key,
+    paused,
+    asking,
+    status,
+    pending,
+  });
+
+  // 进入项目时：离开期间有新内容，按设置先问或直接更新
+  const entered = useRef(false);
+  useEffect(() => {
+    if (!data || entered.current) return;
+    entered.current = true;
+    void (async () => {
+      const found = await checkPending();
+      const hold = data.status.running || ['consent', 'confirm', 'error'].includes(data.status.phase);
+      if (!found || !hasNew(found) || !data.project.model_allowed || hold || dismissed.has(project.id)) return;
+      if (state.auto.on_open === 'auto' && state.model.has_key) void organize({ auto: true });
+      else setAsking(true);
+    })();
+  }, [data]);
+
+  // 打开期间：定时看有没有新内容，会话安静够久就自动更新
+  const tick = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => {
+    tick.current = async () => {
+      if (!entered.current || status?.running) return;
+      const found = await checkPending();
+      const next = autoState({
+        settings: state.auto,
+        allowed,
+        hasKey: state.model.has_key,
+        paused,
+        asking,
+        status,
+        pending: found,
+      });
+      if (next.kind === 'go') await organize({ auto: true });
+    };
+  });
+  useEffect(() => {
+    const timer = window.setInterval(() => void tick.current(), POLL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void tick.current();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
 
   // 打开项目、切换视图或对齐方式时：紧凑模式回到起点，真实时间模式滚到最新
   useEffect(() => {
@@ -137,14 +259,6 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onDel
     return () => window.removeEventListener('keydown', onKey);
   }, [selection, data, view, align, stepZoom]);
 
-  const organize = async (options: { consent?: boolean; full?: boolean } = {}) => {
-    try {
-      setStatus(await api.organize(project.id, options));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  };
-
   const remove = async () => {
     if (!window.confirm(`删除项目「${project.name}」？只删除整理结果，不会动原始会话文件。`)) return;
     try {
@@ -159,6 +273,13 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onDel
   const selectedEvent = selection?.type === 'event' ? data?.events.find((e) => e.id === selection.id) ?? null : null;
   const selectEvent = (id: number) => setSelection({ type: 'event', id });
   const progress = running && status?.total ? Math.round((status.done / status.total) * 100) : null;
+  const showFresh = () => {
+    if (!notice || !data) return;
+    const added = new Set(notice.added);
+    const newest = data.events.filter((e) => added.has(e.id)).sort((a, b) => (a.ts ?? '').localeCompare(b.ts ?? '')).at(-1);
+    if (newest) selectEvent(newest.id);
+    setNotice(null); // 新事件上还留着“新”字标记
+  };
 
   return (
     <div className="app">
@@ -208,7 +329,7 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onDel
           </div>
         ) : null}
         <span className="spacer" />
-        <StatusPill status={status} data={data} />
+        <StatusPill status={status} data={data} pending={pending} auto={auto} quiet={state.auto.quiet} />
         <button type="button" className="btn primary" disabled={running} onClick={() => organize()}>
           <Icon name="refresh" size={15} />
           {running ? '整理中' : '更新'}
@@ -235,8 +356,12 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onDel
       <Banner
         status={status}
         model={state.model}
+        pending={asking ? pending : null}
+        limit={state.auto.limit}
+        paused={paused}
         onConsent={() => organize({ consent: true })}
         onRetry={() => organize()}
+        onLater={later}
         onSettings={onSettings}
       />
 
@@ -273,6 +398,7 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onDel
               selection={selection}
               onSelect={setSelection}
               jump={jump}
+              fresh={fresh}
             />
             {selectedEvent ? (
               <EventPanel data={data} event={selectedEvent} onChanged={load} onClose={() => setSelection(null)} onSelectEvent={selectEvent} />
@@ -283,6 +409,21 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onDel
           </>
         ) : null}
       </main>
+
+      {notice ? (
+        <div className="toast" role="status">
+          <Icon name="check" size={15} />
+          <span>
+            {notice.auto ? '自动更新' : '更新'}完成，新增 {notice.added.length} 个事件
+          </span>
+          <button type="button" className="btn small" onClick={showFresh}>
+            查看
+          </button>
+          <button type="button" className="icon-btn" aria-label="关闭" onClick={() => setNotice(null)}>
+            <Icon name="close" size={14} />
+          </button>
+        </div>
+      ) : null}
 
       <footer className="footbar">
         <div className="legend" aria-label="图例">
@@ -305,29 +446,6 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onDel
           <Icon name="toEnd" size={14} />
         </button>
       </footer>
-    </div>
-  );
-}
-
-function Segmented<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: T;
-  options: [T, string][];
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className="segmented" role="radiogroup" aria-label={label}>
-      <span className="segmented-label">{label}</span>
-      {options.map(([key, text]) => (
-        <button key={key} type="button" role="radio" aria-checked={value === key} className={value === key ? 'on' : ''} onClick={() => onChange(key)}>
-          {text}
-        </button>
-      ))}
     </div>
   );
 }
@@ -380,12 +498,25 @@ function Menu({ items }: { items: MenuItem[] }) {
   );
 }
 
-function StatusPill({ status, data }: { status: Status | null; data: ProjectData | null }) {
+function StatusPill({
+  status,
+  data,
+  pending,
+  auto,
+  quiet,
+}: {
+  status: Status | null;
+  data: ProjectData | null;
+  pending: Pending | null;
+  auto: AutoState;
+  quiet: number;
+}) {
   if (!status || !data) return null;
   if (status.running) {
     return (
       <span className="pill">
         <span className="spinner" />
+        {status.auto ? '自动更新 · ' : ''}
         {PHASE[status.phase]}
         {status.total ? <span className="muted"> {status.done}/{status.total}</span> : null}
       </span>
@@ -399,20 +530,36 @@ function StatusPill({ status, data }: { status: Status | null; data: ProjectData
       </span>
     );
   }
-  if (status.phase === 'consent') return <span className="pill">等待确认</span>;
-  const pending = status.estimate && status.estimate.calls > 0 && data.project.model_allowed;
+  const paused = auto.kind === 'blocked' && auto.why === 'paused';
+  if (status.phase === 'consent' || (status.phase === 'confirm' && !paused)) return <span className="pill">等待确认</span>;
+  const leftover = !!(status.estimate && status.estimate.calls > 0 && data.project.model_allowed);
+  if (hasNew(pending) || leftover) {
+    let note = '';
+    let title = '点“更新”整理新增的部分';
+    if (auto.kind === 'waiting') {
+      note = ` · 约 ${Math.max(1, Math.ceil(auto.seconds / 60))} 分钟后自动更新`;
+      title = `会话还在进行，安静 ${quiet} 分钟后自动整理`;
+    } else if (auto.kind === 'go') {
+      note = ' · 马上自动更新';
+    } else if (paused) {
+      note = ' · 自动更新已暂停';
+      title = '点“更新”整理新内容，并恢复自动更新';
+    }
+    return (
+      <span className="pill" title={title}>
+        <span className="dot-new" />
+        有新内容{note}
+      </span>
+    );
+  }
+  const autoNote = auto.kind === 'off' ? '自动更新已关闭' : '自动更新已开启';
   return (
-    <span className="pill" title={data.project.organized_at ? `上次整理 ${fmtTime(data.project.organized_at)}` : ''}>
-      {pending ? (
-        <>
-          <span className="dot-new" />有新内容 {fmtChars(status.estimate!.chars)}
-        </>
-      ) : (
-        <>
-          <Icon name="check" size={13} />
-          {data.project.organized_at ? `已整理 ${fmtTime(data.project.organized_at)}` : '还没有整理过'}
-        </>
-      )}
+    <span
+      className="pill"
+      title={`${data.project.organized_at ? `上次整理 ${fmtTime(data.project.organized_at)} · ` : ''}${autoNote}`}
+    >
+      <Icon name="check" size={13} />
+      {data.project.organized_at ? `已整理 ${fmtTime(data.project.organized_at)}` : '还没有整理过'}
     </span>
   );
 }
@@ -420,14 +567,22 @@ function StatusPill({ status, data }: { status: Status | null; data: ProjectData
 function Banner({
   status,
   model,
+  pending,
+  limit,
+  paused,
   onConsent,
   onRetry,
+  onLater,
   onSettings,
 }: {
   status: Status | null;
   model: AppState['model'];
+  pending: Pending | null; // 进入项目时发现的新内容；没有要问的就是 null
+  limit: number | null;
+  paused: boolean;
   onConsent: () => void;
   onRetry: () => void;
+  onLater: () => void;
   onSettings: () => void;
 }) {
   if (!status || status.running) return null;
@@ -439,7 +594,7 @@ function Banner({
           <strong>第一次整理这个项目</strong>
           <span>
             会把 {estimate.sessions} 个会话中{fmtChars(estimate.chars)}的文字发送给 {model.model}，大约调用 {estimate.calls}{' '}
-            次。之后点“更新”只发送新增的内容。
+            次。之后只发送新增的内容。
           </span>
         </div>
         {model.has_key ? (
@@ -471,6 +626,42 @@ function Banner({
         </button>
         <button type="button" className="btn primary" onClick={onRetry}>
           重试
+        </button>
+      </div>
+    );
+  }
+  if (status.phase === 'confirm' && estimate && !paused) {
+    return (
+      <div className="banner">
+        <div className="banner-text">
+          <strong>新内容比较多，先问一下</strong>
+          <span>
+            这次要把{fmtChars(estimate.chars)}发送给 {model.model}，超过了自动更新的单次上限
+            {limit ? `（${fmtWan(limit)}）` : ''}。上限可以在设置里改。
+          </span>
+        </div>
+        <button type="button" className="btn" onClick={onLater}>
+          稍后
+        </button>
+        <button type="button" className="btn primary" onClick={onRetry}>
+          现在更新
+        </button>
+      </div>
+    );
+  }
+  if (pending) {
+    return (
+      <div className="banner">
+        <span className="dot-new" />
+        <div className="banner-text">
+          <strong>离开期间有新内容</strong>
+          <span>{describePending(pending)}。要现在整理吗？只发送新增的部分。</span>
+        </div>
+        <button type="button" className="btn" onClick={onLater}>
+          稍后
+        </button>
+        <button type="button" className="btn primary" onClick={onRetry}>
+          更新
         </button>
       </div>
     );

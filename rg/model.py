@@ -6,17 +6,41 @@ import hashlib
 import json
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, NamedTuple, Protocol
 from urllib.parse import urlparse
 
 import httpx
 
 from rg.store import Store, now
 
-# (system, user, schema, max_tokens) -> 工具输入
-Call = Callable[[str, str, dict[str, Any], int], dict[str, Any]]
-
 TOOL_NAME = "submit"
+
+
+class Usage(NamedTuple):
+    """一次请求用掉的 token。输入按 Anthropic 的口径分成未命中、命中缓存、写入缓存三部分。"""
+
+    model: str
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+
+
+# 每次调用后报告用量；None 表示命中了本地缓存，没有发请求。
+Meter = Callable[[Usage | None], None]
+
+
+class Call(Protocol):
+    """(system, user, schema, max_tokens) -> 工具输入。"""
+
+    def __call__(
+        self,
+        system: str,
+        user: str,
+        schema: dict[str, Any],
+        max_tokens: int,
+        meter: Meter | None = None,
+    ) -> dict[str, Any]: ...
 
 
 class ModelError(RuntimeError):
@@ -34,6 +58,23 @@ class AuthError(ModelError):
 def _auth_error(status: int) -> AuthError:
     # 不带返回原文：有的接口会在 401 的说明里回显部分 Key。
     return AuthError(f"API Key 无效或没有权限（HTTP {status}）")
+
+
+def read_usage(data: dict[str, Any], fallback_model: str) -> Usage:
+    raw = data.get("usage")
+    raw = raw if isinstance(raw, dict) else {}
+
+    def count(name: str) -> int:
+        value = raw.get(name)
+        return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+
+    return Usage(
+        str(data.get("model") or fallback_model),
+        count("input_tokens"),
+        count("output_tokens"),
+        count("cache_read_input_tokens"),
+        count("cache_creation_input_tokens"),
+    )
 
 
 def _detail(response: httpx.Response) -> str:
@@ -131,9 +172,17 @@ class Model:
         return str(data.get("model") or self.model) if isinstance(data, dict) else self.model
 
     def __call__(
-        self, system: str, user: str, schema: dict[str, Any], max_tokens: int
+        self,
+        system: str,
+        user: str,
+        schema: dict[str, Any],
+        max_tokens: int,
+        meter: Meter | None = None,
     ) -> dict[str, Any]:
         data = self._post(self.body(system, user, schema, max_tokens))
+        if meter is not None:
+            # 截断或格式不对的回复同样花了 token，先记账再校验。
+            meter(read_usage(data, self.model))
         if data.get("stop_reason") == "max_tokens":
             raise Truncated("模型输出被截断")
         blocks = [
@@ -149,18 +198,41 @@ class Model:
 def cached(store: Store, call: Call, identity: str) -> Call:
     """按请求内容缓存结果；重试和重新整理不重复调用。截断和错误不缓存。"""
 
-    def run(system: str, user: str, schema: dict[str, Any], max_tokens: int) -> dict[str, Any]:
+    def run(
+        system: str,
+        user: str,
+        schema: dict[str, Any],
+        max_tokens: int,
+        meter: Meter | None = None,
+    ) -> dict[str, Any]:
         raw = json.dumps([identity, system, user, schema, max_tokens], ensure_ascii=False)
         key = hashlib.sha256(raw.encode()).hexdigest()
         row = store.one("SELECT response FROM model_cache WHERE key = ?", (key,))
         if row:
+            if meter is not None:
+                meter(None)
             return json.loads(row["response"])
-        result = call(system, user, schema, max_tokens)
+        result = call(system, user, schema, max_tokens, meter)
         with store.tx() as db:
             db.execute(
                 "INSERT OR REPLACE INTO model_cache VALUES (?, ?, ?)",
                 (key, json.dumps(result, ensure_ascii=False), now()),
             )
         return result
+
+    return run
+
+
+def metered(call: Call, sink: Meter) -> Call:
+    """让每次调用都向 sink 报告用量。"""
+
+    def run(
+        system: str,
+        user: str,
+        schema: dict[str, Any],
+        max_tokens: int,
+        meter: Meter | None = None,
+    ) -> dict[str, Any]:
+        return call(system, user, schema, max_tokens, sink)
 
     return run
