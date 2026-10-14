@@ -19,55 +19,67 @@ from pathlib import Path
 from typing import Any
 
 from rg.model import AuthError, Call, ModelError, Truncated, metered
-from rg.parse import Message, NotASession, clip, parse_file
+from rg.parse import PARSER_VERSION, Message, NotASession, clip, parse_file
 from rg.sources import SessionInfo, normalize_cwd, scan, under
 from rg.store import Store, now
 from rg.usage import recorder
 
-KINDS = ("question", "attempt", "finding", "decision", "output")
+KINDS = ("attempt", "decision", "result")
 KIND_LABEL = {
-    "question": "问题",
     "attempt": "尝试",
-    "finding": "发现",
     "decision": "决定",
-    "output": "产出",
+    "result": "结果",
+    "question": "问题",  # 旧版本提取的，不再产生
 }
+OUTCOMES = ("success", "failed", "open")
+OUTCOME_LABEL = {"success": "成功", "failed": "失败", "open": "未定"}
+IMPORTANCE = (1, 2, 3)  # 1 细节，2 关键，3 里程碑（复审研究线时挑出来，提取时不给）
+STATUSES = ("active", "done", "dropped")
+MILESTONE_MAX = 15
 ROLE_LABEL = {"user": "用户", "assistant": "Agent", "tool": "工具"}
 CHUNK_CHARS = 80_000
 PROMPT_MSG_CHARS = 3_000
 CONTEXT_MSGS = 3
 EVENT_TOKENS = 4_000
 PLACE_BATCH = 300
-WORKERS = 4
+WORKERS = 6
 MISC_TITLE = "未归类"
 
-EVENT_SYSTEM = """你在帮一位研究者整理他和编程 Agent（Claude Code 或 Codex）的对话，目标是画出研究过程的时间线。
-从这段对话里找出值得放上时间线的关键步骤，只记录研究上有意义的事：
-- question 问题：提出要回答的研究问题，或者遇到需要解决的难点
-- attempt 尝试：开始一种方法、分析、实验或实现
-- finding 发现：得到结果、数字或现象，或者发现了错误
-- decision 决定：采用、放弃、暂缓、改用某个方案，或者确定参数和范围
-- output 产出：完成可以交付的东西，比如图、表、报告、论文段落、模型
-不要记录例行的读文件、配环境、改格式、闲聊和 Agent 的自我说明，除非它们改变了研究方向。
-宁缺毋滥，普通的一段对话通常只有 0 到 5 个步骤。
+EVENT_SYSTEM = """你在帮一位研究者整理他和编程 Agent（Claude Code 或 Codex）的对话，目标是画出项目推进的时间线。
+他回头看时只关心三件事：试了什么、成功还是失败；做了什么决定、为什么；得到了什么结果。只记录这三类步骤：
+- attempt 尝试：为了回答一个问题或验证一种做法而动手试的方法、分析、实验或实现，事先不确定能不能行。outcome 写结果：success 成功（行得通、效果达到预期、被采用），failed 失败（走不通、效果不好、被放弃），open 还没有结论。尝试和它的结果在这段对话里都出现时，合成一个步骤，结果写进 summary。按部就班做完的任务不是尝试。
+- decision 决定：采用、放弃、改用、暂缓某个方案，确定参数、范围、主线或结论的说法。summary 写清楚理由。
+- result 结果：拿到手的关键数字、结论，或者重要的成品（论文初稿、主图定稿、跑通的完整流程、交付的软件版本）。已经写进某个尝试的结果不要再单独记。
+importance 写重要性：2 关键（值得在组会上提一句的尝试、决定和结果），1 细节（小调整、局部修补、例行产出，以及下面这些辅助性工作）。
+辅助性工作——整理目录、归档、备份、打包上传、写说明文档或交接包、给别的模型准备材料、复查核对、图的字号裁切配色图例等版式修补——一般不记；如果整段对话都在做这类事，最多记一个总的步骤，importance 给 1。
+不要记录：
+- 提问、讨论和请 Agent 评估本身，除非它直接带来了一个决定
+- 让 Agent 读代码、盘点项目、解释结构、汇报进度、检查状态；复查核对本身也不记，查出的问题带来了决定的，记那个决定
+- 配环境、装依赖、修报错、调路径、改格式、重命名，除非它改变了研究做法（比如因为显存不够改用小模型）
+- 发现并修好的 bug 不是失败的尝试。只有改变了结果或结论的 bug 才记，记成 result，写清修复前后的差别
+- Agent 的自我说明和闲聊
+如果这段对话的目标本身就是这类事（比如专门排查电脑磁盘占用、专门开发一个工具），它的关键尝试、决定和结论照样要记，按正常标准给重要性。
+宁缺毋滥：几十条消息的对话通常 0 到 3 个步骤，很长的一段也很少超过 5 个。同一件事反复调整时，只记最后的做法和结果。
 每个步骤：
-- title：12 个字以内的短语，写清楚对象，比如“改用 Harmony 去批次”
-- summary：一两句话，说明做了什么、结果或理由；有关键数字就写上
+- title：14 个字以内，写清对象和结论，比如“Harmony 去批次可用”“改用 atlas_v3 参考”“放弃 BBKNN”
+- summary：一两句话，不超过 60 个字。只写最关键的数字和理由，不要罗列文件名、路径和步骤
 - refs：支持这一步的消息编号，只能用本段出现的 #编号，最重要的放第一个
 用对话的主要语言书写。标为 [上文] 的消息只帮助理解，不要为它们生成步骤。
 用 submit 工具提交。"""
 
-THREAD_SYSTEM = """下面是一个研究项目里按时间排列的关键步骤，来自多个对话。请把它们整理成几条研究线。
+THREAD_SYSTEM = """下面是一个研究项目里按时间排列的关键步骤，来自多个对话。请为标了 ★ 的新步骤安排位置，把项目整理成几条研究线。
 - 研究线是一个相对独立的研究方向或问题，比如“细胞注释”“生存分析”“论文图 3”。
 - 按研究问题划分，不按对话划分：同一个方向常常跨好几个对话、好几天，一个对话也可能涉及几条线。不要每个对话单开一条研究线。
-- 研究线通常 3 到 8 条，内容少时 1 条也可以。只有一两个步骤的小方向，放进最相关的研究线当分支，不要单开研究线。
-- 每条研究线的第一条分支是主线，按时间推进。
-- 研究中同时试另一种做法，或者临时岔开处理一个子问题时，开一个分支：from 填它从哪个步骤分出来；如果后来结果被合并、比较后采用或者回到了主线，into 填汇入的步骤；没有汇回就填 null。
-- from 和 into 可以指向别的研究线里的步骤，表示跨研究线的分出或汇合。
-- 每个步骤只能放在一个分支里。
-- 已有的研究线和分支带编号（T…、B…），要保留编号；已经放好的步骤不要移动。只为标了 ★ 的新步骤安排位置：可以放进已有分支，也可以新建分支或研究线（新建的 id 填 null）。已有分支的 events 只写新放进去的步骤。尚未汇回的已有分支可以补上 into。
-- events、from、into 只写编号（例如 E12），不要抄写步骤内容。
-- 研究线和分支的标题要短（12 个字以内），用步骤的主要语言。
+- 按研究问题判断每个 ★ 步骤属于哪个方向：属于已有研究线的就放进去（主线或分支）；出现了新的研究方向、并且这一批里至少有 5 个步骤属于它，就新建研究线，不要把不同方向的步骤堆进同一条线的主线。只有几个步骤的小方向放进最相关的研究线当分支。研究线多了之后程序会再合并，这里宁可分得细一点。
+- 工程环境、工具开发、目录整理、文档报告这些辅助工作放进同一条研究线，不要拆成好几条。
+- 每条研究线的第一条分支是主线，按时间推进，保留最后被采用的路线。研究中同时试另一种做法、临时岔开处理一个子问题，或者几个连续的步骤在试一条后来放弃的路时，开一个分支：from 是它从哪个步骤分出来；后来结果被合并、比较后采用或者回到了主线，into 是汇入的步骤，没有汇回就是 null。from 和 into 可以指向别的研究线里的步骤。单个失败的尝试留在原处即可。
+- 已有的研究线（T…）和分支（B…）保持不变，已经放好的步骤不要动，也不要再列出来。
+输出：
+- placements：每个 ★ 步骤写一条 {event, branch}。branch 写放进哪里：已有分支的 B 编号；已有研究线的 T 编号（放进它的主线）；或者下面新建的研究线、分支的 key。
+- new_threads：要新建的研究线 {key, title, summary}，key 用 N1、N2…。新研究线的主线不用建分支，把步骤直接放进它的 N key。
+- new_branches：要新建的分支 {key, thread, title, from, into}，key 用 NB1、NB2…，thread 写所属研究线（T 编号或 N key）。
+- merges：已有分支后来汇回了，写 {branch, into}。
+- 只写 E12、T3、B7 这样的编号，不要抄写步骤内容。研究线和分支的标题要短（12 个字以内），用步骤的主要语言。
 用 submit 工具提交。"""
 
 EVENT_SCHEMA: dict[str, Any] = {
@@ -79,56 +91,66 @@ EVENT_SCHEMA: dict[str, Any] = {
                 "type": "object",
                 "properties": {
                     "kind": {"type": "string", "enum": list(KINDS)},
+                    "outcome": {
+                        "type": ["string", "null"],
+                        "enum": [*OUTCOMES, None],
+                        "description": "只有 attempt 填，其余填 null",
+                    },
+                    "importance": {"type": "integer", "enum": [1, 2]},
                     "title": {"type": "string"},
                     "summary": {"type": "string"},
                     "refs": {"type": "array", "items": {"type": "integer"}},
                 },
-                "required": ["kind", "title", "summary", "refs"],
+                "required": ["kind", "outcome", "importance", "title", "summary", "refs"],
             },
         }
     },
     "required": ["events"],
 }
 
-_NULLABLE = {"type": ["string", "null"]}
 _EVENT_REF = {"type": ["string", "null"], "description": "步骤编号，例如 E12；没有就填 null"}
+
+
+def _items(properties: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "array",
+        "items": {"type": "object", "properties": properties, "required": list(properties)},
+    }
+
+
 THREAD_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "threads": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "id": _NULLABLE,
-                    "title": {"type": "string"},
-                    "summary": {"type": "string"},
-                    "branches": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "id": _NULLABLE,
-                                "title": {"type": "string"},
-                                "from": _EVENT_REF,
-                                "into": _EVENT_REF,
-                                "events": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "string",
-                                        "description": "步骤编号，例如 E12",
-                                    },
-                                },
-                            },
-                            "required": ["id", "title", "from", "into", "events"],
-                        },
-                    },
-                },
-                "required": ["id", "title", "summary", "branches"],
-            },
-        }
+        "placements": _items(
+            {
+                "event": {"type": "string", "description": "步骤编号，例如 E12"},
+                "branch": {"type": "string", "description": "B 编号、T 编号或新建的 key"},
+            }
+        ),
+        "new_threads": _items(
+            {
+                "key": {"type": "string", "description": "N1、N2…"},
+                "title": {"type": "string"},
+                "summary": {"type": "string"},
+            }
+        ),
+        "new_branches": _items(
+            {
+                "key": {"type": "string", "description": "NB1、NB2…"},
+                "thread": {"type": "string", "description": "T 编号或新建研究线的 key"},
+                "title": {"type": "string"},
+                "from": _EVENT_REF,
+                "into": _EVENT_REF,
+            }
+        ),
+        "merges": _items(
+            {
+                "branch": {"type": "string", "description": "已有分支的 B 编号"},
+                "into": {"type": "string", "description": "汇入的步骤编号"},
+            }
+        ),
     },
-    "required": ["threads"],
+    "required": ["placements", "new_threads", "new_branches", "merges"],
 }
 
 Key = tuple[str, int, int, int]
@@ -139,7 +161,8 @@ Key = tuple[str, int, int, int]
 
 @dataclass
 class Progress:
-    phase: str = "idle"  # idle / sync / consent / confirm / extract / threads / done / error
+    # idle / sync / consent / confirm / extract / threads / consolidate / review / done / error
+    phase: str = "idle"
     done: int = 0
     total: int = 0
     running: bool = False
@@ -153,9 +176,11 @@ class Progress:
         with self.lock:
             self.phase, self.done, self.total = phase, 0, total
 
-    def step(self) -> None:
+    def step(self, remaining: int = 0) -> None:
+        """remaining：还要再做几步。比原先估计的多（比如归类时补问漏掉的事件）就把总数加上去。"""
         with self.lock:
             self.done += 1
+            self.total = max(self.total, self.done + remaining)
 
     def error(self, message: str) -> None:
         with self.lock:
@@ -207,6 +232,13 @@ def short_time(ts: str | None) -> str:
         return datetime.fromisoformat(ts).astimezone().strftime("%m-%d %H:%M")
     except ValueError:
         return ts[:16]
+
+
+def step_label(event: dict[str, Any]) -> str:
+    label = KIND_LABEL.get(event["kind"]) or str(event["kind"])
+    if event.get("outcome") in OUTCOME_LABEL:
+        label += f"·{OUTCOME_LABEL[event['outcome']]}"
+    return label + ("·里程碑" if event.get("importance") == 3 else "")
 
 
 def event_key(event: dict[str, Any]) -> Key:
@@ -275,7 +307,8 @@ def sync_session(store: Store, row: dict[str, Any]) -> None:
         with store.tx() as db:
             db.execute("UPDATE sessions SET missing = 1 WHERE id = ?", (row["id"],))
         return
-    if stat.st_size == row["parsed_size"] and stat.st_mtime == row["parsed_mtime"]:
+    current = row["parser"] == PARSER_VERSION
+    if current and stat.st_size == row["parsed_size"] and stat.st_mtime == row["parsed_mtime"]:
         return
     try:
         session = parse_file(path, row["tool"] or None)
@@ -293,7 +326,16 @@ def sync_session(store: Store, row: dict[str, Any]) -> None:
     if row["parsed_size"] < 0 or row["message_count"] == 0:
         copied, fork_of = find_fork(store, row, session.forked_from, messages)
     upto = min(max(row["extracted_upto"], copied), len(messages))
+    reread = not current and row["parsed_size"] >= 0 and _changed(store, row["id"], messages)
     with store.tx() as db:
+        if reread:
+            # 解析规则变了、消息编号可能移动：自动提取的事件作废，这个会话从头再提取。
+            # 人工改过或删掉的事件保留（它们引用的编号可能已经对不上）。
+            db.execute(
+                "DELETE FROM events WHERE session_id = ? AND edited = 0 AND hidden = 0",
+                (row["id"],),
+            )
+            upto = copied
         db.execute("DELETE FROM messages WHERE session_id = ?", (row["id"],))
         db.executemany(
             "INSERT INTO messages VALUES (?, ?, ?, ?, ?)",
@@ -302,7 +344,8 @@ def sync_session(store: Store, row: dict[str, Any]) -> None:
         db.execute(
             "UPDATE sessions SET tool = ?, native_id = ?, cwd = ?, title = ?, started_at = ?, "
             "ended_at = ?, parsed_size = ?, parsed_mtime = ?, message_count = ?, "
-            "extracted_upto = ?, copied = ?, fork_of = ?, missing = 0, unknown = ? WHERE id = ?",
+            "extracted_upto = ?, copied = ?, fork_of = ?, missing = 0, unknown = ?, parser = ? "
+            "WHERE id = ?",
             (
                 session.tool,
                 session.native_id or row["native_id"],
@@ -317,9 +360,19 @@ def sync_session(store: Store, row: dict[str, Any]) -> None:
                 copied,
                 fork_of,
                 json.dumps(dict(session.unknown)),
+                PARSER_VERSION,
                 row["id"],
             ),
         )
+        if reread:
+            cleanup(db, row["project_id"])
+
+
+def _changed(store: Store, session_id: int, messages: list[Message]) -> bool:
+    stored = store.q(
+        "SELECT role, text FROM messages WHERE session_id = ? ORDER BY idx", (session_id,)
+    )
+    return [(r["role"], r["text"]) for r in stored] != [(m.role, m.text) for m in messages]
 
 
 def _common_prefix(store: Store, session_id: int, messages: list[Message]) -> int:
@@ -477,9 +530,19 @@ def validate_events(
         if not title or not refs:
             continue
         anchor = min(refs)
+        outcome = item.get("outcome")
+        if item["kind"] != "attempt":
+            outcome = None
+        elif outcome not in OUTCOMES:
+            outcome = "open"
+        importance = item.get("importance")
+        if isinstance(importance, bool) or importance not in (1, 2):
+            importance = 2  # 里程碑只在复审研究线时给
         events.append(
             {
                 "kind": item["kind"],
+                "outcome": outcome,
+                "importance": importance,
                 "title": title,
                 "summary": _clean(item.get("summary"), 400),
                 "refs": refs,
@@ -533,13 +596,15 @@ def extract_session(
         fresh = [e for e in events if not any(set(e["refs"]) & kept for kept in retained)]
         with store.tx() as db:
             db.executemany(
-                "INSERT INTO events(project_id, session_id, kind, title, summary, ts, anchor, refs) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO events(project_id, session_id, kind, outcome, importance, title, "
+                "summary, ts, anchor, refs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
                     (
                         session["project_id"],
                         session["id"],
                         e["kind"],
+                        e["outcome"],
+                        e["importance"],
                         e["title"],
                         e["summary"],
                         e["ts"],
@@ -590,13 +655,13 @@ def extract(store: Store, call: Call, project_id: int, progress: Progress) -> No
 
 def _visible_events(store: Store, project_id: int) -> list[dict[str, Any]]:
     return store.q(
-        "SELECT id, session_id, branch_id, kind, title, summary, ts, anchor FROM events "
-        "WHERE project_id = ? AND hidden = 0",
+        "SELECT id, session_id, branch_id, kind, outcome, importance, title, summary, ts, anchor "
+        "FROM events WHERE project_id = ? AND hidden = 0",
         (project_id,),
     )
 
 
-def render_structure(store: Store, project_id: int, new_ids: set[int]) -> str:
+def render_structure(store: Store, project_id: int, new_ids: set[int], retry: bool = False) -> str:
     # 不写步骤来自哪个对话：写了以后模型几乎总是一个对话一条研究线（本机实测 25 个对话分成
     # 15 条线，每个对话只落在一条线上）。fork 由程序接上，也不需要对话信息。
     # 只列已经放好的步骤和这一批新步骤。还没轮到的步骤不能列出来：它们不在任何分支里，
@@ -619,7 +684,11 @@ def render_structure(store: Store, project_id: int, new_ids: set[int]) -> str:
     for e in events:
         if e["branch_id"] is not None and e["id"] not in new_ids:
             members[e["branch_id"]].append(e["id"])
-    lines = ["已有研究线："]
+    lines = []
+    if retry:
+        # 补问：请求和上一次不同，不会从缓存里拿到同一个结果
+        lines += ["注意：上一轮漏掉了一些 ★ 步骤。这次请为每一个 ★ 步骤都写一条 placement。", ""]
+    lines.append("已有研究线：")
     if not threads:
         lines.append("（还没有研究线）")
     for t in threads:
@@ -635,7 +704,7 @@ def render_structure(store: Store, project_id: int, new_ids: set[int]) -> str:
     lines += ["", "步骤（按时间排列；★ 是需要安排位置的新步骤）："]
     for e in events:
         new = e["id"] in new_ids
-        text = f"E{e['id']} {short_time(e['ts'])} {KIND_LABEL[e['kind']]}｜{e['title']}"
+        text = f"E{e['id']} {short_time(e['ts'])} {step_label(e)}｜{e['title']}"
         if new or detailed:
             text += f"｜{e['summary']}"
         lines.append(("★ " if new else "  ") + text)
@@ -651,90 +720,168 @@ def _link(value: Any, members: list[int], key: dict[int, Key], after: bool) -> i
     return eid if key[eid] < min(key[m] for m in members) else None
 
 
+def _code(value: Any) -> str:
+    return str(value or "").strip().upper()
+
+
 def apply_placement(
-    store: Store, project_id: int, output: dict[str, Any], new_ids: set[int]
+    store: Store,
+    project_id: int,
+    output: dict[str, Any],
+    new_ids: set[int],
+    fallback: set[int] | None = None,
 ) -> None:
+    """按模型的安排放新事件。编号、归属和时间先后都由程序校验，不合规的部分丢掉。
+    fallback：模型漏掉时由程序兜底安排的事件；不在其中的漏掉事件留着，下一批再问一次。
+    默认全部兜底。"""
     events = {e["id"]: e for e in _visible_events(store, project_id)}
     new_ids = {i for i in new_ids if i in events}
     key = {i: event_key(e) for i, e in events.items()}
-    thread_ids = {
-        t["id"] for t in store.q("SELECT id FROM threads WHERE project_id = ?", (project_id,))
+    threads = {
+        t["id"]: t for t in store.q("SELECT * FROM threads WHERE project_id = ?", (project_id,))
     }
     branches = {
         b["id"]: b
         for b in store.q(
-            "SELECT b.* FROM branches b JOIN threads t ON t.id = b.thread_id WHERE t.project_id = ?",
+            "SELECT b.* FROM branches b JOIN threads t ON t.id = b.thread_id "
+            "WHERE t.project_id = ? ORDER BY b.position, b.id",
             (project_id,),
         )
     }
+    main_of: dict[int, int] = {}
+    for b in branches.values():
+        main_of.setdefault(b["thread_id"], b["id"])
     members: dict[int, list[int]] = defaultdict(list)
     for e in events.values():
         if e["branch_id"] is not None and e["id"] not in new_ids:
             members[e["branch_id"]].append(e["id"])
+    thread_specs = {
+        _code(t.get("key")): t
+        for t in _list(output.get("new_threads"))
+        if isinstance(t, dict) and _code(t.get("key"))
+    }
+    branch_specs = {
+        _code(b.get("key")): b
+        for b in _list(output.get("new_branches"))
+        if isinstance(b, dict) and _code(b.get("key"))
+    }
+    made_threads: dict[str, int] = {}
+    made_branches: dict[str, int] = {}
     assigned: dict[int, int] = {}
+
     with store.tx() as db:
 
-        def new_branch(tid: int, title: str, source: int | None, target: int | None) -> int:
+        def new_branch(tid: int, title: str) -> int:
             position = db.execute(
                 "SELECT COALESCE(MAX(position) + 1, 0) FROM branches WHERE thread_id = ?", (tid,)
             ).fetchone()[0]
-            cursor = db.execute(
-                "INSERT INTO branches(thread_id, title, position, from_event, into_event) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (tid, title, position, source, target),
+            bid = int(
+                db.execute(
+                    "INSERT INTO branches(thread_id, title, position) VALUES (?, ?, ?)",
+                    (tid, title, position),
+                ).lastrowid
+                or 0
             )
-            bid = int(cursor.lastrowid or 0)
-            branches[bid] = {"id": bid, "thread_id": tid, "into_event": target, "edited": 0}
+            branches[bid] = {"id": bid, "thread_id": tid, "into_event": None, "edited": 0}
+            main_of.setdefault(tid, bid)
             return bid
 
         def new_thread(title: str, summary: str) -> int:
-            cursor = db.execute(
-                "INSERT INTO threads(project_id, title, summary) VALUES (?, ?, ?)",
-                (project_id, title or MISC_TITLE, summary),
+            tid = int(
+                db.execute(
+                    "INSERT INTO threads(project_id, title, summary) VALUES (?, ?, ?)",
+                    (project_id, title or MISC_TITLE, summary),
+                ).lastrowid
+                or 0
             )
-            thread_ids.add(int(cursor.lastrowid or 0))
-            return int(cursor.lastrowid or 0)
+            threads[tid] = {"id": tid, "title": title or MISC_TITLE, "edited": 0}
+            return tid
 
-        for t in _list(output.get("threads")):
-            if not isinstance(t, dict):
-                continue
-            tid = _ref(t.get("id"), "T")
-            tid = tid if tid in thread_ids else None
-            for b in _list(t.get("branches")):
-                if not isinstance(b, dict):
-                    continue
-                picked = {_ref(v, "E") for v in _list(b.get("events"))}
-                evs = sorted(
-                    (e for e in picked if e in new_ids and e not in assigned), key=key.__getitem__
-                )
-                bid = _ref(b.get("id"), "B")
-                if bid is not None and bid in branches:
-                    row = branches[bid]
-                    if row["into_event"] is None and not row["edited"]:
-                        target = _link(b.get("into"), members[bid] + evs, key, after=True)
-                        if target is not None:
-                            db.execute(
-                                "UPDATE branches SET into_event = ? WHERE id = ?", (target, bid)
-                            )
-                            row["into_event"] = target
-                elif evs:
+        by_title = {str(t["title"]).casefold(): tid for tid, t in threads.items()}
+
+        def thread_for(ref: Any) -> int | None:
+            code = _code(ref)
+            if code in thread_specs:
+                if code not in made_threads:
+                    spec = thread_specs[code]
+                    title = _clean(spec.get("title"), 30)
+                    same = by_title.get(title.casefold()) if title else None
+                    if same is not None:
+                        made_threads[code] = same  # 和已有研究线同名，就是同一条
+                    else:
+                        tid = new_thread(title, _clean(spec.get("summary"), 200))
+                        new_branch(tid, "")  # 先建主线，之后建的分支都排在它后面
+                        made_threads[code] = tid
+                        by_title[title.casefold()] = tid
+                return made_threads[code]
+            tid = _ref(code, "T") if code.startswith("T") else None
+            return tid if tid in threads else None
+
+        def branch_for(ref: Any) -> int | None:
+            code = _code(ref)
+            if code in branch_specs:
+                if code not in made_branches:
+                    tid = thread_for(branch_specs[code].get("thread"))
                     if tid is None:
-                        tid = new_thread(_clean(t.get("title"), 30), _clean(t.get("summary"), 200))
-                    bid = new_branch(
-                        tid,
-                        _clean(b.get("title"), 30),
-                        _link(b.get("from"), evs, key, after=False),
-                        _link(b.get("into"), evs, key, after=True),
+                        return None
+                    made_branches[code] = new_branch(
+                        tid, _clean(branch_specs[code].get("title"), 30)
                     )
-                else:
-                    continue
-                for e in evs:
-                    assigned[e] = bid
-                    members[bid].append(e)
+                return made_branches[code]
+            if code.startswith("B"):
+                bid = _ref(code, "B")
+                return bid if bid in branches else None
+            tid = thread_for(code)
+            if tid is None:
+                return None
+            return main_of.get(tid) or new_branch(tid, "")
+
+        for item in _list(output.get("placements")):
+            if not isinstance(item, dict):
+                continue
+            eid = _ref(item.get("event"), "E")
+            if eid is None or eid not in new_ids or eid in assigned:
+                continue
+            bid = branch_for(item.get("branch"))
+            if bid is not None:
+                assigned[eid] = bid
+                members[bid].append(eid)
+
+        # 新分支的分出点和汇入点：先后必须合理，否则不连
+        for code, bid in made_branches.items():
+            spec = branch_specs[code]
+            source = _link(spec.get("from"), members[bid], key, after=False)
+            target = _link(spec.get("into"), members[bid], key, after=True)
+            db.execute(
+                "UPDATE branches SET from_event = ?, into_event = ? WHERE id = ?",
+                (source, target, bid),
+            )
+        for item in _list(output.get("merges")):
+            if not isinstance(item, dict):
+                continue
+            bid = _ref(item.get("branch"), "B")
+            row = branches.get(bid) if bid is not None else None
+            if row is None or row["edited"] or row["into_event"] is not None:
+                continue
+            target = _link(item.get("into"), members[row["id"]], key, after=True)
+            if target is not None:
+                db.execute("UPDATE branches SET into_event = ? WHERE id = ?", (target, row["id"]))
+                row["into_event"] = target
 
         misc: list[int] = []
 
-        def fallback(eid: int) -> int:
+        def misc_branch() -> int:
+            if not misc:
+                found = db.execute(
+                    "SELECT b.id FROM branches b JOIN threads t ON t.id = b.thread_id "
+                    "WHERE t.project_id = ? AND t.title = ? AND t.edited = 0 "
+                    "ORDER BY b.position, b.id LIMIT 1",
+                    (project_id, MISC_TITLE),
+                ).fetchone()
+                misc.append(found[0] if found else new_branch(new_thread(MISC_TITLE, ""), ""))
+            return misc[0]
+
+        def place_near(eid: int) -> int:
             # 模型漏掉的事件：跟着同一会话里最近的事件走；都没有就放进“未归类”。
             placed: dict[int, int] = {}
             for i, other in events.items():
@@ -747,12 +894,11 @@ def apply_placement(
                 return placed[max(before, key=key.__getitem__)]
             if after:
                 return placed[min(after, key=key.__getitem__)]
-            if not misc:
-                misc.append(new_branch(new_thread(MISC_TITLE, ""), "", None, None))
-            return misc[0]
+            return misc_branch()
 
-        for eid in sorted(new_ids - assigned.keys(), key=key.__getitem__):
-            assigned[eid] = fallback(eid)
+        rescue = new_ids if fallback is None else new_ids & fallback
+        for eid in sorted(rescue - assigned.keys(), key=key.__getitem__):
+            assigned[eid] = place_near(eid)
         db.executemany(
             "UPDATE events SET branch_id = ? WHERE id = ?", [(b, e) for e, b in assigned.items()]
         )
@@ -814,13 +960,12 @@ def attach_forks(store: Store, project_id: int) -> set[int]:
         (project_id,),
     )
     for session in forks:
-        pending = [
-            r["id"]
-            for r in store.q(
-                "SELECT id FROM events WHERE session_id = ? AND hidden = 0 AND branch_id IS NULL",
-                (session["id"],),
-            )
-        ]
+        rows = store.q(
+            "SELECT id, title, ts, anchor FROM events "
+            "WHERE session_id = ? AND hidden = 0 AND branch_id IS NULL ORDER BY ts, anchor, id",
+            (session["id"],),
+        )
+        pending = [r["id"] for r in rows]
         if not pending:
             continue
         branch = store.one(
@@ -845,7 +990,8 @@ def attach_forks(store: Store, project_id: int) -> set[int]:
                 ).fetchone()[0]
                 branch_id = db.execute(
                     "INSERT INTO branches(thread_id, title, position, from_event) VALUES (?, ?, ?, ?)",
-                    (thread_id, _clean(session["title"] or "fork", 30), position, point["id"]),
+                    # 分支用 fork 之后第一步的标题命名；会话标题往往是一句随口的话
+                    (thread_id, _clean(rows[0]["title"] or "fork", 30), position, point["id"]),
                 ).lastrowid
                 db.execute(
                     "UPDATE sessions SET fork_branch = ? WHERE id = ?", (branch_id, session["id"])
@@ -866,23 +1012,24 @@ def _place_batches(
 
     todo = pending()
     size = PLACE_BATCH
+    asked: set[int] = set()  # 已经问过一次的事件；模型再漏掉就由程序兜底
     if todo:
         progress.set("threads", (len(todo) + size - 1) // size)
     while todo:
         batch = {e["id"] for e in todo[:size]}
-        tokens = min(32_000, 4_000 + 24 * len(batch))
+        tokens = min(32_000, 3_000 + 20 * len(batch))
+        prompt = render_structure(store, project_id, batch, retry=bool(batch & asked))
         try:
-            output = call(
-                THREAD_SYSTEM, render_structure(store, project_id, batch), THREAD_SCHEMA, tokens
-            )
+            output = call(THREAD_SYSTEM, prompt, THREAD_SCHEMA, tokens)
         except Truncated:
             if size <= 20:
                 raise
             size //= 2
             continue
-        apply_placement(store, project_id, output, batch)
-        progress.step()
+        apply_placement(store, project_id, output, batch, fallback=batch & asked)
+        asked |= batch
         todo = pending()
+        progress.step((len(todo) + size - 1) // size)
 
 
 def place(store: Store, call: Call, project_id: int, progress: Progress) -> None:
@@ -890,6 +1037,243 @@ def place(store: Store, call: Call, project_id: int, progress: Progress) -> None
     _place_batches(store, call, project_id, progress, exclude=waiting)
     attach_forks(store, project_id)
     _place_batches(store, call, project_id, progress, exclude=set())
+
+
+# ---------- 合并研究线 ----------
+
+THREAD_TARGET = 8  # 研究线超过这么多条，就请模型提出合并
+
+CONSOLIDATE_SYSTEM = """下面是一个研究项目现有的研究线：编号、标题、进展说明、步骤数、时间跨度和几个代表性步骤。研究线太多太碎，请把属于同一个研究方向的合并起来，让整个项目保留 4 到 8 条研究线。
+- 每组写 {into, lines, title}：into 是保留的研究线编号（选最主要、步骤最多的那条），lines 是并进去的其他研究线编号，并进去的研究线会变成保留研究线里的分支。title 是保留研究线的新标题（12 个字以内，能概括合并后的内容）；不需要改就填 null。
+- 工程环境、工具开发、目录整理、文档报告这些辅助工作合并成一条。
+- 确实独立的研究方向才单独保留，不需要合并的研究线不用写。
+用 submit 工具提交。"""
+
+CONSOLIDATE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "groups": _items(
+            {
+                "into": {"type": "string", "description": "保留的研究线编号，例如 T3"},
+                "lines": {"type": "array", "items": {"type": "string"}},
+                "title": {"type": ["string", "null"]},
+            }
+        )
+    },
+    "required": ["groups"],
+}
+
+
+def merge_threads(db: Any, source: dict[str, Any], target: dict[str, Any], edited: bool) -> None:
+    """把一条研究线并入另一条：它的各条分支搬过去，原来的主线成为一条以原名命名的分支。"""
+    start = db.execute(
+        "SELECT COALESCE(MAX(position) + 1, 0) FROM branches WHERE thread_id = ?", (target["id"],)
+    ).fetchone()[0]
+    moved = db.execute(
+        "SELECT id, title FROM branches WHERE thread_id = ? ORDER BY position, id", (source["id"],)
+    ).fetchall()
+    for offset, branch in enumerate(moved):
+        title = branch["title"] or (source["title"] if offset == 0 else "")
+        db.execute(
+            "UPDATE branches SET thread_id = ?, position = ?, title = ?, "
+            "edited = MAX(edited, ?) WHERE id = ?",
+            (target["id"], start + offset, title[:30], int(edited), branch["id"]),
+        )
+    db.execute("DELETE FROM threads WHERE id = ?", (source["id"],))
+    if edited:
+        db.execute("UPDATE threads SET edited = 1 WHERE id = ?", (target["id"],))
+
+
+def render_lines(store: Store, threads: list[dict[str, Any]]) -> str:
+    lines = []
+    for t in threads:
+        rows = sorted(
+            store.q(
+                "SELECT id, kind, outcome, importance, title, summary, ts, session_id, anchor "
+                "FROM events WHERE hidden = 0 AND branch_id IN "
+                "(SELECT id FROM branches WHERE thread_id = ?)",
+                (t["id"],),
+            ),
+            key=event_key,
+        )
+        if not rows:
+            continue
+        key_steps = [e for e in rows if e["importance"] >= 2] or rows
+        picks = key_steps[:: max(1, len(key_steps) // 5)][:5]
+        sample = "；".join(e["title"] for e in picks)
+        lines.append(
+            f"T{t['id']}「{t['title']}」{len(rows)} 步，{short_time(rows[0]['ts'])[:5]}→"
+            f"{short_time(rows[-1]['ts'])[:5]}：{t['summary'] or '（无说明）'}｜代表步骤：{sample}"
+        )
+    return "\n".join(lines)
+
+
+def consolidate_threads(store: Store, call: Call, project_id: int, progress: Progress) -> None:
+    """研究线太多时请模型提出合并。人工改过的研究线不会被并走；“未归类”不参与。"""
+    threads = store.q(
+        "SELECT * FROM threads WHERE project_id = ? AND title != ? ORDER BY id",
+        (project_id, MISC_TITLE),
+    )
+    if len(threads) <= THREAD_TARGET:
+        return
+    # 研究线没变（没有新开的线）就不再合并，免得每次更新结构都在变
+    mark = f"consolidated:{project_id}"
+    signature = _signature([t["id"] for t in threads])
+    if store.setting(mark) == signature:
+        return
+    progress.set("consolidate", 1)
+    try:
+        output = call(CONSOLIDATE_SYSTEM, render_lines(store, threads), CONSOLIDATE_SCHEMA, 3_000)
+    except Truncated:
+        progress.error("合并研究线的输出被截断，保持原样")
+        return
+    known = {t["id"]: t for t in threads}
+    used: set[int] = set()
+    with store.tx() as db:
+        for group in _list(output.get("groups")):
+            if not isinstance(group, dict):
+                continue
+            target_id = _ref(group.get("into"), "T")
+            if target_id is None or target_id not in known or target_id in used:
+                continue
+            target = known[target_id]
+            merged = False
+            for value in _list(group.get("lines")):
+                source_id = _ref(value, "T")
+                if source_id is None or source_id not in known or source_id in used:
+                    continue
+                source = known[source_id]
+                if source_id == target_id or source["edited"]:
+                    continue
+                merge_threads(db, source, target, edited=False)
+                used.add(source_id)
+                merged = True
+            used.add(target_id)
+            title = _clean(group.get("title"), 30)
+            if merged and title and not target["edited"]:
+                db.execute("UPDATE threads SET title = ? WHERE id = ?", (title, target_id))
+    left = store.q(
+        "SELECT id FROM threads WHERE project_id = ? AND title != ?", (project_id, MISC_TITLE)
+    )
+    store.set_setting(mark, _signature([t["id"] for t in left]))
+    progress.step()
+
+
+# ---------- 复审研究线 ----------
+
+REVIEW_SYSTEM = """下面是一个研究项目里的一条研究线，按分支列出它的步骤（时间先后排列）。请做三件事：
+1. milestones：挑出这条线的里程碑——以后讲这条线的历史时一定会提到的转折：换了方法、定了主线、得到核心结论、放弃一个方向、交付主要成果。个数见下面的说明，按重要性从高到低排列。辅助性工作（整理、打包、备份、文档、版式修补）不能当里程碑。只写编号（例如 E12）。
+2. summary：两三句话写这条线走过的路和现在的状态，不超过 120 个字。写最关键的方法选择、转折和结论，不要罗列步骤。
+3. status：active 还在推进，done 已经完成或定稿，dropped 已经放弃。
+用这条线步骤的主要语言书写。用 submit 工具提交。"""
+
+REVIEW_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "milestones": {
+            "type": "array",
+            "items": {"type": "string", "description": "步骤编号，例如 E12"},
+        },
+        "summary": {"type": "string"},
+        "status": {"type": "string", "enum": list(STATUSES)},
+    },
+    "required": ["milestones", "summary", "status"],
+}
+
+
+def _signature(ids: list[int]) -> str:
+    return ",".join(str(i) for i in sorted(ids))
+
+
+def milestone_quota(key_steps: int) -> int:
+    """里程碑个数：大约每 12 个关键步骤一个，至少 1 个、最多 15 个。"""
+    return max(1, min(MILESTONE_MAX, round(key_steps / 12)))
+
+
+def render_thread(
+    thread: dict[str, Any], branches: list[dict[str, Any]], members: dict[int, list[dict[str, Any]]]
+) -> str:
+    key_steps = sum(1 for steps in members.values() for e in steps if e["importance"] >= 2)
+    lines = [
+        f"研究线「{thread['title']}」：{key_steps} 个关键步骤，请挑 {milestone_quota(key_steps)} 个里程碑。"
+    ]
+    for i, b in enumerate(branches):
+        steps = members.get(b["id"], [])
+        if not steps:
+            continue
+        name = b["title"] or ("主线" if i == 0 else "分支")
+        lines += ["", f"{name}："]
+        key = [e for e in steps if e["importance"] >= 2] or steps
+        for e in key:
+            lines.append(
+                f"E{e['id']} {short_time(e['ts'])} {step_label(e)}｜{e['title']}｜{e['summary']}"
+            )
+    return "\n".join(lines)
+
+
+def review_threads(store: Store, call: Call, project_id: int, progress: Progress) -> None:
+    """每条研究线挑里程碑、写进展叙述和状态。研究线里的事件没变就不重复调用。
+    人工改过的研究线不改名字和叙述；人工改过的事件不改重要性。"""
+    threads = store.q(
+        "SELECT * FROM threads WHERE project_id = ? AND title != ? ORDER BY id",
+        (project_id, MISC_TITLE),
+    )
+    todo = []
+    for t in threads:
+        branches = store.q(
+            "SELECT * FROM branches WHERE thread_id = ? ORDER BY position, id", (t["id"],)
+        )
+        members: dict[int, list[dict[str, Any]]] = defaultdict(list)
+        for e in sorted(
+            store.q(
+                "SELECT id, branch_id, kind, outcome, importance, title, summary, ts, anchor, "
+                "session_id, edited FROM events WHERE hidden = 0 AND branch_id IN "
+                "(SELECT id FROM branches WHERE thread_id = ?)",
+                (t["id"],),
+            ),
+            key=event_key,
+        ):
+            members[e["branch_id"]].append(e)
+        events = [e for steps in members.values() for e in steps]
+        signature = _signature([e["id"] for e in events])
+        if events and t["reviewed"] != signature:
+            todo.append((t, branches, members, events, signature))
+    if not todo:
+        return
+    progress.set("review", len(todo))
+    for t, branches, members, events, signature in todo:
+        try:
+            output = call(REVIEW_SYSTEM, render_thread(t, branches, members), REVIEW_SCHEMA, 2_000)
+        except Truncated:
+            progress.error(f"「{t['title']}」复审输出被截断，跳过")
+            progress.step()
+            continue
+        known = {e["id"]: e for e in events}
+        cap = milestone_quota(sum(1 for e in events if e["importance"] >= 2))
+        picked: list[int] = []
+        for value in _list(output.get("milestones")):
+            eid = _ref(value, "E")
+            if eid is not None and eid in known and eid not in picked and len(picked) < cap:
+                picked.append(eid)
+        status = output.get("status") if output.get("status") in STATUSES else None
+        summary = _clean(output.get("summary"), 400)
+        with store.tx() as db:
+            for e in events:
+                if e["edited"]:
+                    continue
+                if e["id"] in picked and e["importance"] != 3:
+                    db.execute("UPDATE events SET importance = 3 WHERE id = ?", (e["id"],))
+                elif e["id"] not in picked and e["importance"] == 3:
+                    db.execute("UPDATE events SET importance = 2 WHERE id = ?", (e["id"],))
+            if t["edited"]:
+                db.execute("UPDATE threads SET reviewed = ? WHERE id = ?", (signature, t["id"]))
+            else:
+                db.execute(
+                    "UPDATE threads SET summary = COALESCE(NULLIF(?, ''), summary), "
+                    "status = COALESCE(?, status), reviewed = ? WHERE id = ?",
+                    (summary, status, signature, t["id"]),
+                )
+        progress.step()
 
 
 # ---------- 搜索 ----------
@@ -1021,6 +1405,12 @@ def organize(
     try:
         extract(store, metered(call, recorder(store, project_id, "extract")), project_id, progress)
         place(store, metered(call, recorder(store, project_id, "threads")), project_id, progress)
+        consolidate_threads(
+            store, metered(call, recorder(store, project_id, "threads")), project_id, progress
+        )
+        review_threads(
+            store, metered(call, recorder(store, project_id, "review")), project_id, progress
+        )
     except AuthError as error:
         progress.error(f"{error}。请在设置里检测 Key，改好后点“重试”，已整理的部分不会丢")
         progress.estimate = estimate(store, project_id)

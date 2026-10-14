@@ -21,12 +21,16 @@ import httpx
 from rg.config import DB_NAME, DEFAULT_BASE_URL, DEFAULT_MODEL, clean_key, read_key, save_key
 from rg.model import Call, Model, ModelError, cached
 from rg.organize import (
+    IMPORTANCE,
     KINDS,
+    OUTCOMES,
+    STATUSES,
     Jobs,
     add_sessions,
     cleanup,
     estimate,
     fork_point,
+    merge_threads,
     pending,
     search,
 )
@@ -419,7 +423,8 @@ def get_project(
     project_id = int(m[1])
     project = app.project(project_id)
     events = app.store.q(
-        "SELECT id, session_id, branch_id, kind, title, summary, ts, anchor, refs, edited "
+        "SELECT id, session_id, branch_id, kind, outcome, importance, title, summary, ts, anchor, "
+        "refs, edited "
         "FROM events WHERE project_id = ? AND hidden = 0",
         (project_id,),
     )
@@ -510,6 +515,21 @@ def patch_event(
         if body["kind"] not in KINDS:
             raise ApiError(400, "未知的事件种类")
         changes["kind"] = body["kind"]
+    kind = changes.get("kind", event["kind"])
+    if "outcome" in body:
+        if body["outcome"] not in OUTCOMES:
+            raise ApiError(400, "成败只能是 success、failed 或 open")
+        changes["outcome"] = body["outcome"]
+    # 成败只属于尝试：改成别的种类就清掉，改成尝试时没写成败就算“未定”
+    if kind != "attempt":
+        if event["outcome"] is not None or "outcome" in changes:
+            changes["outcome"] = None
+    elif changes.get("outcome", event["outcome"]) is None:
+        changes["outcome"] = "open"
+    if "importance" in body:
+        if body["importance"] not in IMPORTANCE or isinstance(body["importance"], bool):
+            raise ApiError(400, "重要性只能是 1、2、3")
+        changes["importance"] = body["importance"]
     if "branch_id" in body:
         changes["branch_id"] = app.branch_in_project(body["branch_id"], event["project_id"])
     if body.get("hidden") is True:
@@ -604,11 +624,14 @@ def patch_thread(
 ) -> Any:
     title = _text(body, "title", 30, required="title" in body)
     summary = _text(body, "summary", 300)
+    status = body.get("status")
+    if status is not None and status not in STATUSES:
+        raise ApiError(400, "状态只能是 active、done 或 dropped")
     with app.store.tx() as db:
         db.execute(
             "UPDATE threads SET title = COALESCE(?, title), summary = COALESCE(?, summary), "
-            "edited = 1 WHERE id = ?",
-            (title, summary, int(m[1])),
+            "status = COALESCE(?, status), edited = 1 WHERE id = ?",
+            (title, summary, status, int(m[1])),
         )
     return {"ok": True}
 
@@ -625,22 +648,7 @@ def merge_thread(
     if source["project_id"] != target["project_id"] or source["id"] == target["id"]:
         raise ApiError(400, "只能并入同一个项目里的另一条研究线")
     with app.store.tx() as db:
-        start = db.execute(
-            "SELECT COALESCE(MAX(position) + 1, 0) FROM branches WHERE thread_id = ?",
-            (target["id"],),
-        ).fetchone()[0]
-        moved = db.execute(
-            "SELECT id, title FROM branches WHERE thread_id = ? ORDER BY position, id",
-            (source["id"],),
-        ).fetchall()
-        for offset, branch in enumerate(moved):
-            title = branch["title"] or (source["title"] if offset == 0 else "")
-            db.execute(
-                "UPDATE branches SET thread_id = ?, position = ?, title = ?, edited = 1 WHERE id = ?",
-                (target["id"], start + offset, title[:30], branch["id"]),
-            )
-        db.execute("DELETE FROM threads WHERE id = ?", (source["id"],))
-        db.execute("UPDATE threads SET edited = 1 WHERE id = ?", (target["id"],))
+        merge_threads(db, source, target, edited=True)
     return {"ok": True}
 
 

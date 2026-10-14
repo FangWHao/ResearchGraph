@@ -37,6 +37,7 @@ cd web && pnpm i && pnpm test && pnpm build
 - 解析器遇到不认识的记录类型要计数（`sessions.unknown`），不能静默跳过，也不能报错中断。
 - 服务只监听 127.0.0.1，校验 Host；修改类请求必须带 `X-RG` 头。不执行会话里出现的命令。
 - SQL 一律用参数绑定。
+- 改已有的表只能在 `rg/store.py` 的 `MIGRATIONS` 末尾追加一步，`SCHEMA` 里只能加新表。改了解析规则要把 `rg/parse.py` 的 `PARSER_VERSION` 加一。
 - API Key 只存在数据目录（0600）或环境变量里，不进仓库、日志、测试和 prompt。
 
 ## 数据与上下文

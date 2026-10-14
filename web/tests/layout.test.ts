@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { computeLayout, defaultZoom, rowNeighbors, type LayoutOptions } from '../src/layout';
+import { computeLayout, defaultZoom, filterDetail, rowNeighbors, type LayoutOptions } from '../src/layout';
 import type { Branch, Session, Thread, TimelineEvent } from '../src/types';
 
-const thread = (id: number, title = `线${id}`): Thread => ({ id, project_id: 1, title, summary: '', edited: 0 });
+const thread = (id: number, title = `线${id}`): Thread => ({ id, project_id: 1, title, summary: '', status: null, edited: 0 });
 const branch = (id: number, thread_id: number, position: number, extra: Partial<Branch> = {}): Branch => ({
   id,
   thread_id,
@@ -18,6 +18,8 @@ const event = (id: number, ts: string, branch_id: number | null, session_id = 1)
   session_id,
   branch_id,
   kind: 'attempt',
+  outcome: 'success',
+  importance: 2,
   title: `事件${id}`,
   summary: '',
   ts,
@@ -219,5 +221,46 @@ describe('前后事件', () => {
     expect(rowNeighbors(events, 'threads', 1).next?.id).toBe(3);
     expect(rowNeighbors(events, 'sessions', 1).next?.id).toBe(2);
     expect(rowNeighbors(events, 'threads', 3)).toEqual({ prev: events[0], next: null });
+  });
+});
+
+describe('详略', () => {
+  const withImportance = (e: TimelineEvent, importance: 1 | 2 | 3): TimelineEvent => ({ ...e, importance });
+  const input = {
+    threads: [thread(1), thread(2)],
+    branches: [branch(1, 1, 0), branch(2, 1, 1, { from_event: 2, into_event: 4 }), branch(3, 2, 0)],
+    events: [
+      withImportance(event(1, '2026-10-01T01:00:00Z', 1), 3),
+      withImportance(event(2, '2026-10-01T02:00:00Z', 1), 1),
+      withImportance(event(3, '2026-10-01T03:00:00Z', 1), 2),
+      withImportance(event(4, '2026-10-01T04:00:00Z', 1), 1),
+      withImportance(event(5, '2026-10-01T05:00:00Z', 1), 3),
+      withImportance(event(6, '2026-10-01T02:30:00Z', 2), 2),
+      withImportance(event(7, '2026-10-02T01:00:00Z', 3), 1),
+      withImportance(event(8, '2026-10-02T02:00:00Z', 3), 2),
+    ],
+    sessions: [session(1)],
+  };
+
+  it('只看里程碑时，藏起来的分出点和汇入点移到最近的可见事件，连线不断', () => {
+    const { input: out, hidden } = filterDetail(input, 'milestone', 'threads');
+    const ids = out.events.map((e) => e.id).sort((a, b) => a - b);
+    // 线 1 留下里程碑 1、5；线 2 没有里程碑，留下它最高的一档（关键 8）
+    expect(ids).toEqual([1, 5, 8]);
+    const side = out.branches.find((b) => b.id === 2)!;
+    expect([side.from_event, side.into_event]).toEqual([1, 5]);
+    expect(hidden.get(1)).toBe(4); // 2、3、4 藏在 1 后面，整条藏起来的分支（6）算到分出点上
+    expect(hidden.get(8)).toBe(1); // 7 在 8 前面，也算到 8 上
+    expect(out.events.length + [...hidden.values()].reduce((a, b) => a + b, 0)).toBe(input.events.length);
+  });
+
+  it('泳道标签写出显示数和总数', () => {
+    const { input: out } = filterDetail(input, 'milestone', 'threads');
+    const layout = computeLayout(out, { view: 'threads', align: 'compact', pxPerHour: 8 });
+    expect(layout.lanes.find((l) => l.threadId === 1)!.subtitle).toContain('2 / 6 个事件');
+  });
+
+  it('全部时原样返回', () => {
+    expect(filterDetail(input, 'all', 'threads').input).toBe(input);
   });
 });

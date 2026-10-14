@@ -9,7 +9,7 @@ const PERIODS: [keyof UsageReport['periods'], string][] = [
   ['month', '近 30 天'],
   ['all', '全部'],
 ];
-const STAGE_LABEL = { extract: '提取关键步骤', threads: '整理研究线' };
+const STAGE_LABEL = { extract: '提取关键步骤', threads: '整理研究线', review: '复审研究线' };
 
 const total = (b: UsageBucket) => b.input + b.output;
 

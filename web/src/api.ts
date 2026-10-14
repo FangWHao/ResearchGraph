@@ -2,14 +2,17 @@ import type {
   AppState,
   AutoSettings,
   HiddenEvent,
+  Importance,
   Kind,
   Message,
+  Outcome,
   Pending,
   ProjectData,
   ProjectSummary,
   SearchResult,
   SessionInfo,
   Status,
+  ThreadStatus,
   UsageReport,
   Workspace,
 } from './types';
@@ -57,6 +60,8 @@ export interface EventPatch {
   title?: string;
   summary?: string;
   kind?: Kind;
+  outcome?: Outcome;
+  importance?: Importance;
   branch_id?: number;
   hidden?: boolean;
 }
@@ -99,7 +104,7 @@ export const api = {
       'GET',
       `/api/events/${eventId}/messages?context=${context}${focus === undefined ? '' : `&focus=${focus}`}`,
     ),
-  patchThread: (threadId: number, patch: { title?: string; summary?: string }) =>
+  patchThread: (threadId: number, patch: { title?: string; summary?: string; status?: ThreadStatus }) =>
     request<{ ok: boolean }>('PATCH', `/api/threads/${threadId}`, patch),
   createThread: (projectId: number, title: string) =>
     request<{ thread_id: number; branch_id: number }>('POST', `/api/projects/${projectId}/threads`, { title }),

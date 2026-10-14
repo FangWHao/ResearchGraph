@@ -91,3 +91,18 @@ def test_slash_commands_are_readable_and_not_used_as_title():
     session = parse_lines([json.dumps(r, ensure_ascii=False) for r in records])
     assert [m.text for m in session.messages] == ["/clear", "画一下 PDAC 的细胞图谱"]
     assert session.title == "画一下 PDAC 的细胞图谱"
+
+
+def test_ide_context_keeps_only_the_request():
+    from rg.parse import clean_user_text
+
+    text = (
+        "# Context from my IDE setup:\n\n## Active file: /home/u/proj/fig3.py\n\n"
+        "## Open tabs:\n- fig3.py: fig3.py\n- notes.md: notes.md\n\n"
+        "## My request for Codex:\n把图 3 的配色改成统一色板"
+    )
+    assert clean_user_text(text) == "把图 3 的配色改成统一色板（当前文件 fig3.py）"
+    assert clean_user_text("# Context from my IDE setup:\n\n## Open tabs:\n- a.py") == ""
+    assert (
+        clean_user_text("<user_instructions>规则</user_instructions># AGENTS.md instructions") == ""
+    )

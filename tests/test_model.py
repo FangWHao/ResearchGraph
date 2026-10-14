@@ -5,7 +5,7 @@ import json
 import httpx
 import pytest
 
-from rg.model import AuthError, Model, ModelError, Truncated, Usage
+from rg.model import AuthError, Model, ModelError, Truncated, Usage, cached
 
 
 def model(handler, retries: int = 2) -> tuple[Model, list[httpx.Request]]:
@@ -65,3 +65,23 @@ def test_truncated_reply_still_reports_tokens():
     with pytest.raises(Truncated):
         client("s", "u", {"type": "object"}, 4000, seen.append)
     assert seen == [Usage("m1-2026", 1200, 4000, 300, 0)]
+
+
+def test_empty_tool_input_is_retried_and_never_cached(monkeypatch, store):
+    monkeypatch.setattr("rg.model.time.sleep", lambda s: None)
+    replies = [{}, {}, {"events": []}]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        tool = {"type": "tool_use", "name": "submit", "input": replies.pop(0)}
+        return httpx.Response(200, json={"content": [tool], "stop_reason": "tool_use"})
+
+    client, seen = model(handler)
+    schema = {"type": "object", "required": ["events"]}
+    assert cached(store, client, "t")("s", "u", schema, 10) == {"events": []}  # 第三次才对
+    assert len(seen) == 3
+
+    replies[:] = [{}, {}, {}]
+    with pytest.raises(ModelError):
+        cached(store, client, "t")("s", "other", schema, 10)
+    # 空结果不会被缓存，下次还会真的去问
+    assert store.one("SELECT COUNT(*) AS n FROM model_cache")["n"] == 1

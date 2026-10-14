@@ -2,7 +2,7 @@
 // 紧凑：每条泳道各自从最左边排起，只看泳道内部的先后，泳道之间不对齐时间。
 // 真实时间：横轴是真实时间刻度，事件画成线上的点，同一行里放得下时显示标题。
 import type { Branch, Session, Thread, TimelineEvent } from './types';
-import { TOOL_LABEL } from './types';
+import { STATUS_LABEL, TOOL_LABEL } from './types';
 
 export type ViewMode = 'threads' | 'sessions';
 export type Align = 'compact' | 'time';
@@ -38,6 +38,8 @@ export interface Lane {
   height: number;
   threadId?: number;
   sessionId?: number;
+  // 悬停泳道标签时显示：研究线的进展叙述
+  note?: string;
   rows: Row[];
 }
 
@@ -88,6 +90,8 @@ export interface TimelineInput {
   branches: Branch[];
   events: TimelineEvent[];
   sessions: Session[];
+  // 详略过滤前每条泳道的事件总数（t研究线编号 / s会话编号），泳道标签上写“显示数 / 总数”
+  totals?: Map<string, number>;
 }
 
 export interface LayoutOptions {
@@ -176,8 +180,9 @@ function byThreads(input: TimelineInput, events: TimelineEvent[]): Grouping {
     grouping.lanes.push({
       id: `t${thread.id}`,
       title: thread.title,
-      subtitle: `${count} 个事件${rest.length ? ` · ${rest.length} 个分支` : ''}`,
+      subtitle: `${thread.status && thread.status !== 'active' ? `${STATUS_LABEL[thread.status]} · ` : ''}${counted(count, input.totals?.get(`t${thread.id}`))}${rest.length ? ` · ${rest.length} 个分支` : ''}`,
       threadId: thread.id,
+      note: thread.summary || undefined,
       rows,
     });
   }
@@ -187,7 +192,7 @@ function byThreads(input: TimelineInput, events: TimelineEvent[]): Grouping {
     grouping.lanes.push({
       id: 'misc',
       title: '尚未归入研究线',
-      subtitle: `${misc.length} 个事件`,
+      subtitle: counted(misc.length, input.totals?.get('tmisc')),
       rows: [{ id: 'misc', label: '', y: 0 }],
     });
   }
@@ -216,7 +221,7 @@ function bySessions(input: TimelineInput, events: TimelineEvent[]): Grouping {
     grouping.lanes.push({
       id: rowId,
       title: session?.title || `会话 ${sessionId}`,
-      subtitle: `${tool} · ${ids.length} 个事件${session?.fork_of ? ' · fork' : ''}`,
+      subtitle: `${tool} · ${counted(ids.length, input.totals?.get(`s${sessionId}`))}${session?.fork_of ? ' · fork' : ''}`,
       sessionId,
       rows: [{ id: rowId, label: '', y: 0 }],
     });
@@ -426,4 +431,95 @@ export function rowNeighbors(
     .sort(compareEvents);
   const i = same.findIndex((e) => e.id === eventId);
   return { prev: same[i - 1] ?? null, next: same[i + 1] ?? null };
+}
+
+function counted(shown: number, total: number | undefined): string {
+  return total && total !== shown ? `${shown} / ${total} 个事件` : `${shown} 个事件`;
+}
+
+// ---------- 详略 ----------
+
+export type Detail = 'milestone' | 'key' | 'all';
+const DETAIL_MIN: Record<Detail, number> = { milestone: 3, key: 2, all: 1 };
+
+export interface Filtered {
+  input: TimelineInput;
+  // 每个可见事件代表着几个被藏起来的事件（同一分支里，到下一个可见事件为止）
+  hidden: Map<number, number>;
+}
+
+/**
+ * 按详略过滤事件。每条研究线（按会话看时是每个会话）至少留下它最高的一档，整条泳道不会消失。
+ * 被藏起来的分出点、汇入点移到同一分支里最近的可见事件上，连线不断。
+ */
+export function filterDetail(input: TimelineInput, detail: Detail, view: ViewMode): Filtered {
+  const hidden = new Map<number, number>();
+  if (detail === 'all') return { input, hidden };
+  const threadOf = new Map(input.branches.map((b) => [b.id, b.thread_id]));
+  const group = (e: TimelineEvent) =>
+    view === 'sessions' ? `s${e.session_id}` : `t${e.branch_id === null ? 'misc' : threadOf.get(e.branch_id)}`;
+  const top = new Map<string, number>();
+  for (const e of input.events) top.set(group(e), Math.max(top.get(group(e)) ?? 0, e.importance));
+  const keep = (e: TimelineEvent) => e.importance >= Math.min(DETAIL_MIN[detail], top.get(group(e)) ?? 0);
+
+  // 按分支（会话视图按会话）排好，统计每个可见事件前后藏了几个
+  const lineOf = (e: TimelineEvent) => (view === 'sessions' ? `s${e.session_id}` : `b${e.branch_id ?? 'misc'}`);
+  const lines = new Map<string, TimelineEvent[]>();
+  for (const e of [...input.events].sort(compareEvents)) {
+    const list = lines.get(lineOf(e)) ?? [];
+    list.push(e);
+    lines.set(lineOf(e), list);
+  }
+  const nearest = new Map<number, { before: number | null; after: number | null }>();
+  const orphans = new Map<string, number>(); // 整条分支都藏起来了：算到它的分出点上
+  for (const [line, list] of lines) {
+    let last: number | null = null;
+    let pending = 0;
+    for (const e of list) {
+      if (keep(e)) {
+        hidden.set(e.id, (hidden.get(e.id) ?? 0) + (last === null ? pending : 0));
+        if (last === null) pending = 0;
+        last = e.id;
+      } else if (last === null) {
+        pending += 1;
+      } else {
+        hidden.set(last, (hidden.get(last) ?? 0) + 1);
+      }
+    }
+    if (last === null && pending) orphans.set(line, pending);
+    let before: number | null = null;
+    for (const e of list) {
+      if (keep(e)) before = e.id;
+      nearest.set(e.id, { before, after: null });
+    }
+    let after: number | null = null;
+    for (const e of [...list].reverse()) {
+      if (keep(e)) after = e.id;
+      nearest.get(e.id)!.after = after;
+    }
+  }
+  const visible = new Set(input.events.filter(keep).map((e) => e.id));
+  const remap = (id: number | null, prefer: 'before' | 'after'): number | null => {
+    if (id === null || visible.has(id)) return id;
+    const near = nearest.get(id);
+    if (!near) return null;
+    return prefer === 'before' ? near.before ?? near.after : near.after ?? near.before;
+  };
+  for (const b of input.branches) {
+    const count = orphans.get(`b${b.id}`);
+    const host = count ? remap(b.from_event, 'before') : null;
+    if (count && host !== null) hidden.set(host, (hidden.get(host) ?? 0) + count);
+  }
+  for (const [id, n] of hidden) if (n === 0) hidden.delete(id);
+  const branches = input.branches.map((b) => ({
+    ...b,
+    from_event: remap(b.from_event, 'before'),
+    into_event: remap(b.into_event, 'after'),
+  }));
+  const totals = new Map<string, number>();
+  for (const e of input.events) {
+    const lane = view === 'sessions' ? `s${e.session_id}` : `t${e.branch_id === null ? 'misc' : threadOf.get(e.branch_id)}`;
+    totals.set(lane, (totals.get(lane) ?? 0) + 1);
+  }
+  return { input: { ...input, events: input.events.filter(keep), branches, totals }, hidden };
 }

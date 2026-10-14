@@ -401,3 +401,22 @@ def test_deleted_events_can_be_restored(server, tmp_path):
     events = client.get(f"/api/projects/{project_id}").json()["events"]
     assert victim["id"] in {e["id"] for e in events}
     assert client.post(f"/api/events/{victim['id']}/restore").status_code == 404
+
+
+def test_event_outcome_and_importance_follow_the_kind(server, tmp_path):
+    app, client = server
+    project_id, data = organized_demo(app, client, tmp_path)
+    attempt = next(e for e in data["events"] if e["kind"] == "attempt")
+    url = f"/api/events/{attempt['id']}"
+    assert client.patch(url, json={"outcome": "failed", "importance": 3}).status_code == 200
+    assert client.patch(url, json={"outcome": "maybe"}).status_code == 400
+    assert client.patch(url, json={"importance": 5}).status_code == 400
+    client.patch(url, json={"kind": "decision"})
+    row = app.store.one(
+        "SELECT kind, outcome, importance FROM events WHERE id = ?", (attempt["id"],)
+    )
+    assert row == {"kind": "decision", "outcome": None, "importance": 3}
+    client.patch(url, json={"kind": "attempt"})
+    assert app.store.one("SELECT outcome FROM events WHERE id = ?", (attempt["id"],)) == {
+        "outcome": "open"
+    }

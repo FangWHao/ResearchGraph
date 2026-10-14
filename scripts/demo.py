@@ -31,12 +31,12 @@ STORY: list[dict[str, Any]] = [
                 "session": 1,
                 "steps": [
                     (
-                        "question",
-                        "批次之间差异有多大",
+                        "attempt",
+                        "看两批次的差异",
                         "八个样本来自两个批次，先看测序深度和线粒体比例的分布",
                     ),
                     ("attempt", "按样本过滤低质细胞", "按每个样本的基因数和 UMI 中位数设置上下限"),
-                    ("finding", "两个批次线粒体偏高", "B 批次线粒体比例中位数 11%，A 批次 6%"),
+                    ("result", "两个批次线粒体偏高", "B 批次线粒体比例中位数 11%，A 批次 6%"),
                     (
                         "attempt",
                         "比较 10%/15%/20% 阈值",
@@ -47,7 +47,7 @@ STORY: list[dict[str, Any]] = [
                         "线粒体阈值定为 15%",
                         "15% 保留了大部分上皮细胞，同时去掉明显的破损细胞",
                     ),
-                    ("output", "质控报告 v1", "生成 qc_report_v1.html，包含每个样本的过滤前后对比"),
+                    ("result", "质控报告 v1", "生成 qc_report_v1.html，包含每个样本的过滤前后对比"),
                 ],
             },
             {
@@ -57,7 +57,7 @@ STORY: list[dict[str, Any]] = [
                 "into": "0.0.4",
                 "steps": [
                     ("attempt", "试 scDblFinder", "每个样本单独跑，期望双细胞率按上样量估计"),
-                    ("finding", "双细胞约 6%", "集中在两个大样本，主要是 T 细胞和髓系细胞混合"),
+                    ("result", "双细胞约 6%", "集中在两个大样本，主要是 T 细胞和髓系细胞混合"),
                 ],
             },
         ],
@@ -72,18 +72,18 @@ STORY: list[dict[str, Any]] = [
                 "session": 2,
                 "steps": [
                     (
-                        "question",
-                        "哪种方法保住生物差异",
+                        "decision",
+                        "以保住生物差异为标准",
                         "既要混合批次，又不能把肿瘤和正常上皮混在一起",
                     ),
                     ("attempt", "Harmony 默认参数", "theta=2，在前 30 个主成分上运行"),
-                    ("finding", "批次混合分数 0.82", "kBET 接受率 0.82，上皮亚群仍然分开"),
+                    ("result", "批次混合分数 0.82", "kBET 接受率 0.82，上皮亚群仍然分开"),
                     (
                         "attempt",
                         "调 theta=1/3/4",
                         "theta 越大混合越好，但 theta=4 时肿瘤亚群开始合并",
                     ),
-                    ("finding", "theta=2 最平衡", "theta=2 在混合分数和亚群分离度之间最好"),
+                    ("result", "theta=2 最平衡", "theta=2 在混合分数和亚群分离度之间最好"),
                     ("decision", "采用 Harmony theta=2", "后续分析都基于 Harmony theta=2 的结果"),
                 ],
             },
@@ -95,12 +95,12 @@ STORY: list[dict[str, Any]] = [
                 "steps": [
                     ("attempt", "scVI 训练 200 轮", "两层编码器，潜空间 30 维"),
                     (
-                        "finding",
+                        "result",
                         "分数 0.79，耗时三倍",
                         "效果和 Harmony 接近，但 GPU 上也要 40 分钟",
                     ),
                     ("attempt", "scVI 加批次协变量", "把测序深度作为连续协变量"),
-                    ("finding", "提升不明显", "混合分数 0.80，不值得额外复杂度"),
+                    ("result", "提升不明显", "混合分数 0.80，不值得额外复杂度"),
                 ],
             },
             {
@@ -125,12 +125,12 @@ STORY: list[dict[str, Any]] = [
                 "session": 4,
                 "steps": [
                     ("attempt", "参考图谱自动注释", "用 atlas_v2 做标签迁移，得到 14 个大类"),
-                    ("finding", "T 细胞亚群分不开", "CD8 效应和耗竭样细胞混在一起"),
+                    ("result", "T 细胞亚群分不开", "CD8 效应和耗竭样细胞混在一起"),
                     ("attempt", "T 细胞单独再聚类", "只取 T 细胞重新找高变基因，分辨率 0.8"),
-                    ("finding", "找到耗竭样亚群", "PDCD1、HAVCR2、TOX 共同高表达，占 CD8 的 18%"),
+                    ("result", "找到耗竭样亚群", "PDCD1、HAVCR2、TOX 共同高表达，占 CD8 的 18%"),
                     ("attempt", "髓系细胞再聚类", "巨噬细胞分成 SPP1+ 和 C1QC+ 两群"),
                     ("decision", "按标志基因手动命名", "自动标签只作参考，最终名称按标志基因确定"),
-                    ("output", "注释表 v2", "cell_annotation_v2.csv，共 23 个亚群"),
+                    ("result", "注释表 v2", "cell_annotation_v2.csv，共 23 个亚群"),
                 ],
             },
             {
@@ -140,7 +140,7 @@ STORY: list[dict[str, Any]] = [
                 "into": "2.0.5",
                 "steps": [
                     ("attempt", "改用 atlas_v3", "新版图谱多了肿瘤相关成纤维细胞的细分"),
-                    ("finding", "一致性提高到 0.90", "和手工标注的一致性从 0.81 提高到 0.90"),
+                    ("result", "一致性提高到 0.90", "和手工标注的一致性从 0.81 提高到 0.90"),
                 ],
             },
         ],
@@ -156,18 +156,18 @@ STORY: list[dict[str, Any]] = [
                 "session": 6,
                 "steps": [
                     (
-                        "question",
-                        "亚群比例和预后有关吗",
+                        "attempt",
+                        "查亚群比例与预后",
                         "用公开队列的 bulk 数据做反卷积，估计各亚群比例",
                     ),
                     ("attempt", "反卷积估计比例", "CIBERSORTx，签名矩阵来自本项目的注释表 v2"),
                     ("attempt", "Cox 回归", "以耗竭样 T 细胞比例的中位数分组"),
-                    ("finding", "HR 1.8，p=0.03", "高比例组总生存更差"),
-                    ("question", "是否被分期混杂", "晚期患者里耗竭样比例本来就更高"),
+                    ("result", "HR 1.8，p=0.03", "高比例组总生存更差"),
+                    ("attempt", "检查分期混杂", "晚期患者里耗竭样比例本来就更高，按分期分层再看"),
                     ("attempt", "按分期分层", "分层 Cox 模型，同时校正年龄和性别"),
-                    ("finding", "效应减弱仍显著", "HR 1.5，p=0.04"),
+                    ("result", "效应减弱仍显著", "HR 1.5，p=0.04"),
                     ("decision", "主文用分层模型", "未分层的结果放补充材料"),
-                    ("output", "图 4 生存曲线", "fig4_survival.pdf，含风险表"),
+                    ("result", "图 4 生存曲线", "fig4_survival.pdf，含风险表"),
                 ],
             },
             {
@@ -177,7 +177,7 @@ STORY: list[dict[str, Any]] = [
                 "into": "3.0.7",
                 "steps": [
                     ("attempt", "第二个队列复现", "另一个公开队列，样本量 180"),
-                    ("finding", "方向一致", "HR 1.6，但 p=0.08，样本量偏小"),
+                    ("result", "方向一致", "HR 1.6，但 p=0.08，样本量偏小"),
                 ],
             },
         ],
@@ -192,19 +192,44 @@ STORY: list[dict[str, Any]] = [
                 "session": 8,
                 "steps": [
                     ("attempt", "统一亚群配色", "23 个亚群固定颜色，所有图共用"),
-                    ("output", "图 1 研究设计", "流程示意和样本信息"),
-                    ("output", "图 2 细胞图谱", "UMAP 和亚群比例"),
+                    ("result", "图 1 研究设计", "流程示意和样本信息"),
+                    ("result", "图 2 细胞图谱", "UMAP 和亚群比例"),
                     ("decision", "图 3 拆成两张", "T 细胞和髓系分开，信息太多放不下"),
-                    ("output", "图 3a / 3b", "T 细胞耗竭轨迹和髓系亚群"),
-                    ("output", "补充图 S1–S4", "质控、去批次比较、注释一致性、验证队列"),
+                    ("result", "图 3a / 3b", "T 细胞耗竭轨迹和髓系亚群"),
+                    ("result", "补充图 S1–S4", "质控、去批次比较、注释一致性、验证队列"),
                 ],
             },
         ],
     },
 ]
 
+# 成败和重要性按标题指定；没写的尝试算成功，重要性算关键
+OUTCOME = {
+    "试 BBKNN": "failed",
+    "scVI 训练 200 轮": "failed",
+    "scVI 加批次协变量": "failed",
+    "参考图谱自动注释": "failed",
+    "第二个队列复现": "open",
+}
+IMPORTANCE = {
+    "线粒体阈值定为 15%": 3,
+    "采用 Harmony theta=2": 3,
+    "找到耗竭样亚群": 3,
+    "HR 1.8，p=0.03": 3,
+    "主文用分层模型": 3,
+    "看两批次的差异": 1,
+    "质控报告 v1": 1,
+    "提升不明显": 1,
+    "髓系细胞再聚类": 1,
+    "注释表 v2": 1,
+    "反卷积估计比例": 1,
+    "统一亚群配色": 1,
+    "图 1 研究设计": 1,
+}
+STATUS = {"数据质控": "done", "去批次方法比较": "done", "细胞注释": "done", "探索性分析": "dropped"}
+
 TOPICS = ["配体受体", "转录因子", "拷贝数", "通路富集", "空间邻域", "轨迹", "克隆型", "代谢"]
-KINDS = ["attempt", "finding", "attempt", "finding", "decision", "attempt", "question"]
+KINDS = ["attempt", "result", "attempt", "result", "decision", "attempt", "attempt"]
 
 
 def exploration(rng: random.Random) -> dict[str, Any]:
@@ -238,6 +263,12 @@ def exploration(rng: random.Random) -> dict[str, Any]:
                 ],
             }
         )
+    # 大多是细节，每隔几步有一个失败的尝试，偶尔一个关键结果
+    for branch in branches:
+        for i, (_, title, _) in enumerate(branch["steps"]):
+            IMPORTANCE.setdefault(title, 2 if i % 6 == 3 else 1)
+            if i % 5 == 2:
+                OUTCOME.setdefault(title, "failed")
     return {"title": "探索性分析", "summary": "多个方向的快速尝试", "day": 4, "branches": branches}
 
 
@@ -288,8 +319,13 @@ def build(store: Store, name: str) -> int:
         pending_links: list[tuple[int, str | None, str | None]] = []
         for t_index, thread in enumerate(story):
             thread_id = db.execute(
-                "INSERT INTO threads(project_id, title, summary) VALUES (?, ?, ?)",
-                (project_id, thread["title"], thread["summary"]),
+                "INSERT INTO threads(project_id, title, summary, status) VALUES (?, ?, ?, ?)",
+                (
+                    project_id,
+                    thread["title"],
+                    thread["summary"],
+                    STATUS.get(thread["title"], "active"),
+                ),
             ).lastrowid
             clock = START + timedelta(days=thread["day"])
             for b_index, branch in enumerate(thread["branches"]):
@@ -329,13 +365,16 @@ def build(store: Store, name: str) -> int:
                     log.append(("assistant", summary + "。", clock.isoformat()))
                     event_id = int(
                         db.execute(
-                            "INSERT INTO events(project_id, session_id, branch_id, kind, title, summary, "
-                            "ts, anchor, refs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            "INSERT INTO events(project_id, session_id, branch_id, kind, outcome, "
+                            "importance, title, summary, ts, anchor, refs) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                             (
                                 project_id,
                                 session_ids[session],
                                 branch_id,
                                 kind,
+                                OUTCOME.get(title, "success") if kind == "attempt" else None,
+                                IMPORTANCE.get(title, 2),
                                 title,
                                 summary,
                                 clock.isoformat(),

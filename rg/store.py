@@ -68,6 +68,24 @@ CREATE TABLE IF NOT EXISTS excluded(
 """
 
 
+# 已有表的改动按顺序写在这里，库里用 PRAGMA user_version 记到第几步。
+# 上面的 SCHEMA 只能加新表，不能改已有的表。
+MIGRATIONS: list[list[str]] = [
+    # 1：事件改为 尝试（带成败）/ 决定 / 结果，并带重要性；会话记下用哪一版解析器读的
+    [
+        "ALTER TABLE events ADD COLUMN outcome TEXT",
+        "ALTER TABLE events ADD COLUMN importance INTEGER NOT NULL DEFAULT 2",
+        "UPDATE events SET kind = 'result' WHERE kind IN ('finding', 'output')",
+        "ALTER TABLE sessions ADD COLUMN parser INTEGER NOT NULL DEFAULT 0",
+    ],
+    # 2：研究线复审——状态（active / done / dropped）和上次复审时的事件签名
+    [
+        "ALTER TABLE threads ADD COLUMN status TEXT",
+        "ALTER TABLE threads ADD COLUMN reviewed TEXT",
+    ],
+]
+
+
 def now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
@@ -81,6 +99,15 @@ class Store:
         self.db.execute("PRAGMA foreign_keys = ON")
         self.db.execute("PRAGMA journal_mode = WAL")
         self.db.executescript(SCHEMA)
+        self.migrate()
+
+    def migrate(self) -> None:
+        with self.tx() as db:
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            for number, steps in enumerate(MIGRATIONS[version:], start=version + 1):
+                for sql in steps:
+                    db.execute(sql)
+                db.execute(f"PRAGMA user_version = {number}")
 
     def close(self) -> None:
         self.db.close()

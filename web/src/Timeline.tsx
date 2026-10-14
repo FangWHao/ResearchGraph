@@ -15,11 +15,11 @@ import {
   type TimelineInput,
   type ViewMode,
 } from './layout';
-import { KIND_LABEL, TOOL_LABEL, type Session } from './types';
+import { eventLabel, KIND_LABEL, TOOL_LABEL, type Session } from './types';
 
 const AXIS_H = 40;
 
-export type Selection = { type: 'event'; id: number } | { type: 'lane'; lane: Lane } | null;
+export type Selection = { type: 'event'; id: number } | { type: 'lane'; lane: Lane } | { type: 'overview' } | null;
 
 interface Props {
   data: TimelineInput;
@@ -34,9 +34,11 @@ interface Props {
   fresh: Set<number>;
   // 正在搜索时，结果里的事件；其余的变淡
   matches: Set<number> | null;
+  // 详略过滤后，每个可见事件后面藏着几个细节
+  hidden: Map<number, number>;
 }
 
-export function Timeline({ data, view, align, pxPerHour, selection, onSelect, jump, fresh, matches }: Props) {
+export function Timeline({ data, view, align, pxPerHour, selection, onSelect, jump, fresh, matches, hidden }: Props) {
   const layout = useMemo(() => computeLayout(data, { view, align, pxPerHour }), [data, view, align, pxPerHour]);
   const scroller = useRef<HTMLDivElement>(null);
   const labels = useRef<HTMLDivElement>(null);
@@ -111,7 +113,21 @@ export function Timeline({ data, view, align, pxPerHour, selection, onSelect, ju
       <div className="tl-inner" style={{ width: `calc(var(--label-w) + ${layout.width}px)` }}>
         <div className="tl-head" style={{ height: AXIS_H }}>
         <div className="tl-corner">
-          {view === 'threads' ? `${layout.lanes.filter((l) => l.threadId !== undefined).length} 条研究线` : `${layout.lanes.length} 个会话`}
+          {view === 'threads' ? (
+            <button
+              type="button"
+              className={`tl-corner-btn${selection?.type === 'overview' ? ' on' : ''}`}
+              title="项目概览：每条研究线的进展和里程碑"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect(selection?.type === 'overview' ? null : { type: 'overview' });
+              }}
+            >
+              {layout.lanes.filter((l) => l.threadId !== undefined).length} 条研究线 · 概览
+            </button>
+          ) : (
+            `${layout.lanes.length} 个会话`
+          )}
         </div>
         <div className="tl-axis" style={{ width: layout.width }}>
           {align === 'compact' ? (
@@ -137,6 +153,7 @@ export function Timeline({ data, view, align, pxPerHour, selection, onSelect, ju
               type="button"
               className={`tl-lane${selectedLane === lane.id ? ' on' : ''}`}
               style={{ top: lane.y, height: lane.height }}
+              title={lane.note}
               onClick={(e) => {
                 e.stopPropagation();
                 onSelect({ type: 'lane', lane });
@@ -193,6 +210,7 @@ export function Timeline({ data, view, align, pxPerHour, selection, onSelect, ju
                 cross={crossLinked.has(node.event.id)}
                 fresh={fresh.has(node.event.id)}
                 dim={matches !== null && !matches.has(node.event.id)}
+                more={hidden.get(node.event.id) ?? 0}
                 on={node.event.id === selectedEvent}
                 onSelect={onSelect}
                 onHover={setHovered}
@@ -223,6 +241,7 @@ interface NodeProps {
   cross?: boolean;
   fresh?: boolean;
   dim?: boolean;
+  more?: number;
   onSelect: (selection: Selection) => void;
   onHover: (id: number | null) => void;
 }
@@ -242,20 +261,38 @@ function handlers({ node, onSelect, onHover }: NodeProps) {
 }
 
 function Card(props: NodeProps) {
-  const { node, on, cross, fresh, dim } = props;
+  const { node, on, cross, fresh, dim, more = 0 } = props;
   const { event } = node;
+  const classes = [
+    'tl-card',
+    on ? 'on' : '',
+    dim ? 'dim' : '',
+    event.importance === 3 ? 'milestone' : '',
+    event.outcome === 'failed' ? 'failed' : '',
+    event.importance === 1 ? 'minor' : '',
+  ];
   return (
     <button
       type="button"
-      className={`tl-card${on ? ' on' : ''}${dim ? ' dim' : ''}`}
+      className={classes.filter(Boolean).join(' ')}
       style={{ left: node.x, top: node.y, width: CARD_W, height: CARD_H }}
-      aria-label={`${KIND_LABEL[event.kind]}：${event.title}`}
+      aria-label={`${eventLabel(event)}：${event.title}`}
       {...handlers(props)}
     >
       <span className="tl-card-meta">
-        <KindGlyph kind={event.kind} />
+        <KindGlyph kind={event.kind} outcome={event.outcome} />
         <span>{KIND_LABEL[event.kind]}</span>
+        {event.outcome && event.outcome !== 'open' ? (
+          <span className={`tl-outcome ${event.outcome}`} title={event.outcome === 'failed' ? '失败的尝试' : '成功的尝试'}>
+            {event.outcome === 'failed' ? '✗' : '✓'}
+          </span>
+        ) : null}
         {fresh ? <span className="tl-new">新</span> : null}
+        {more ? (
+          <span className="tl-more" title={`这里还藏着 ${more} 个细节，切到“全部”能看到`}>
+            +{more}
+          </span>
+        ) : null}
         <span className="tl-card-time">{fmtTime(event.ts)}</span>
         {cross ? (
           <span className="tl-card-flag" title="和别的泳道有分出或汇入关系，选中后显示连线">
@@ -276,16 +313,17 @@ function Card(props: NodeProps) {
 function Dot(props: NodeProps) {
   const { node, on, fresh, dim } = props;
   const { event } = node;
+  const milestone = event.importance === 3;
   return (
     <button
       type="button"
-      className={`tl-dot${on ? ' on' : ''}${fresh ? ' fresh' : ''}${dim ? ' dim' : ''}`}
+      className={`tl-dot${on ? ' on' : ''}${fresh ? ' fresh' : ''}${dim ? ' dim' : ''}${milestone ? ' milestone' : ''}`}
       style={{ left: node.x - DOT_HIT / 2, top: node.y - DOT_HIT / 2 }}
-      aria-label={`${KIND_LABEL[event.kind]}：${event.title}`}
+      aria-label={`${eventLabel(event)}：${event.title}`}
       {...handlers(props)}
     >
       <span className="tl-dot-mark">
-        <KindGlyph kind={event.kind} size={12} ring />
+        <KindGlyph kind={event.kind} outcome={event.outcome} size={milestone ? 14 : 12} ring />
       </span>
       {node.labelWidth > 0 ? (
         <span className="tl-dot-label" style={{ maxWidth: node.labelWidth - 6 }}>
@@ -309,8 +347,8 @@ function Tip({ node, align, session }: { node: PlacedNode; align: Align; session
       role="tooltip"
     >
       <div className="tl-tip-meta">
-        <KindGlyph kind={event.kind} />
-        <span>{KIND_LABEL[event.kind]}</span>
+        <KindGlyph kind={event.kind} outcome={event.outcome} />
+        <span>{eventLabel(event)}</span>
         <span>·</span>
         <span>{fmtTime(event.ts)}</span>
       </div>

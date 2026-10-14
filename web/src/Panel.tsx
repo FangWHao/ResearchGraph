@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { api } from './api';
 import { fmtFull, fmtTime } from './format';
 import { Icon, KindGlyph } from './Icons';
 import { compareEvents, type Lane } from './layout';
 import { highlight } from './Search';
-import type { Branch, Kind, Message, ProjectData, TimelineEvent } from './types';
-import { KIND_LABEL, KINDS, TOOL_LABEL } from './types';
+import { api, type EventPatch } from './api';
+import type { Branch, Importance, Kind, Message, Outcome, ProjectData, ThreadStatus, TimelineEvent } from './types';
+import { IMPORTANCE_LABEL, KIND_LABEL, KINDS, OUTCOME_LABEL, OUTCOMES, STATUS_LABEL, TOOL_LABEL } from './types';
 
 const ROLE: Record<Message['role'], string> = { user: '用户', assistant: 'Agent', tool: '工具' };
 const NEW_THREAD = '__new__';
@@ -67,7 +67,7 @@ function IconButton({ icon, label, onClick, active }: { icon: Parameters<typeof 
 function EventLink({ event, onSelect, children }: { event: TimelineEvent; onSelect: (id: number) => void; children?: ReactNode }) {
   return (
     <button type="button" className="event-link" onClick={() => onSelect(event.id)}>
-      <KindGlyph kind={event.kind} />
+      <KindGlyph kind={event.kind} outcome={event.outcome} />
       <span className="event-link-title">{event.title}</span>
       {children}
     </button>
@@ -144,9 +144,18 @@ export function EventPanel({
       chips={
         <>
           <span className="chip">
-            <KindGlyph kind={event.kind} />
+            <KindGlyph kind={event.kind} outcome={event.outcome} />
             {KIND_LABEL[event.kind]}
+            {event.outcome ? ` · ${OUTCOME_LABEL[event.outcome]}` : ''}
           </span>
+          {event.importance === 3 ? (
+            <span className="chip">
+              <Icon name="flag" size={12} />
+              里程碑
+            </span>
+          ) : event.importance === 1 ? (
+            <span className="chip muted">细节</span>
+          ) : null}
           {event.edited ? <span className="chip muted">手动改过</span> : null}
         </>
       }
@@ -289,19 +298,28 @@ function EventEditor({
 }: {
   event: TimelineEvent;
   busy: boolean;
-  onSave: (patch: { title: string; summary: string; kind: Kind }) => void;
+  onSave: (patch: EventPatch) => void;
   onCancel: () => void;
 }) {
   const [title, setTitle] = useState(event.title);
   const [summary, setSummary] = useState(event.summary);
-  const [kind, setKind] = useState<Kind>(event.kind);
-  const dirty = title !== event.title || summary !== event.summary || kind !== event.kind;
+  // 旧版本的“问题”不能再选，编辑时先当成决定
+  const [kind, setKind] = useState<Kind>(KINDS.includes(event.kind) ? event.kind : 'decision');
+  const [outcome, setOutcome] = useState<Outcome>(event.outcome ?? 'open');
+  const [importance, setImportance] = useState<Importance>(event.importance);
+  const patch: EventPatch = {};
+  if (title.trim() !== event.title) patch.title = title.trim();
+  if (summary !== event.summary) patch.summary = summary;
+  if (kind !== event.kind) patch.kind = kind;
+  if (kind === 'attempt' && outcome !== event.outcome) patch.outcome = outcome;
+  if (importance !== event.importance) patch.importance = importance;
+  const dirty = Object.keys(patch).length > 0;
   return (
     <form
       className="editor"
       onSubmit={(e) => {
         e.preventDefault();
-        if (dirty && title.trim()) onSave({ title: title.trim(), summary, kind });
+        if (dirty && title.trim()) onSave(patch);
       }}
     >
       <label className="field">
@@ -310,18 +328,34 @@ function EventEditor({
       </label>
       <div className="field">
         <span>种类</span>
-        <div className="kind-picker" role="radiogroup">
+        <div className="kind-picker" role="radiogroup" aria-label="种类">
           {KINDS.map((k) => (
-            <button
-              key={k}
-              type="button"
-              role="radio"
-              aria-checked={kind === k}
-              className={kind === k ? 'on' : ''}
-              onClick={() => setKind(k)}
-            >
-              <KindGlyph kind={k} />
+            <button key={k} type="button" role="radio" aria-checked={kind === k} className={kind === k ? 'on' : ''} onClick={() => setKind(k)}>
+              <KindGlyph kind={k} outcome={k === 'attempt' ? outcome : null} />
               {KIND_LABEL[k]}
+            </button>
+          ))}
+        </div>
+      </div>
+      {kind === 'attempt' ? (
+        <div className="field">
+          <span>结果</span>
+          <div className="kind-picker" role="radiogroup" aria-label="尝试的结果">
+            {OUTCOMES.map((o) => (
+              <button key={o} type="button" role="radio" aria-checked={outcome === o} className={outcome === o ? 'on' : ''} onClick={() => setOutcome(o)}>
+                {o === 'success' ? '✓ ' : o === 'failed' ? '✗ ' : ''}
+                {OUTCOME_LABEL[o]}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      <div className="field">
+        <span>重要性</span>
+        <div className="kind-picker" role="radiogroup" aria-label="重要性">
+          {([3, 2, 1] as Importance[]).map((n) => (
+            <button key={n} type="button" role="radio" aria-checked={importance === n} className={importance === n ? 'on' : ''} onClick={() => setImportance(n)}>
+              {IMPORTANCE_LABEL[n]}
             </button>
           ))}
         </div>
@@ -383,6 +417,75 @@ function PlacePicker({
       <option value={NEW_THREAD}>＋ 放进新研究线…</option>
     </select>
   );
+}
+
+// ---------- 项目概览 ----------
+
+export function OverviewPanel({ data, onClose, onSelectEvent }: Common) {
+  const lines = useMemo(() => {
+    const threadOf = new Map(data.branches.map((b) => [b.id, b.thread_id]));
+    const groups = new Map<number, TimelineEvent[]>();
+    for (const e of [...data.events].sort(compareEvents)) {
+      const tid = e.branch_id === null ? undefined : threadOf.get(e.branch_id);
+      if (tid === undefined) continue;
+      groups.set(tid, [...(groups.get(tid) ?? []), e]);
+    }
+    return data.threads
+      .filter((t) => groups.has(t.id))
+      .map((t) => ({ thread: t, events: groups.get(t.id)! }))
+      .sort((a, b) => compareEvents(a.events[0], b.events[0]));
+  }, [data]);
+  const order: Record<string, number> = { active: 0, done: 1, dropped: 2 };
+  const counts = lines.reduce<Record<string, number>>((acc, l) => {
+    const key = l.thread.status ?? 'active';
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {});
+  return (
+    <Shell chips={<span className="chip">项目概览</span>} actions={<IconButton icon="close" label="关闭（Esc）" onClick={onClose} />}>
+      <section className="panel-intro">
+        <h2>{data.project.name}</h2>
+        <p className="muted small">
+          {lines.length} 条研究线
+          {Object.entries(counts)
+            .sort(([a], [b]) => order[a] - order[b])
+            .map(([k, n]) => ` · ${STATUS_LABEL[k as ThreadStatus]} ${n}`)
+            .join('')}
+          {' · '}
+          {data.events.filter((e) => e.importance === 3).length} 个里程碑
+        </p>
+      </section>
+      {lines.map(({ thread, events }) => {
+        const milestones = events.filter((e) => e.importance === 3);
+        return (
+          <section key={thread.id} className="overview-line">
+            <div className="overview-head">
+              <strong>{thread.title}</strong>
+              {thread.status ? <span className="chip muted">{STATUS_LABEL[thread.status]}</span> : null}
+              <span className="muted small">
+                {span(events[0].ts, events[events.length - 1].ts)} · {events.length} 个事件
+              </span>
+            </div>
+            {thread.summary ? (
+              <p className="overview-summary" title={thread.summary}>
+                {thread.summary}
+              </p>
+            ) : null}
+            {milestones.map((e) => (
+              <EventLink key={e.id} event={e} onSelect={onSelectEvent}>
+                <span className="event-link-time">{fmtTime(e.ts)}</span>
+              </EventLink>
+            ))}
+          </section>
+        );
+      })}
+    </Shell>
+  );
+}
+
+function span(start: string | null, end: string | null): string {
+  const day = (ts: string | null) => (ts ? fmtTime(ts).split(' ')[0] : '?');
+  return day(start) === day(end) ? day(start) : `${day(start)}–${day(end)}`;
 }
 
 // ---------- 泳道：研究线 / 会话 ----------
@@ -461,10 +564,13 @@ function ThreadPanel({
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(thread.title);
   const [summary, setSummary] = useState(thread.summary);
+  const [status, setStatus] = useState<ThreadStatus>(thread.status ?? 'active');
   const { error, busy, run } = useAction(onChanged);
   const branches = data.branches.filter((b) => b.thread_id === threadId).sort((a, b) => a.position - b.position);
   const events = useMemo(() => [...data.events].sort(compareEvents), [data.events]);
-  const count = events.filter((e) => branches.some((b) => b.id === e.branch_id)).length;
+  const own = events.filter((e) => branches.some((b) => b.id === e.branch_id));
+  const count = own.length;
+  const milestones = own.filter((e) => e.importance === 3);
   const others = data.threads.filter((t) => t.id !== threadId);
   const [into, setInto] = useState('');
   const merge = async () => {
@@ -476,10 +582,15 @@ function ThreadPanel({
 
   return (
     <Shell
-      chips={<span className="chip">研究线</span>}
+      chips={
+        <>
+          <span className="chip">研究线</span>
+          {thread.status ? <span className="chip muted">{STATUS_LABEL[thread.status]}</span> : null}
+        </>
+      }
       actions={
         <>
-          <IconButton icon="edit" label="改名" active={editing} onClick={() => setEditing(!editing)} />
+          <IconButton icon="edit" label="编辑研究线" active={editing} onClick={() => setEditing(!editing)} />
           <IconButton icon="close" label="关闭（Esc）" onClick={onClose} />
         </>
       }
@@ -489,7 +600,7 @@ function ThreadPanel({
           className="editor"
           onSubmit={async (e) => {
             e.preventDefault();
-            if (await run(() => api.patchThread(threadId, { title: title.trim(), summary }))) setEditing(false);
+            if (await run(() => api.patchThread(threadId, { title: title.trim(), summary, status }))) setEditing(false);
           }}
         >
           <label className="field">
@@ -497,9 +608,19 @@ function ThreadPanel({
             <input className="input" value={title} maxLength={30} autoFocus onChange={(e) => setTitle(e.target.value)} />
           </label>
           <label className="field">
-            <span>说明</span>
+            <span>进展</span>
             <textarea className="textarea" rows={3} value={summary} onChange={(e) => setSummary(e.target.value)} />
           </label>
+          <div className="field">
+            <span>状态</span>
+            <div className="kind-picker" role="radiogroup" aria-label="状态">
+              {(['active', 'done', 'dropped'] as ThreadStatus[]).map((st) => (
+                <button key={st} type="button" role="radio" aria-checked={status === st} className={status === st ? 'on' : ''} onClick={() => setStatus(st)}>
+                  {STATUS_LABEL[st]}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="row end">
             <button type="button" className="btn" onClick={() => setEditing(false)}>
               取消
@@ -518,6 +639,16 @@ function ThreadPanel({
           </p>
         </section>
       )}
+      {milestones.length ? (
+        <section className="event-list">
+          <div className="section-title">里程碑 · {milestones.length}</div>
+          {milestones.map((e) => (
+            <EventLink key={e.id} event={e} onSelect={onSelectEvent}>
+              <span className="event-link-time">{fmtTime(e.ts)}</span>
+            </EventLink>
+          ))}
+        </section>
+      ) : null}
       <section className="branches">
         <div className="section-title">分支</div>
         {branches.map((b, i) => (

@@ -4,8 +4,8 @@ import { autoState, describePending, hasNew, POLL_MS, type AutoState } from './a
 import { Segmented } from './Controls';
 import { fmtChars, fmtTime, fmtWan } from './format';
 import { Icon, KindGlyph, Logo } from './Icons';
-import { defaultZoom, rowNeighbors, ZOOM_LEVELS, type Align, type ViewMode } from './layout';
-import { EventPanel, LanePanel } from './Panel';
+import { defaultZoom, filterDetail, rowNeighbors, ZOOM_LEVELS, type Align, type Detail, type ViewMode } from './layout';
+import { EventPanel, LanePanel, OverviewPanel } from './Panel';
 import { SearchBox } from './Search';
 import { Timeline, type Selection } from './Timeline';
 import type { AppState, Pending, ProjectData, ProjectSummary, Status } from './types';
@@ -22,6 +22,8 @@ const PHASE: Record<Status['phase'], string> = {
   confirm: '等你确认',
   extract: '提取关键步骤',
   threads: '整理研究线',
+  consolidate: '合并研究线',
+  review: '复审研究线',
   done: '整理完成',
   error: '整理出错',
 };
@@ -66,6 +68,7 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
   const [status, setStatus] = useState<Status | null>(null);
   const [view, setView] = useState<ViewMode>(() => remembered('rg.view', ['threads', 'sessions'], 'threads'));
   const [align, setAlign] = useState<Align>(() => remembered('rg.align', ['compact', 'time'], 'compact'));
+  const [detail, setDetail] = useState<Detail>(() => remembered('rg.detail', ['milestone', 'key', 'all'], 'milestone'));
   const [zoom, setZoom] = useState<number | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
   const [jump, setJump] = useState({ n: 0, latest: false });
@@ -241,6 +244,12 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
     setAlign(next);
     remember('rg.align', next);
   };
+  const changeDetail = (next: Detail) => {
+    setDetail(next);
+    remember('rg.detail', next);
+  };
+  // 详略只影响时间线上画哪些事件；面板、搜索、前后关系仍然用全部事件
+  const shown = useMemo(() => (data ? filterDetail(data, detail, view) : null), [data, detail, view]);
 
   // 键盘：Esc 关闭，←/→ 同一行的前后事件，+/− 缩放
   useEffect(() => {
@@ -249,7 +258,9 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
       if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
       if (e.key === 'Escape') setSelection(null);
       if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && selection?.type === 'event' && data) {
-        const { prev, next } = rowNeighbors(data.events, view, selection.id);
+        // 在当前详略下可见的事件里前后移动；选中的事件被藏着时（比如从搜索点进来）就在全部事件里移动
+        const pool = shown && shown.input.events.some((e) => e.id === selection.id) ? shown.input.events : data.events;
+        const { prev, next } = rowNeighbors(pool, view, selection.id);
         const to = e.key === 'ArrowLeft' ? prev : next;
         if (to) {
           e.preventDefault();
@@ -261,7 +272,7 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selection, data, view, align, stepZoom]);
+  }, [selection, data, shown, view, align, stepZoom]);
 
   const remove = async () => {
     if (!window.confirm(`删除项目「${project.name}」？只删除整理结果，不会动原始会话文件。`)) return;
@@ -313,6 +324,16 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
           onChange={changeView}
         />
         <Segmented
+          label="详略"
+          value={detail}
+          options={[
+            ['milestone', '里程碑'],
+            ['key', '关键'],
+            ['all', '全部'],
+          ]}
+          onChange={changeDetail}
+        />
+        <Segmented
           label="横轴"
           value={align}
           options={[
@@ -323,7 +344,7 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
         />
         {align === 'time' ? (
           <div className="zoom" role="group" aria-label="缩放">
-            <button type="button" className="icon-btn" title="缩小（−）" aria-label="缩小" disabled={pxPerHour === ZOOM_LEVELS[0]} onClick={() => stepZoom(-1)}>
+            <button type="button" className="icon-btn" title={`缩小（−），现在${zoomLabel(pxPerHour)}`} aria-label="缩小" disabled={pxPerHour === ZOOM_LEVELS[0]} onClick={() => stepZoom(-1)}>
               <Icon name="minus" size={14} />
             </button>
             <span className="zoom-label">{zoomLabel(pxPerHour)}</span>
@@ -338,6 +359,8 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
             data={data}
             onMatches={setMatches}
             onPick={(id, idx, terms) => {
+              // 搜到的事件在当前详略下被藏着，就临时切到“全部”，好在时间线上看到它
+              if (shown && !shown.input.events.some((e) => e.id === id)) setDetail('all');
               setSelection({ type: 'event', id });
               setFocus({ event: id, idx, terms });
             }}
@@ -406,7 +429,7 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
         {!error && data && data.events.length > 0 ? (
           <>
             <Timeline
-              data={data}
+              data={{ ...data, ...shown!.input }}
               view={view}
               align={align}
               pxPerHour={pxPerHour}
@@ -415,6 +438,7 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
               jump={jump}
               fresh={fresh}
               matches={matches}
+              hidden={shown!.hidden}
             />
             {selectedEvent ? (
               <EventPanel
@@ -429,6 +453,9 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
             ) : null}
             {selection?.type === 'lane' ? (
               <LanePanel data={data} lane={selection.lane} onChanged={load} onClose={() => setSelection(null)} onSelectEvent={selectEvent} />
+            ) : null}
+            {selection?.type === 'overview' ? (
+              <OverviewPanel data={data} onChanged={load} onClose={() => setSelection(null)} onSelectEvent={selectEvent} />
             ) : null}
           </>
         ) : null}
@@ -457,10 +484,19 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
               {KIND_LABEL[k]}
             </span>
           ))}
+          <span>
+            <KindGlyph kind="attempt" outcome="failed" />
+            失败的尝试
+          </span>
+          <span>
+            <span className="legend-milestone" />
+            里程碑
+          </span>
         </div>
         {data ? (
           <span className="muted">
-            {data.sessions.length} 个会话 · {data.events.length} 个事件
+            {data.sessions.length} 个会话 · {detail === 'all' ? '' : `显示 ${shown!.input.events.length} / `}
+            {data.events.length} 个事件
           </span>
         ) : null}
         <span className="spacer" />
@@ -583,7 +619,13 @@ function StatusPill({
       title={`${data.project.organized_at ? `上次整理 ${fmtTime(data.project.organized_at)} · ` : ''}${autoNote}`}
     >
       <Icon name="check" size={13} />
-      {data.project.organized_at ? `已整理 ${fmtTime(data.project.organized_at)}` : '还没有整理过'}
+      {data.project.organized_at ? (
+        <>
+          已整理<span className="pill-time"> {fmtTime(data.project.organized_at)}</span>
+        </>
+      ) : (
+        '还没有整理过'
+      )}
     </span>
   );
 }

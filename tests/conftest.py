@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from rg.model import Meter, Usage
-from rg.organize import EVENT_SYSTEM
+from rg.organize import CONSOLIDATE_SYSTEM, EVENT_SYSTEM, REVIEW_SYSTEM
 from rg.store import Store
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "transcripts"
@@ -37,8 +37,15 @@ def copy_fixture(tmp_path: Path) -> Callable[[str], Path]:
 class FakeModel:
     """事件提取：每条用户消息生成一个“尝试”事件；归类：交给测试给定的函数。"""
 
-    def __init__(self, place: Callable[[str], dict[str, Any]] | None = None):
-        self.place = place or (lambda user: {"threads": []})
+    def __init__(
+        self,
+        place: Callable[[str], dict[str, Any]] | None = None,
+        review: Callable[[str], dict[str, Any]] | None = None,
+        consolidate: Callable[[str], dict[str, Any]] | None = None,
+    ):
+        self.place = place or (lambda user: {"placements": []})
+        self.review = review or (lambda user: {"milestones": [], "summary": "", "status": "active"})
+        self.consolidate = consolidate or (lambda user: {"groups": []})
         self.calls: list[tuple[str, str]] = []
 
     def __call__(
@@ -49,7 +56,11 @@ class FakeModel:
         max_tokens: int,
         meter: Meter | None = None,
     ) -> dict[str, Any]:
-        kind = "events" if system == EVENT_SYSTEM else "threads"
+        kind = {
+            EVENT_SYSTEM: "events",
+            REVIEW_SYSTEM: "review",
+            CONSOLIDATE_SYSTEM: "consolidate",
+        }.get(system, "threads")
         self.calls.append((kind, user))
         if meter is not None:
             meter(Usage("fake", len(user), 10, cache_read_tokens=5))
@@ -60,6 +71,10 @@ class FakeModel:
                     for idx, text in LINE.findall(user)
                 ]
             }
+        if kind == "review":
+            return self.review(user)
+        if kind == "consolidate":
+            return self.consolidate(user)
         return self.place(user)
 
     def count(self, kind: str) -> int:

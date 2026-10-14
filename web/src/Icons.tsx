@@ -1,7 +1,17 @@
-import type { Kind } from './types';
+import type { Kind, Outcome } from './types';
 
-// 事件种类：三个色相加中性墨色，再用形状区分，保证不靠颜色也能认出来。
-export function KindGlyph({ kind, size = 10, ring = false }: { kind: Kind; size?: number; ring?: boolean }) {
+// 事件种类：三个色相，再用形状区分，保证不靠颜色也能认出来。失败的尝试在圆里打叉。
+export function KindGlyph({
+  kind,
+  outcome = null,
+  size = 10,
+  ring = false,
+}: {
+  kind: Kind;
+  outcome?: Outcome | null;
+  size?: number;
+  ring?: boolean;
+}) {
   const s = size;
   const c = s / 2;
   // ring：时间轴上的点，外面加一圈底色，压在连线上也清楚
@@ -15,14 +25,28 @@ export function KindGlyph({ kind, size = 10, ring = false }: { kind: Kind; size?
         <circle cx={o + c} cy={o + c} r={c - 1} fill="var(--surface)" stroke="var(--k-neutral)" strokeWidth={2} />
       );
       break;
-    case 'attempt':
-      shape = <circle cx={o + c} cy={o + c} r={c} fill="var(--k-attempt)" {...stroke} />;
+    case 'attempt': {
+      const d = c * 0.42;
+      shape = (
+        <>
+          <circle cx={o + c} cy={o + c} r={c} fill="var(--k-attempt)" {...stroke} />
+          {outcome === 'failed' ? (
+            <path
+              d={`M${o + c - d},${o + c - d} L${o + c + d},${o + c + d} M${o + c + d},${o + c - d} L${o + c - d},${o + c + d}`}
+              stroke="var(--surface)"
+              strokeWidth={Math.max(1.4, s / 7)}
+              strokeLinecap="round"
+            />
+          ) : null}
+        </>
+      );
       break;
-    case 'finding':
+    }
+    case 'result':
       shape = (
         <path
           d={`M${o + c},${o} L${o + s},${o + c} L${o + c},${o + s} L${o},${o + c} Z`}
-          fill="var(--k-finding)"
+          fill="var(--k-result)"
           {...stroke}
         />
       );
@@ -30,15 +54,6 @@ export function KindGlyph({ kind, size = 10, ring = false }: { kind: Kind; size?
     case 'decision':
       shape = <rect x={o + 0.5} y={o + 0.5} width={s - 1} height={s - 1} rx={1.5} fill="var(--k-decision)" {...stroke} />;
       break;
-    case 'output': {
-      const points = Array.from({ length: 10 }, (_, i) => {
-        const r = i % 2 === 0 ? c : c * 0.45;
-        const a = (Math.PI / 5) * i - Math.PI / 2;
-        return `${o + c + r * Math.cos(a)},${o + c + r * Math.sin(a)}`;
-      }).join(' ');
-      shape = <polygon points={points} fill="var(--k-neutral)" {...stroke} />;
-      break;
-    }
   }
   return (
     <svg className="glyph" width={box} height={box} viewBox={`0 0 ${box} ${box}`} aria-hidden="true">
@@ -64,6 +79,7 @@ const PATHS: Record<string, string> = {
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
   alert: 'M12 9v4M12 17h.01M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z',
   check: 'M5 12l5 5L20 7',
+  flag: 'M5 21V4h11l-1.5 4L16 12H5',
   search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4',
 };
 
@@ -94,7 +110,7 @@ export function Logo() {
       <path d="M5 8h12M5 14h4c2 0 3-6 5-6" stroke="var(--surface)" strokeWidth="1.8" fill="none" strokeLinecap="round" />
       <circle cx="9" cy="8" r="1.8" fill="var(--k-attempt)" />
       <circle cx="15" cy="8" r="1.8" fill="var(--k-decision)" />
-      <circle cx="9" cy="14" r="1.8" fill="var(--k-finding)" />
+      <circle cx="9" cy="14" r="1.8" fill="var(--k-result)" />
     </svg>
   );
 }

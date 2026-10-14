@@ -39,6 +39,13 @@ INJECTED_TAGS = (
 _TAG_NAMES = "|".join(re.escape(t) for t in INJECTED_TAGS)
 _INJECTED = re.compile(rf"<({_TAG_NAMES})\b[^>]*>.*?(?:</\1>|\Z)", re.S)
 _INSTRUCTION_PREFIXES = ("# AGENTS.md instructions", "<INSTRUCTIONS>")
+_AGENTS_HEADING = re.compile(r"^# AGENTS\.md instructions[^\n]*$", re.M)
+# Codex 在 IDE 里会把当前文件、打开的标签页拼在用户的话前面，真正的请求在“## My request…”之后
+_IDE_CONTEXT = "# Context from my IDE setup"
+_IDE_REQUEST = re.compile(r"^## My request[^\n]*\n?", re.M)
+_IDE_ACTIVE = re.compile(r"^## Active file:\s*(\S+)", re.M)
+# 解析规则变了就加一，已导入的会话会重新读
+PARSER_VERSION = 2
 # Claude Code 的斜杠命令：<command-name>/clear</command-name><command-args>…</command-args>
 _COMMAND_TAGS = re.compile(r"</?command-(?:name|args)>")
 _SLASH_COMMAND = re.compile(r"^/[\w:-]+(\s|$)")
@@ -154,10 +161,24 @@ def clip(text: str, limit: int) -> str:
     return text[:head] + " …（略）… " + text[-(limit - head) :]
 
 
+def _strip_ide_context(text: str) -> str:
+    if not text.lstrip().startswith(_IDE_CONTEXT):
+        return text
+    match = _IDE_REQUEST.search(text)
+    if not match:
+        return ""  # 只有 IDE 上下文，没有用户的话
+    request = text[match.end() :].strip()
+    active = _IDE_ACTIVE.search(text[: match.start()])
+    if request and active:
+        request += f"（当前文件 {re.split(r'[\\/]', active[1])[-1]}）"
+    return request
+
+
 def clean_user_text(text: str) -> str:
     if text.lstrip().startswith(_INSTRUCTION_PREFIXES):
         return ""
-    text = _INJECTED.sub("", text)
+    text = _strip_ide_context(text)
+    text = _AGENTS_HEADING.sub("", _INJECTED.sub("", text))
     return " ".join(_COMMAND_TAGS.sub(" ", text).split()) if "<command-" in text else text.strip()
 
 

@@ -179,20 +179,28 @@ class Model:
         max_tokens: int,
         meter: Meter | None = None,
     ) -> dict[str, Any]:
-        data = self._post(self.body(system, user, schema, max_tokens))
-        if meter is not None:
-            # 截断或格式不对的回复同样花了 token，先记账再校验。
-            meter(read_usage(data, self.model))
-        if data.get("stop_reason") == "max_tokens":
-            raise Truncated("模型输出被截断")
-        blocks = [
-            b
-            for b in data.get("content", [])
-            if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == TOOL_NAME
-        ]
-        if len(blocks) != 1 or not isinstance(blocks[0].get("input"), dict):
-            raise ModelError("模型没有按格式返回结果")
-        return blocks[0]["input"]
+        required = [k for k in schema.get("required", []) if isinstance(k, str)]
+        for attempt in range(self.retries + 1):
+            data = self._post(self.body(system, user, schema, max_tokens))
+            if meter is not None:
+                # 截断或格式不对的回复同样花了 token，先记账再校验。
+                meter(read_usage(data, self.model))
+            if data.get("stop_reason") == "max_tokens":
+                raise Truncated("模型输出被截断")
+            blocks = [
+                b
+                for b in data.get("content", [])
+                if isinstance(b, dict)
+                and b.get("type") == "tool_use"
+                and b.get("name") == TOOL_NAME
+            ]
+            result = blocks[0].get("input") if len(blocks) == 1 else None
+            # 偶尔会返回空的 {}：缺了必需的字段就重问，不能当成“什么都不用做”
+            if isinstance(result, dict) and all(k in result for k in required):
+                return result
+            if attempt < self.retries:
+                time.sleep(1)
+        raise ModelError("模型没有按格式返回结果")
 
 
 def cached(store: Store, call: Call, identity: str) -> Call:

@@ -1,12 +1,26 @@
-export type Kind = 'question' | 'attempt' | 'finding' | 'decision' | 'output';
-export const KINDS: Kind[] = ['question', 'attempt', 'finding', 'decision', 'output'];
+// 事件只记三类：尝试（带成败）、决定、结果。question 是旧版本提取的，只用来显示。
+export type Kind = 'attempt' | 'decision' | 'result' | 'question';
+export const KINDS: Kind[] = ['attempt', 'decision', 'result'];
 export const KIND_LABEL: Record<Kind, string> = {
-  question: '问题',
   attempt: '尝试',
-  finding: '发现',
   decision: '决定',
-  output: '产出',
+  result: '结果',
+  question: '问题',
 };
+export type Outcome = 'success' | 'failed' | 'open';
+export const OUTCOMES: Outcome[] = ['success', 'failed', 'open'];
+export const OUTCOME_LABEL: Record<Outcome, string> = { success: '成功', failed: '失败', open: '未定' };
+// 1 细节，2 关键，3 里程碑
+export type Importance = 1 | 2 | 3;
+export const IMPORTANCE_LABEL: Record<Importance, string> = { 1: '细节', 2: '关键', 3: '里程碑' };
+// “尝试 · 失败 · 里程碑”这样的完整说法，用在提示框和读屏
+export function eventLabel(e: { kind: Kind; outcome: Outcome | null; importance: Importance }): string {
+  return [KIND_LABEL[e.kind], e.outcome ? OUTCOME_LABEL[e.outcome] : '', e.importance === 3 ? '里程碑' : '']
+    .filter(Boolean)
+    .join(' · ');
+}
+export type ThreadStatus = 'active' | 'done' | 'dropped';
+export const STATUS_LABEL: Record<ThreadStatus, string> = { active: '进行中', done: '已完成', dropped: '已放弃' };
 export type Tool = 'claude' | 'codex';
 export const TOOL_LABEL: Record<Tool, string> = { claude: 'Claude Code', codex: 'Codex' };
 
@@ -92,6 +106,7 @@ export interface Thread {
   project_id: number;
   title: string;
   summary: string;
+  status: ThreadStatus | null;
   edited: number;
 }
 
@@ -110,6 +125,8 @@ export interface TimelineEvent {
   session_id: number;
   branch_id: number | null;
   kind: Kind;
+  outcome: Outcome | null;
+  importance: Importance;
   title: string;
   summary: string;
   ts: string | null;
@@ -118,7 +135,7 @@ export interface TimelineEvent {
   edited: number;
 }
 
-export type Phase = 'idle' | 'sync' | 'consent' | 'confirm' | 'extract' | 'threads' | 'done' | 'error';
+export type Phase = 'idle' | 'sync' | 'consent' | 'confirm' | 'extract' | 'threads' | 'consolidate' | 'review' | 'done' | 'error';
 
 export interface Estimate {
   sessions: number;
@@ -202,5 +219,5 @@ export interface UsageReport {
   periods: Record<'today' | 'week' | 'month' | 'all', UsageBucket>;
   days: (UsageBucket & { day: string })[];
   projects: (UsageBucket & { id: number | null; name: string | null; last: string })[];
-  stages: (UsageBucket & { stage: 'extract' | 'threads' })[];
+  stages: (UsageBucket & { stage: 'extract' | 'threads' | 'review' })[];
 }
