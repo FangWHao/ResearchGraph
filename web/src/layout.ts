@@ -9,9 +9,15 @@ export type Align = 'compact' | 'time';
 export type EdgeKind = 'next' | 'branch' | 'merge' | 'fork';
 
 export const CARD_W = 188;
-export const CARD_H = 64;
 export const COL_W = 212;
-export const CARD_ROW_H = 84;
+// 卡片高度随标题行数变：上边距、种类那一行、间隔、标题、下边距。同一行的卡片取一样的高度，连线保持水平
+export const TITLE_PX = 13.5;
+export const TITLE_LINE = 19;
+export const TITLE_MAX_LINES = 3;
+const TITLE_W = CARD_W - 24;
+const CARD_BASE = 41;
+const ROW_GAP = 20;
+export const cardHeight = (lines: number) => CARD_BASE + TITLE_LINE * lines;
 export const DOT_ROW_H = 40;
 export const DOT_HIT = 24;
 export const DOT_R = 6;
@@ -27,6 +33,7 @@ export interface Row {
   id: string;
   label: string;
   y: number;
+  height: number;
   branchId?: number;
 }
 
@@ -49,6 +56,9 @@ export interface PlacedNode {
   // 紧凑：卡片左上角；真实时间：圆点中心
   x: number;
   y: number;
+  // 紧凑模式下卡片的高度和标题最多显示几行
+  h: number;
+  lines: number;
   // 真实时间模式下标题的可用宽度，0 表示放不下、只在悬停时显示
   labelWidth: number;
 }
@@ -98,6 +108,57 @@ export interface LayoutOptions {
   view: ViewMode;
   align: Align;
   pxPerHour: number;
+  // 量标题宽度（像素）；界面里用画布按实际字体量，没有就按字符估
+  measure?: Measure;
+}
+
+export type Measure = (text: string, weight: number) => number;
+
+const CJK = '\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef';
+const IS_CJK = new RegExp(`[${CJK}]`);
+const TOKENS = new RegExp(`[${CJK}]|\\s+|[^\\s${CJK}]+`, 'g');
+
+export const estimateWidth: Measure = (text, weight) => {
+  let em = 0;
+  for (const ch of text) {
+    if (IS_CJK.test(ch)) em += 1;
+    else if (ch === ' ') em += 0.28;
+    else if (/[A-Z]/.test(ch)) em += 0.66;
+    else if (/[a-z0-9]/.test(ch)) em += 0.56;
+    else em += 0.5;
+  }
+  return em * TITLE_PX * (weight >= 600 ? 1.04 : 1);
+};
+
+export const titleWeight = (event: TimelineEvent) => (event.importance === 3 ? 650 : event.importance === 1 ? 400 : 500);
+
+/** 标题在卡片里折成几行：中日韩文字逐字可断，其余按词断，比一行还长的词再逐字断（和 CSS 的 overflow-wrap: anywhere 一致）。 */
+export function titleLines(title: string, weight: number, measure: Measure = estimateWidth): number {
+  const max = TITLE_W * 0.97;
+  let lines = 1;
+  let used = 0;
+  for (const token of title.trim().match(TOKENS) ?? []) {
+    if (/^\s+$/.test(token)) {
+      if (used > 0) used += measure(' ', weight);
+      continue;
+    }
+    const w = measure(token, weight);
+    if (used + w <= max) used += w;
+    else if (w <= max) {
+      lines += 1;
+      used = w;
+    } else {
+      for (const ch of token) {
+        const cw = measure(ch, weight);
+        if (used > 0 && used + cw > max) {
+          lines += 1;
+          used = 0;
+        }
+        used += cw;
+      }
+    }
+  }
+  return Math.min(lines, TITLE_MAX_LINES);
 }
 
 export function compareEvents(a: TimelineEvent, b: TimelineEvent): number {
@@ -167,7 +228,7 @@ function byThreads(input: TimelineInput, events: TimelineEvent[]): Grouping {
       const ids = members.get(branch.id)!;
       count += ids.length;
       const rowId = `b${branch.id}`;
-      rows.push({ id: rowId, label: branch.title || (branch === main ? '主线' : '分支'), y: 0, branchId: branch.id });
+      rows.push({ id: rowId, label: branch.title || (branch === main ? '主线' : '分支'), y: 0, height: 0, branchId: branch.id });
       for (const id of ids) grouping.rowOf.set(id, rowId);
       chain(ids, 'next', grouping.edges);
       if (branch.from_event !== null && visible.has(branch.from_event)) {
@@ -193,7 +254,7 @@ function byThreads(input: TimelineInput, events: TimelineEvent[]): Grouping {
       id: 'misc',
       title: '尚未归入研究线',
       subtitle: counted(misc.length, input.totals?.get('tmisc')),
-      rows: [{ id: 'misc', label: '', y: 0 }],
+      rows: [{ id: 'misc', label: '', y: 0, height: 0 }],
     });
   }
   return grouping;
@@ -223,7 +284,7 @@ function bySessions(input: TimelineInput, events: TimelineEvent[]): Grouping {
       title: session?.title || `会话 ${sessionId}`,
       subtitle: `${tool} · ${counted(ids.length, input.totals?.get(`s${sessionId}`))}${session?.fork_of ? ' · fork' : ''}`,
       sessionId,
-      rows: [{ id: rowId, label: '', y: 0 }],
+      rows: [{ id: rowId, label: '', y: 0, height: 0 }],
     });
   }
   return grouping;
@@ -233,9 +294,9 @@ function bySessions(input: TimelineInput, events: TimelineEvent[]): Grouping {
 
 export function cardPath(a: PlacedNode, b: PlacedNode): string {
   const x1 = a.x + CARD_W;
-  const y1 = a.y + CARD_H / 2;
+  const y1 = a.y + a.h / 2;
   const x2 = b.x;
-  const y2 = b.y + CARD_H / 2;
+  const y2 = b.y + b.h / 2;
   if (y1 === y2) return `M${x1},${y1} L${x2},${y2}`;
   const dx = Math.max(28, Math.min(96, Math.abs(x2 - x1) / 2));
   return `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
@@ -246,8 +307,8 @@ export function crossPath(a: PlacedNode, b: PlacedNode): string {
   const ax = a.x + CARD_W / 2;
   const bx = b.x + CARD_W / 2;
   const down = b.y > a.y;
-  const y1 = down ? a.y + CARD_H : a.y;
-  const y2 = down ? b.y : b.y + CARD_H;
+  const y1 = down ? a.y + a.h : a.y;
+  const y2 = down ? b.y : b.y + b.h;
   const mid = (y1 + y2) / 2;
   return `M${ax},${y1} C${ax},${mid} ${bx},${mid} ${bx},${y2}`;
 }
@@ -268,18 +329,21 @@ export function dotPath(a: PlacedNode, b: PlacedNode): string {
 
 // ---------- 主函数 ----------
 
-function placeLanes(grouping: Grouping, rowH: number) {
+function placeLanes(grouping: Grouping, rowHeight: (rowId: string) => number) {
   const lanes: Lane[] = [];
   const rowY = new Map<string, number>();
   let y = 0;
   for (const lane of grouping.lanes) {
     const top = y;
-    const rows = lane.rows.map((row, i) => {
-      const rowTop = top + LANE_PAD + i * rowH;
+    let rowTop = top + LANE_PAD;
+    const rows = lane.rows.map((row) => {
+      const height = rowHeight(row.id);
+      const placed = { ...row, y: rowTop, height };
       rowY.set(row.id, rowTop);
-      return { ...row, y: rowTop };
+      rowTop += height;
+      return placed;
     });
-    const height = LANE_PAD * 2 + rows.length * rowH;
+    const height = rowTop - top + LANE_PAD;
     lanes.push({ ...lane, rows, y: top, height });
     y += height;
   }
@@ -292,6 +356,7 @@ function compactNodes(
   events: TimelineEvent[],
   grouping: Grouping,
   rowY: Map<string, number>,
+  rowLines: Map<string, number>,
   laneOf: (eventId: number) => string,
 ) {
   const preds = new Map<number, number[]>();
@@ -317,11 +382,14 @@ function compactNodes(
   }
   const nodes: PlacedNode[] = events.map((event) => {
     const rowId = grouping.rowOf.get(event.id)!;
+    const lines = rowLines.get(rowId) ?? 1;
     return {
       event,
       rowId,
       x: LEFT_PAD + colOf.get(event.id)! * COL_W,
-      y: (rowY.get(rowId) ?? 0) + (CARD_ROW_H - CARD_H) / 2,
+      y: (rowY.get(rowId) ?? 0) + ROW_GAP / 2,
+      h: cardHeight(lines),
+      lines,
       labelWidth: 0,
     };
   });
@@ -355,7 +423,7 @@ function timeNodes(
   const nodes: PlacedNode[] = events.map((event, i) => {
     const rowId = grouping.rowOf.get(event.id)!;
     const t = Number.isNaN(times[i]) ? t0 : times[i];
-    return { event, rowId, x: xOf(t), y: (rowY.get(rowId) ?? 0) + DOT_ROW_H / 2, labelWidth: 0 };
+    return { event, rowId, x: xOf(t), y: (rowY.get(rowId) ?? 0) + DOT_ROW_H / 2, h: 0, lines: 1, labelWidth: 0 };
   });
   // 同一行里，标题只用到下一个点之前的空间
   const byRow = new Map<string, PlacedNode[]>();
@@ -389,13 +457,22 @@ function timeNodes(
 export function computeLayout(input: TimelineInput, options: LayoutOptions): Layout {
   const events = [...input.events].sort(compareEvents);
   const grouping = options.view === 'threads' ? byThreads(input, events) : bySessions(input, events);
-  const rowH = options.align === 'compact' ? CARD_ROW_H : DOT_ROW_H;
+  const compact = options.align === 'compact';
+  // 每行取这一行里最长的标题要占的行数
+  const rowLines = new Map<string, number>();
+  if (compact) {
+    for (const event of events) {
+      const rowId = grouping.rowOf.get(event.id)!;
+      const lines = titleLines(event.title, titleWeight(event), options.measure);
+      rowLines.set(rowId, Math.max(rowLines.get(rowId) ?? 1, lines));
+    }
+  }
+  const rowH = (rowId: string) => (compact ? cardHeight(rowLines.get(rowId) ?? 1) + ROW_GAP : DOT_ROW_H);
   const { lanes, rowY, height } = placeLanes(grouping, rowH);
   const laneOfRow = new Map(grouping.lanes.flatMap((lane) => lane.rows.map((row) => [row.id, lane.id] as const)));
   const laneOf = (eventId: number) => laneOfRow.get(grouping.rowOf.get(eventId) ?? '') ?? '';
-  const compact = options.align === 'compact';
   const placed = compact
-    ? compactNodes(events, grouping, rowY, laneOf)
+    ? compactNodes(events, grouping, rowY, rowLines, laneOf)
     : timeNodes(events, grouping, rowY, options.pxPerHour);
   const byId = new Map(placed.nodes.map((n) => [n.event.id, n]));
   const edges: Edge[] = grouping.edges
@@ -406,7 +483,7 @@ export function computeLayout(input: TimelineInput, options: LayoutOptions): Lay
       const path = compact ? (cross ? crossPath(a, b) : cardPath(a, b)) : dotPath(a, b);
       return { ...e, id: `${e.kind}:${e.from}:${e.to}`, cross, path };
     });
-  return { align: options.align, lanes, edges, height: Math.max(height, rowH), ...placed };
+  return { align: options.align, lanes, edges, height: Math.max(height, rowH('')), ...placed };
 }
 
 /** 默认缩放：让整个时间范围大约占 8000 像素，再取最近的档位。 */

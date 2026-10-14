@@ -15,7 +15,7 @@ const STAGE_TEXT: Record<Stage, { title: string; hint: string }> = {
   },
   review: {
     title: '复审研究线',
-    hint: '每条研究线一次：挑里程碑、写进展、标状态',
+    hint: '每条研究线一次：挑里程碑、写进展、标状态；最后写主页上的项目简报',
   },
 };
 

@@ -81,6 +81,9 @@ const PATHS: Record<string, string> = {
   check: 'M5 12l5 5L20 7',
   flag: 'M5 21V4h11l-1.5 4L16 12H5',
   search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4',
+  home: 'M4 11l8-7 8 7M6 9.5V20h12V9.5M10 20v-5h4v5',
+  sliders: 'M4 6h9M17 6h3M15 4v4M4 12h3M11 12h9M9 10v4M4 18h11M19 18h1M17 16v4',
+  copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
 };
 
 export function Icon({ name, size = 16 }: { name: keyof typeof PATHS; size?: number }) {

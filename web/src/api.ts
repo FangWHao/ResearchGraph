@@ -2,6 +2,7 @@ import type {
   AppState,
   AutoSettings,
   HiddenEvent,
+  HomeData,
   ModelInfo,
   Stage,
   StageModel,
@@ -78,6 +79,9 @@ export interface EventPatch {
 
 export const api = {
   state: () => request<AppState>('GET', '/api/state'),
+  home: () => request<HomeData>('GET', `/api/home?tz=${new Date().getTimezoneOffset()}`),
+  brief: (projectId: number, auto = false) =>
+    request<{ started: boolean }>('POST', `/api/projects/${projectId}/brief`, { auto }),
   saveSettings: (input: SettingsInput) => request<AppState>('POST', '/api/settings', input),
   checkModel: (input: SettingsInput) => request<CheckResult>('POST', '/api/settings/check', input),
   listModels: (input: { base_url?: string; api_key?: string }) =>

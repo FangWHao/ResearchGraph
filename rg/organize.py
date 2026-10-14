@@ -161,7 +161,7 @@ Key = tuple[str, int, int, int]
 
 @dataclass
 class Progress:
-    # idle / sync / consent / confirm / extract / threads / consolidate / review / done / error
+    # idle / sync / consent / confirm / extract / threads / consolidate / review / brief / done / error
     phase: str = "idle"
     done: int = 0
     total: int = 0
@@ -1419,6 +1419,11 @@ def organize(
         place(store, use("threads"), project_id, progress)
         consolidate_threads(store, use("threads"), project_id, progress)
         review_threads(store, use("review"), project_id, progress)
+        # 最后按整理好的研究线写项目简报（主页上显示）；它自己记用量和错误，失败不影响时间线
+        from rg.brief import write_brief  # brief 依赖本模块，放在这里避免循环导入
+
+        progress.set("brief")
+        write_brief(store, _stage(call, "review"), project_id)
     except AuthError as error:
         progress.error(f"{error}。请在设置里检测 Key，改好后点“重试”，已整理的部分不会丢")
         progress.estimate = estimate(store, project_id)

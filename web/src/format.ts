@@ -24,6 +24,27 @@ export function fmtFull(ts: string | null | undefined): string {
     : '时间未知';
 }
 
+/** 月-日；不是今年的再带上年份 */
+export function fmtDate(ts: string | null | undefined): string {
+  const d = parse(ts);
+  if (!d) return '时间未知';
+  const md = `${d.getMonth() + 1}-${pad(d.getDate())}`;
+  return d.getFullYear() === new Date().getFullYear() ? md : `${d.getFullYear()}-${md}`;
+}
+
+export function fmtAgo(ts: string | null | undefined): string {
+  const d = parse(ts);
+  if (!d) return '时间未知';
+  const seconds = (Date.now() - d.getTime()) / 1000;
+  if (seconds < 60) return '刚刚';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时前`;
+  const days = Math.floor(seconds / 86400);
+  if (days === 1) return '昨天';
+  if (days < 30) return `${days} 天前`;
+  return fmtDate(ts);
+}
+
 export function fmtDayKey(key: string): string {
   if (!key) return '时间未知';
   const [y, m, d] = key.split('-').map(Number);

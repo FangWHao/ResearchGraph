@@ -393,7 +393,7 @@ def test_every_model_call_is_metered_by_project_and_stage(store, copy_fixture):
     model = cached(store, FakeModel(batch_story), "fake")
     assert run(store, model, pid).phase == "done"
     rows = usage_rows(store)
-    assert {r["stage"] for r in rows} == {"extract", "threads", "review"}
+    assert {r["stage"] for r in rows} == {"extract", "threads", "review", "brief"}
     assert all(r["project_id"] == pid and r["cached"] == 0 and r["input_tokens"] for r in rows)
 
     # 重新整理时，提取请求和上次一模一样，命中本地缓存：记一笔，但不算 token。

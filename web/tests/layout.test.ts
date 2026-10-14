@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeLayout, defaultZoom, filterDetail, rowNeighbors, type LayoutOptions } from '../src/layout';
+import { computeLayout, defaultZoom, filterDetail, rowNeighbors, titleLines, type LayoutOptions } from '../src/layout';
 import type { Branch, Session, Thread, TimelineEvent } from '../src/types';
 
 const thread = (id: number, title = `线${id}`): Thread => ({ id, project_id: 1, title, summary: '', status: null, edited: 0 });
@@ -281,5 +281,34 @@ describe('详略', () => {
 
   it('全部时原样返回', () => {
     expect(filterDetail(input, 'all', 'threads').input).toBe(input);
+  });
+});
+
+describe('卡片高度随标题', () => {
+  const long = { ...event(2, at(1, 10), 10), title: '原发 vs 转移样本的差异在三个批次都明确' };
+  const input = {
+    threads: [thread(1)],
+    branches: [branch(10, 1, 0), branch(11, 1, 1, { from_event: 1 })],
+    events: [event(1, at(1, 9), 10), long, event(3, at(1, 11), 11)],
+    sessions: [session(1)],
+  };
+  const layout = computeLayout(input, compact());
+  const node = (id: number) => layout.nodes.find((n) => n.event.id === id)!;
+
+  it('长标题的那一行整行加高，标题不被截掉，也不压到下一行', () => {
+    expect(titleLines('事件1', 500)).toBe(1);
+    expect(titleLines(long.title, 500)).toBe(2);
+    expect(node(2).lines).toBe(2);
+    expect(node(1).h).toBe(node(2).h);
+    expect(node(3).lines).toBe(1);
+    expect(node(3).h).toBeLessThan(node(2).h);
+    expect(node(3).y).toBeGreaterThan(node(2).y + node(2).h);
+    const [main] = layout.lanes[0].rows;
+    expect(node(2).y + node(2).h).toBeLessThanOrEqual(main.y + main.height);
+  });
+
+  it('同一行的连线保持水平', () => {
+    const edge = layout.edges.find((e) => e.from === 1 && e.to === 2)!;
+    expect(edge.path).toMatch(/^M[\d.]+,([\d.]+) L[\d.]+,\1$/);
   });
 });

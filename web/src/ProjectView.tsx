@@ -3,6 +3,7 @@ import { api, type OrganizeOptions } from './api';
 import { autoState, describePending, hasNew, POLL_MS, type AutoState } from './auto';
 import { Segmented } from './Controls';
 import { fmtChars, fmtTime, fmtWan } from './format';
+import type { Target } from './Home';
 import { Icon, KindGlyph, Logo } from './Icons';
 import { defaultZoom, filterDetail, rowNeighbors, ZOOM_LEVELS, type Align, type Detail, type ViewMode } from './layout';
 import { EventPanel, LanePanel, OverviewPanel } from './Panel';
@@ -25,6 +26,7 @@ const PHASE_STAGE: Partial<Record<Status['phase'], Stage>> = {
   threads: 'threads',
   consolidate: 'threads',
   review: 'review',
+  brief: 'review',
 };
 
 const PHASE: Record<Status['phase'], string> = {
@@ -36,6 +38,7 @@ const PHASE: Record<Status['phase'], string> = {
   threads: '整理研究线',
   consolidate: '合并研究线',
   review: '复审研究线',
+  brief: '写项目简报',
   done: '整理完成',
   error: '整理出错',
 };
@@ -68,6 +71,9 @@ function zoomLabel(pxPerHour: number): string {
 interface Props {
   project: ProjectSummary;
   state: AppState;
+  // 从主页点进来时要停在的事件或研究线
+  target?: Target;
+  onHome: () => void;
   onSwitch: (projectId: number) => void;
   onNew: () => void;
   onSettings: () => void;
@@ -75,7 +81,7 @@ interface Props {
   onDeleted: () => void;
 }
 
-export function ProjectView({ project, state, onSwitch, onNew, onSettings, onProjectSettings, onDeleted }: Props) {
+export function ProjectView({ project, state, target, onHome, onSwitch, onNew, onSettings, onProjectSettings, onDeleted }: Props) {
   const [data, setData] = useState<ProjectData | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [view, setView] = useState<ViewMode>(() => remembered('rg.view', ['threads', 'sessions'], 'threads'));
@@ -289,6 +295,27 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
     setExpanded(next);
   };
 
+  // 从主页点进来：第一次加载完就停到那个事件（被藏着就一层层展开）或那条研究线
+  const arrived = useRef(false);
+  useEffect(() => {
+    if (!data || arrived.current || !target) return;
+    arrived.current = true;
+    if (target.event && data.events.some((e) => e.id === target.event)) {
+      reveal(target.event);
+      setSelection({ type: 'event', id: target.event });
+      return;
+    }
+    const thread = target.thread ? data.threads.find((t) => t.id === target.thread) : undefined;
+    if (thread) {
+      if (view !== 'threads') changeView('threads');
+      setSelection({
+        type: 'lane',
+        lane: { id: `t${thread.id}`, title: thread.title, subtitle: '', y: 0, height: 0, threadId: thread.id, rows: [] },
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
   // 键盘：Esc 关闭，←/→ 同一行的前后事件，+/− 缩放
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -337,10 +364,13 @@ export function ProjectView({ project, state, onSwitch, onNew, onSettings, onPro
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">
+        <button type="button" className="brand brand-btn" title="回到主页" onClick={onHome}>
           <Logo />
           <span>ResearchGraph</span>
-        </div>
+        </button>
+        <button type="button" className="icon-btn" title="主页：各项目的进度和待解决的问题" aria-label="主页" onClick={onHome}>
+          <Icon name="home" />
+        </button>
         <select className="select project-switch" value={project.id} aria-label="切换项目" onChange={(e) => onSwitch(Number(e.target.value))}>
           {state.projects.map((p) => (
             <option key={p.id} value={p.id}>

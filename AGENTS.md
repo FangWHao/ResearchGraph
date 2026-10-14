@@ -59,6 +59,7 @@ rg/store.py     SQLite
 rg/model.py     模型调用与缓存，报告 token 用量
 rg/usage.py     用量记录与汇总
 rg/organize.py  提取事件、归入研究线、fork、增量更新
+rg/brief.py     项目简报和主页汇总
 rg/server.py    本机 HTTP 服务
 rg/cli.py       rg start / organize / sessions
 web/src/        React 界面；layout.ts 是时间线布局，auto.ts 是自动更新的判断（纯函数）

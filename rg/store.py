@@ -65,6 +65,10 @@ CREATE INDEX IF NOT EXISTS usage_at ON usage(at);
 CREATE TABLE IF NOT EXISTS excluded(
   project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   path TEXT NOT NULL, PRIMARY KEY(project_id, path));
+CREATE TABLE IF NOT EXISTS briefs(
+  project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  signature TEXT NOT NULL DEFAULT '', content TEXT, model TEXT NOT NULL DEFAULT '',
+  created_at TEXT, error TEXT);
 """
 
 

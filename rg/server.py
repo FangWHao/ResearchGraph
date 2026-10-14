@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
+from rg.brief import brief_state, fail_brief, home, write_brief
 from rg.config import (
     DB_NAME,
     DEFAULT_BASE_URL,
@@ -86,6 +87,8 @@ class App:
         self._clients: dict[tuple[str, str, str, str], Call] = {}
         self.transport: httpx.BaseTransport | None = None  # 测试时替换成假接口
         self._model_lock = threading.Lock()
+        self.briefing: set[int] = set()  # 正在单独写简报的项目
+        self._brief_lock = threading.Lock()
 
     # ----- 设置 -----
 
@@ -149,6 +152,25 @@ class App:
                     self._clients[identity] = cached(self.store, client, tag)
                 calls[stage] = self._clients[identity]
         return calls
+
+    def start_brief(self, project_id: int, call: Call, force: bool) -> bool:
+        """在后台线程里写简报。同一个项目同一时间只写一份。"""
+        with self._brief_lock:
+            if project_id in self.briefing:
+                return False
+            self.briefing.add(project_id)
+
+        def run() -> None:
+            try:
+                write_brief(self.store, call, project_id, force=force)
+            except Exception as error:  # 后台失败也要让用户看到
+                fail_brief(self.store, project_id, f"写简报中断：{type(error).__name__}: {error}")
+            finally:
+                with self._brief_lock:
+                    self.briefing.discard(project_id)
+
+        threading.Thread(target=run, daemon=True).start()
+        return True
 
     # ----- 查询 -----
 
@@ -594,6 +616,52 @@ def post_organize(
     if not app.jobs.start(project_id, full=body.get("full") is True):
         raise ApiError(409, "这个项目正在整理")
     return status(app, project_id)
+
+
+@route("GET", "/api/home")
+def get_home(app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]) -> Any:
+    try:
+        tz = int((query.get("tz") or ["0"])[0])
+    except ValueError:
+        raise ApiError(400, "tz 必须是分钟数") from None
+    if not -900 <= tz <= 900:
+        raise ApiError(400, "tz 超出范围")
+    # 先记下哪些在写、在整理，再读内容：读到的内容不会比“已写完”的标记更旧
+    with app._brief_lock:
+        briefing = set(app.briefing)
+    ids = [row["id"] for row in app.store.q("SELECT id FROM projects")]
+    jobs = {pid: app.jobs.status(pid) for pid in ids}
+    data = home(app.store, tz)
+    for project in data["projects"]:
+        job = jobs.get(project["id"]) or app.jobs.status(project["id"])
+        project["job"] = {k: job[k] for k in ("running", "phase", "done", "total")}
+        project["briefing"] = project["id"] in briefing
+    return data
+
+
+@route("POST", r"/api/projects/(\d+)/brief")
+def post_brief(
+    app: App, m: re.Match[str], body: dict[str, Any], query: dict[str, list[str]]
+) -> Any:
+    """auto：主页打开时补写落后的简报，只在研究线有变化时写，出过错的等用户点“重新生成”。"""
+    project_id = int(m[1])
+    project = app.project(project_id)
+    if not project["model_allowed"]:
+        raise ApiError(409, "这个项目还没有同意发送给模型，先打开项目确认一次")
+    if app.jobs.status(project_id)["running"]:
+        raise ApiError(409, "这个项目正在整理，整理完会自动写简报")
+    state = brief_state(app.store, project_id)
+    if not state or not state["ready"]:
+        raise ApiError(409, "还没有归好的研究线，整理完才能写简报")
+    auto = body.get("auto") is True
+    if auto and not state["stale"]:
+        return {"started": False}
+    calls = app.model()
+    if calls is None:
+        raise ApiError(409, "还没有设置 API Key")
+    if not app.start_brief(project_id, calls["review"], force=not auto):
+        raise ApiError(409, "简报正在生成")
+    return {"started": True}
 
 
 @route("GET", "/api/usage")

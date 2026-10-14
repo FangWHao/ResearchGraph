@@ -9,7 +9,7 @@ from typing import Any
 from rg.model import Meter, Usage
 from rg.store import Store, now
 
-STAGES = ("extract", "threads", "review")
+STAGES = ("extract", "threads", "review", "brief")
 DAYS = 30
 
 

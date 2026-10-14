@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from rg.brief import BRIEF_SYSTEM
 from rg.model import Meter, Usage
 from rg.organize import CONSOLIDATE_SYSTEM, EVENT_SYSTEM, REVIEW_SYSTEM
 from rg.store import Store
@@ -42,10 +43,14 @@ class FakeModel:
         place: Callable[[str], dict[str, Any]] | None = None,
         review: Callable[[str], dict[str, Any]] | None = None,
         consolidate: Callable[[str], dict[str, Any]] | None = None,
+        brief: Callable[[str], dict[str, Any]] | None = None,
     ):
         self.place = place or (lambda user: {"placements": []})
         self.review = review or (lambda user: {"milestones": [], "summary": "", "status": "active"})
         self.consolidate = consolidate or (lambda user: {"groups": []})
+        self.brief = brief or (
+            lambda user: {"headline": "在比较方法", "progress": [], "open": [], "next": []}
+        )
         self.calls: list[tuple[str, str]] = []
 
     def __call__(
@@ -60,6 +65,7 @@ class FakeModel:
             EVENT_SYSTEM: "events",
             REVIEW_SYSTEM: "review",
             CONSOLIDATE_SYSTEM: "consolidate",
+            BRIEF_SYSTEM: "brief",
         }.get(system, "threads")
         self.calls.append((kind, user))
         if meter is not None:
@@ -75,6 +81,8 @@ class FakeModel:
             return self.review(user)
         if kind == "consolidate":
             return self.consolidate(user)
+        if kind == "brief":
+            return self.brief(user)
         return self.place(user)
 
     def count(self, kind: str) -> int:

@@ -2,15 +2,14 @@ import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'rea
 import { fmtDayKey, fmtTime } from './format';
 import { Icon, KindGlyph } from './Icons';
 import {
-  CARD_H,
-  CARD_ROW_H,
   CARD_W,
   computeLayout,
   DOT_HIT,
-  DOT_ROW_H,
   LEFT_PAD,
+  TITLE_PX,
   type Align,
   type Lane,
+  type Measure,
   type PlacedNode,
   type TimelineInput,
   type ViewMode,
@@ -18,6 +17,26 @@ import {
 import { eventLabel, KIND_LABEL, TOOL_LABEL, type Session } from './types';
 
 const AXIS_H = 40;
+
+// 用画布按页面实际字体量标题宽度，卡片高度才贴合；画布不可用（测试环境）时布局自己按字符估
+function useMeasure(): Measure | undefined {
+  return useMemo(() => {
+    const ctx = document.createElement('canvas').getContext?.('2d');
+    if (!ctx) return undefined;
+    const family = getComputedStyle(document.body).fontFamily || 'system-ui, sans-serif';
+    const cache = new Map<string, number>();
+    return (text, weight) => {
+      const key = `${weight}|${text}`;
+      let width = cache.get(key);
+      if (width === undefined) {
+        ctx.font = `${weight} ${TITLE_PX}px ${family}`;
+        width = ctx.measureText(text).width;
+        cache.set(key, width);
+      }
+      return width;
+    };
+  }, []);
+}
 
 export type Selection = { type: 'event'; id: number } | { type: 'lane'; lane: Lane } | { type: 'overview' } | null;
 
@@ -57,7 +76,11 @@ export function Timeline({
   revealed,
   onToggle,
 }: Props) {
-  const layout = useMemo(() => computeLayout(data, { view, align, pxPerHour }), [data, view, align, pxPerHour]);
+  const measure = useMeasure();
+  const layout = useMemo(
+    () => computeLayout(data, { view, align, pxPerHour, measure }),
+    [data, view, align, pxPerHour, measure],
+  );
   const scroller = useRef<HTMLDivElement>(null);
   const labels = useRef<HTMLDivElement>(null);
   const scale = useRef(pxPerHour);
@@ -65,7 +88,6 @@ export function Timeline({
   const selectedEvent = selection?.type === 'event' ? selection.id : null;
   const selectedLane = selection?.type === 'lane' ? selection.lane.id : null;
   const sessions = useMemo(() => new Map(data.sessions.map((s) => [s.id, s])), [data.sessions]);
-  const rowH = align === 'compact' ? CARD_ROW_H : DOT_ROW_H;
 
   const viewport = () => {
     const el = scroller.current!;
@@ -117,12 +139,21 @@ export function Timeline({
     if (!node) return;
     const { el, width, height } = viewport();
     const [left, right] = align === 'compact' ? [node.x, node.x + CARD_W] : [node.x - DOT_HIT, node.x + 160];
-    const [top, bottom] = align === 'compact' ? [node.y, node.y + CARD_H] : [node.y - DOT_HIT, node.y + DOT_HIT];
+    const [top, bottom] = align === 'compact' ? [node.y, node.y + node.h] : [node.y - DOT_HIT, node.y + DOT_HIT];
     if (left < el.scrollLeft + 16) el.scrollLeft = left - 48;
     else if (right > el.scrollLeft + width - 16) el.scrollLeft = right - width + 48;
     if (top < el.scrollTop + 8) el.scrollTop = top - 24;
     else if (bottom > el.scrollTop + height - 8) el.scrollTop = bottom - height + 24;
   }, [selectedEvent, layout, align]);
+
+  // 选中的泳道（比如从主页点研究线进来）滚进视野
+  useLayoutEffect(() => {
+    if (selectedLane === null || !scroller.current) return;
+    const lane = layout.lanes.find((l) => l.id === selectedLane);
+    if (!lane) return;
+    const { el, height } = viewport();
+    if (lane.y < el.scrollTop || lane.y + Math.min(lane.height, height) > el.scrollTop + height) el.scrollTop = lane.y - 8;
+  }, [selectedLane, layout]);
 
   const hoveredNode = hovered === null ? null : layout.nodes.find((n) => n.event.id === hovered) ?? null;
 
@@ -181,7 +212,7 @@ export function Timeline({
               <span className="tl-lane-sub">{lane.subtitle}</span>
               {lane.rows.length > 1
                 ? lane.rows.slice(1).map((row) => (
-                    <span key={row.id} className="tl-row-label" style={{ top: row.y - lane.y + rowH / 2 - 9 }}>
+                    <span key={row.id} className="tl-row-label" style={{ top: row.y - lane.y + row.height / 2 - 9 }}>
                       <Icon name="branch" size={12} />
                       {row.label}
                     </span>
@@ -301,7 +332,7 @@ function Card(props: NodeProps) {
     <button
       type="button"
       className={classes.filter(Boolean).join(' ')}
-      style={{ left: node.x, top: node.y, width: CARD_W, height: CARD_H }}
+      style={{ left: node.x, top: node.y, width: CARD_W, height: node.h }}
       aria-label={`${eventLabel(event)}：${event.title}`}
       {...handlers(props)}
     >
@@ -339,7 +370,9 @@ function Card(props: NodeProps) {
           </span>
         ) : null}
       </span>
-      <span className="tl-card-title">{event.title}</span>
+      <span className="tl-card-title" style={{ WebkitLineClamp: node.lines }}>
+        {event.title}
+      </span>
     </button>
   );
 }
@@ -372,7 +405,7 @@ function Tip({ node, align, session }: { node: PlacedNode; align: Align; session
   const { event } = node;
   const centerX = align === 'compact' ? node.x + CARD_W / 2 : node.x;
   const top = align === 'compact' ? node.y : node.y - DOT_HIT / 2;
-  const bottom = align === 'compact' ? node.y + CARD_H : node.y + DOT_HIT / 2;
+  const bottom = align === 'compact' ? node.y + node.h : node.y + DOT_HIT / 2;
   const below = top < 140;
   return (
     <div

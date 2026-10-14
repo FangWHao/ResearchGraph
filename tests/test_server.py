@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import httpx
 import pytest
 
+from rg.model import cached
 from rg.server import App, make_handler
 from tests.conftest import FIXTURES, FakeModel
 from tests.test_organize import batch_story
@@ -504,3 +505,48 @@ def test_model_list_and_per_model_check(server):
     ).json()
     assert checked["ok"] is False and "missing" in checked["message"]
     assert pinged == ["deepseek-flash", "missing"]  # 同一个模型只试一次
+
+
+def test_home_and_brief_need_consent_and_only_rewrite_when_asked(server, tmp_path):
+    app, client = server
+    root = sessions_dir(tmp_path)
+    client.post("/api/settings", json={"sources": [str(root)]})
+    pid = client.post(
+        "/api/projects", json={"name": "demo", "sessions": [str(root / "claude.jsonl")]}
+    ).json()["id"]
+    wait(app, pid)
+    assert client.post(f"/api/projects/{pid}/brief", json={}).status_code == 409  # 没同意发送
+
+    briefs: list[str] = []
+
+    def brief(user: str) -> dict:
+        briefs.append(user)
+        return {"headline": f"第 {len(briefs)} 版", "progress": [], "open": [], "next": []}
+
+    fake = cached(app.store, FakeModel(batch_story, brief=brief), "fake")
+    app.jobs.model = lambda: fake
+    app.model = lambda: {"review": fake}
+    client.post(f"/api/projects/{pid}/organize", json={"consent": True})
+    wait(app, pid)
+    assert len(briefs) == 1
+
+    def brief_done() -> dict:
+        for _ in range(200):
+            project = client.get("/api/home", params={"tz": -480}).json()["projects"][0]
+            if not project["briefing"]:
+                return project
+            time.sleep(0.02)
+        raise AssertionError("简报没有写完")
+
+    project = brief_done()
+    assert project["brief"]["content"]["headline"] == "第 1 版" and not project["brief"]["stale"]
+    # 主页自动补写：简报不落后就不调用
+    assert client.post(f"/api/projects/{pid}/brief", json={"auto": True}).json() == {
+        "started": False
+    }
+    # 用户点“重新生成”：即使输入没变也真的再调用一次，不拿缓存里的旧结果
+    assert client.post(f"/api/projects/{pid}/brief", json={}).json() == {"started": True}
+    done = brief_done()
+    assert done["brief"]["content"]["headline"] == "第 2 版"
+    assert len(briefs) == 2
+    assert client.get("/api/home", params={"tz": 5000}).status_code == 400

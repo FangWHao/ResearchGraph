@@ -156,7 +156,7 @@ export interface TimelineEvent {
   edited: number;
 }
 
-export type Phase = 'idle' | 'sync' | 'consent' | 'confirm' | 'extract' | 'threads' | 'consolidate' | 'review' | 'done' | 'error';
+export type Phase = 'idle' | 'sync' | 'consent' | 'confirm' | 'extract' | 'threads' | 'consolidate' | 'review' | 'brief' | 'done' | 'error';
 
 export interface Estimate {
   sessions: number;
@@ -242,4 +242,80 @@ export interface UsageReport {
   projects: (UsageBucket & { id: number | null; name: string | null; last: string })[];
   stages: (UsageBucket & { stage: Stage })[];
   models: (UsageBucket & { model: string })[];
+}
+
+// ---------- 主页 ----------
+
+export interface BriefItem {
+  text: string;
+  events?: number[];
+  thread?: number | null;
+}
+
+export interface BriefContent {
+  headline: string;
+  progress: BriefItem[];
+  open: BriefItem[];
+  next: BriefItem[];
+}
+
+export interface BriefState {
+  content: BriefContent | null;
+  created_at: string | null;
+  model: string;
+  error: string | null;
+  // 研究线有变化，或者还没写过
+  stale: boolean;
+  // 有归好的研究线，可以写
+  ready: boolean;
+}
+
+export interface HomeStep {
+  id: number;
+  ts: string | null;
+  kind: Kind;
+  outcome: Outcome | null;
+  title: string;
+}
+
+export interface HomeThread {
+  id: number;
+  title: string;
+  summary: string;
+  status: ThreadStatus | null;
+  events: number;
+  key: number;
+  failed: number;
+  first_ts: string | null;
+  last_ts: string | null;
+  milestones: HomeStep[];
+}
+
+export interface HomeProject {
+  id: number;
+  name: string;
+  workspace: string | null;
+  model_allowed: number;
+  organized_at: string | null;
+  sessions: number;
+  last_session: string | null;
+  events: number;
+  key: number;
+  milestones: number;
+  failed: number;
+  unplaced: number;
+  first_ts: string | null;
+  last_ts: string | null;
+  threads: HomeThread[];
+  brief: BriefState | null;
+  refs: Record<string, HomeStep & { thread_id: number | null }>;
+  job: { running: boolean; phase: Phase; done: number; total: number };
+  briefing: boolean;
+}
+
+export interface HomeData {
+  today: string;
+  activity: { day: string; key: number; milestones: number }[];
+  week: { key: number; milestones: number; sessions: number; projects: number };
+  projects: HomeProject[];
 }

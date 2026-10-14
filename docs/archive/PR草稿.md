@@ -26,6 +26,6 @@ pyright            0 errors, 0 warnings, 0 informations
 
 ## 实际使用边界
 
-按用户明确授权合入 main，供实际试用。Atlas 正式参考、找回率／解释质量／成本、个人客户端全事件、完整研究 I/O、规模及长期使用仍待真实验收；合并不表示完整 M0–M4 已验收。真实资料、密钥、数据库及生成缓存不提交。
+按用户明确授权合入 main，供实际试用。试点项目 正式参考、找回率／解释质量／成本、个人客户端全事件、完整研究 I/O、规模及长期使用仍待真实验收；合并不表示完整 M0–M4 已验收。真实资料、密钥、数据库及生成缓存不提交。
 
 详见[使用说明](https://github.com/FangWHao/ResearchGraph/blob/main/README.md)、[需求落实情况](https://github.com/FangWHao/ResearchGraph/blob/main/docs/REQUIREMENTS_STATUS.md)和[开发进度](https://github.com/FangWHao/ResearchGraph/blob/main/docs/PROGRESS.md)。
